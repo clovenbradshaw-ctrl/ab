@@ -38,32 +38,36 @@ index.html        shell + design tokens (the provenance ledger is the signature)
 js/schema.js      the document — an ordered field set (swap this to fill a different form)
 js/store.js       DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
 js/model.js       WebLLM / Ollama / Echo backends + shared validate()
-js/fold.js        the prompt fold: the model's context is a projection of the log
+js/knowledge.js   the reference log — INS-shaped items folded per field on demand
+js/context.js     the prompt fold: assemble the model input as a projection of the logs
 js/intake.js      the turn loop: fold -> next question -> support/answer -> confirm -> emit
 js/app.js         DOM wiring only (no logic)
 ```
 
-## The prompt is a fold too
+## The prompt is a projection too
 
-State is never stored — and neither is the prompt. Instead of growing the
-context with every turn, each turn recomputes it from the log (`js/fold.js`),
-the same move `store.js` makes for document state. Mirrors eoreader4.2's
-session-register fold (`turn/converse/history.js`): recent turns **verbatim** +
-a **surfed recap** of the older ones. Because intake is a far more *structured*
-conversation, the two registers specialize:
+State is never stored — and neither is the prompt. Instead of a fixed system
+prompt plus the whole transcript, each turn's messages are *folded* from the
+logs by `js/context.js`, the same move `store.js` makes for document state. Two
+things get folded in:
 
-- **Document register** — the confirmed answers, folded to a compact `ANSWERED
-  SO FAR` block. The "lot of information" reduced to minimal structure, so the
-  model reads what's settled instead of re-deriving it from raw transcript (and
-  never re-asks it).
-- **Session register** — only the **current field's** turns, verbatim within a
-  token budget. A long support detour beyond the budget condenses to a one-line
-  recap rather than being dropped. Cross-field chatter isn't recapped in prose:
-  the only thing an earlier field "moved" is its answer, and that already lives
-  in the document register.
+- **Knowledge** (`js/knowledge.js`) — the "lot of information" that would
+  normally be stuffed into the prompt lives as `INS`-shaped events and is folded
+  on demand to the slice a field needs. This is eoreader4.2's surfer/retrieve
+  seam: a scorer picks the items scoped or relevant to the current field,
+  budgeted by size, so the prompt carries minimal structure and the system
+  supplies the rest per turn. Swap `retrieve` for a real retriever and nothing
+  else changes.
+- **Discourse** — every confirmed answer is a stored `DEF`, so the turns that
+  produced it are redundant with `fold(timeline)`. Resolved turns aren't
+  summarized, they're **dropped** and re-represented as a compact answer digest
+  (`Already recorded — do not re-ask`). Only the **live** window rides
+  verbatim — the turns since the last store, tagged by epoch so the boundary is
+  order-based and collision-proof.
 
-The prompt therefore stays as small as the current question, however long the
-session ran.
+The prompt therefore stays roughly constant in size no matter how long the
+session runs. `context.assemble` also returns `stats` (items folded in, turns
+kept vs. dropped, prompt chars) — context is provenance too.
 
 ## The model contract
 

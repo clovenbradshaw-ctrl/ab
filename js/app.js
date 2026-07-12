@@ -5,6 +5,7 @@ import { SCHEMA } from "./schema.js";
 import { DemoStore, MatrixStore, OP } from "./store.js";
 import { makeModel } from "./model.js";
 import { Intake } from "./intake.js";
+import { DEMO_KNOWLEDGE } from "./knowledge.js";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -46,7 +47,7 @@ async function boot() {
   }
 
   // controller
-  intake = new Intake({ schema: SCHEMA, store, model });
+  intake = new Intake({ schema: SCHEMA, store, model, knowledge: DEMO_KNOWLEDGE });
   $("docTitle").textContent = SCHEMA.title;
   $("stream").innerHTML = ""; $("ledger").innerHTML = "";
 

@@ -87,9 +87,12 @@ export class EchoModel {
     const field = this._field(sys);
 
     // A bare "?" or help-ish message -> supportive explanation, no value yet.
+    // Help now lives in the folded REFERENCE block (context.js), not the field
+    // JSON, so read it from there; fall back to the field's own help, then a
+    // generic nudge.
     if (/^\??$|help|what|why|explain|mean|unsure|don't know|dont know/i.test(lastUser) && lastUser.length < 40) {
       return JSON.stringify({
-        reply: field?.help || "Take your time — answer in whatever words feel natural and I'll tidy it up.",
+        reply: this._reference(sys) || field?.help || "Take your time — answer in whatever words feel natural and I'll tidy it up.",
         support: true, ready: false, extracted: null,
       });
     }
@@ -108,6 +111,15 @@ export class EchoModel {
     const m = sys.match(/CURRENT FIELD:\s*({[\s\S]*?})\s*(?:\n\n|$)/);
     if (!m) return null;
     try { return JSON.parse(m[1]); } catch { return null; }
+  }
+
+  // Pull the first line of the folded REFERENCE block (the field's own help is
+  // seeded first), stripped of its "• Topic: " prefix — Echo's stand-in for the
+  // reasoning a real model would do over the retrieved reference.
+  _reference(sys) {
+    const m = sys.match(/REFERENCE \(folded for this field\):\n([\s\S]*?)(?:\n\n|$)/);
+    if (!m) return "";
+    return (m[1].split("\n")[0] || "").replace(/^•\s*[^:]*:\s*/, "").trim();
   }
 }
 

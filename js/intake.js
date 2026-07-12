@@ -16,26 +16,15 @@
 
 import { OP, answersOf } from "./store.js";
 import { validate } from "./model.js";
-import { foldContext, answeredBlock } from "./fold.js";
-
-const SYSTEM = `You are a calm, patient intake companion helping someone fill out a sensitive legal document one field at a time. You are not a lawyer and never give legal advice; you help them express what they already know.
-
-Rules:
-- Work only on the CURRENT FIELD. Never ask about other fields.
-- ANSWERED SO FAR lists what's already confirmed and stored. Never re-ask any of it; refer back to it if it helps the person.
-- If the person seems confused, stuck, or asks a question, help them — warmly, plainly, briefly. Set support=true and ready=false.
-- When their message contains a usable answer, normalize it and set ready=true with extracted set to the clean value. Ask them to confirm in your reply.
-- Never invent facts. If an answer is ambiguous, ask one short clarifying question instead of guessing.
-- Keep replies short and human. No legal jargon, no lists unless they help.
-
-Respond with ONLY a JSON object, no prose around it:
-{"reply": string, "support": boolean, "ready": boolean, "extracted": string|null}`;
+import { assemble } from "./context.js";
 
 export class Intake {
-  constructor({ schema, store, model, anchor = "applicant" }) {
-    this.schema = schema; this.store = store; this.model = model; this.anchor = anchor;
+  constructor({ schema, store, model, knowledge = null, anchor = "applicant" }) {
+    this.schema = schema; this.store = store; this.model = model;
+    this.knowledge = knowledge; this.anchor = anchor;
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
+    this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
     this._listeners = new Set();
   }
 
@@ -61,7 +50,9 @@ export class Intake {
   isComplete() { return this.schema.fields.every((f) => !f.required || this.answers()[f.path]); }
 
   _say(role, text, meta = {}) {
-    const msg = { role, text, at: Date.now(), ...meta };
+    // Stamp the epoch so context.assemble can keep only the LIVE exchange (the
+    // turns said since the last store) verbatim, and fold the rest to a digest.
+    const msg = { role, text, at: Date.now(), epoch: this.epoch, ...meta };
     this.history.push(msg);
     this._emit("message", msg);
     return msg;
@@ -108,8 +99,9 @@ export class Intake {
     }
 
     // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
-    // so the empty node never lands inside the current field's window.
-    const messages = this._buildMessages(f);
+    // so the empty node never lands inside the live window.
+    const { messages, stats } = this._assemble(f);
+    this._emit("context", stats);
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
@@ -127,11 +119,14 @@ export class Intake {
     }
   }
 
-  // Store the confirmed answer as one DEF operator, then advance.
+  // Store the confirmed answer as one DEF operator, then advance. Bumping the
+  // epoch closes the live window: the turns that produced this answer are now
+  // redundant with fold(timeline) and fold away into the digest next turn.
   _confirm() {
     const { field, value } = this.pending;
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path: field.path, value });
     this.pending = null;
+    this.epoch++;
     this._emit("stored", { field, value, event: ev });
     return this._askNext();
   }
@@ -142,24 +137,23 @@ export class Intake {
     const err = validate(field, value);
     if (err) return { ok: false, error: err };
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value });
+    this.epoch++;
     this._emit("stored", { field, value, event: ev });
     return { ok: true, event: ev };
   }
 
-  // Assemble the model input as a projection of the log (see fold.js). The
-  // system message carries the two folded registers — the confirmed answers
-  // (document register) and any condensed support detour on this field — and the
-  // current field's recent turns ride verbatim as chat messages, mirroring
-  // eoreader4.2's converse fold.
-  _buildMessages(field) {
-    const ctx = foldContext({ schema: this.schema, answers: this.answers(), history: this.history, field });
-    const fieldJson = JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum, help: field.help });
-    const system =
-      `${SYSTEM}\n\n` +
-      `ANSWERED SO FAR:\n${answeredBlock(ctx.answered)}\n\n` +
-      `CURRENT FIELD: ${fieldJson}\n` +
-      (ctx.notes ? `\nEARLIER IN THIS ANSWER (folded recap):\n${ctx.notes}\n` : "");
-    return [{ role: "system", content: system }, ...ctx.recent];
+  // The prompt is a projection of the log (see context.js): reference material
+  // folded to this field's slice + the discourse folded so only the live
+  // exchange rides verbatim and resolved turns become a compact answer digest.
+  _assemble(field) {
+    return assemble({
+      field,
+      discourse: this.history,
+      timeline: this.store.timeline(),
+      knowledge: this.knowledge,
+      schema: this.schema,
+      anchor: this.anchor,
+    });
   }
 
   _parse(raw, field, userText) {
