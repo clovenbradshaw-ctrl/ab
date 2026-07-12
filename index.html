@@ -1,1 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Intake — one question at a time</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
+<!-- Live Matrix backend (optional). Demo + Echo need nothing. -->
+<script src="https://unpkg.com/matrix-js-sdk@34.3.1/dist/browser-matrix.min.js"></script>
+
+<style>
+:root{
+  --ink:#16242B; --paper:#E9EDF0; --surface:#FFFFFF; --line:#D3DADF;
+  --muted:#5C6B72; --seal:#2E6F5E; --seal-soft:#E4EFEA; --turn:#B67A2E;
+  --shadow:0 1px 2px rgba(22,36,43,.06), 0 8px 24px rgba(22,36,43,.05);
+  --r:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--paper); color:var(--ink);
+  font:400 16px/1.55 Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"IBM Plex Mono", ui-monospace, monospace}
+
+/* ---- shell ---- */
+.wrap{max-width:1180px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 20px}
+header.top{display:flex;align-items:baseline;gap:16px;padding:22px 4px 18px;flex-wrap:wrap}
+header.top h1{font-family:Fraunces, Georgia, serif;font-weight:560;font-size:26px;letter-spacing:-.01em;margin:0}
+header.top .sub{color:var(--muted);font-size:14px}
+.setup{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.setup select,.setup button{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);
+  border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer}
+.setup button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.status{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.live{background:var(--seal)} .dot.warn{background:var(--turn)}
+
+.grid{display:grid;grid-template-columns:1fr 340px;gap:22px;flex:1;padding-bottom:26px;min-height:0}
+
+/* ---- conversation ---- */
+.chat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.progress{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
+.ring{--p:0;width:38px;height:38px;border-radius:50%;flex:none;
+  background:conic-gradient(var(--seal) calc(var(--p)*1%), var(--line) 0);
+  display:grid;place-items:center}
+.ring::after{content:"";width:28px;height:28px;border-radius:50%;background:var(--surface)}
+.ring b{position:absolute;font-size:11px;font-weight:600}
+.ring-wrap{position:relative;display:grid;place-items:center}
+.progress .meta{font-size:13px;color:var(--muted)}
+.progress .meta strong{color:var(--ink);font-weight:600}
+
+.stream{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:82%;padding:11px 15px;border-radius:14px;font-size:15px;white-space:pre-wrap;animation:rise .28s ease}
+.msg.assistant{align-self:flex-start;background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:5px}
+.msg.user{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:5px}
+.msg.support{background:var(--seal-soft);border-color:#C9E0D5}
+.msg .tag{display:block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);margin-bottom:4px;font-weight:600}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.typing{display:inline-flex;gap:4px}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
+
+.compose{border-top:1px solid var(--line);padding:14px 16px;display:flex;gap:10px;align-items:flex-end}
+.compose textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+  font:inherit;font-size:15px;max-height:140px;background:var(--surface);color:var(--ink)}
+.compose textarea:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.compose button{border:none;background:var(--ink);color:#fff;border-radius:11px;padding:0 18px;height:44px;
+  font:600 15px Inter;cursor:pointer;flex:none}
+.compose button:disabled{opacity:.4;cursor:default}
+.hint{padding:0 16px 12px;font-size:12px;color:var(--muted)}
+.hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
+
+/* ---- right rail ---- */
+.rail{display:flex;flex-direction:column;gap:22px;min-height:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.card h2{font-family:Fraunces,serif;font-weight:560;font-size:16px;margin:0;padding:15px 18px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:9px}
+.card h2 .count{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:var(--muted)}
+
+/* checklist */
+.check{list-style:none;margin:0;padding:6px}
+.check li{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:9px;cursor:pointer}
+.check li:hover{background:#F2F5F7}
+.check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:5px;flex:none;margin-top:2px;display:grid;place-items:center}
+.check li.done .box{background:var(--seal);border-color:var(--seal)}
+.check li.done .box::after{content:"✓";color:#fff;font-size:11px;line-height:1}
+.check li.active .box{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.15)}
+.check .lab{font-size:13.5px}
+.check .val{display:block;font-size:12px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+
+/* provenance ledger — the signature */
+.ledger-wrap{max-height:360px;overflow-y:auto}
+.ledger{list-style:none;margin:0;padding:0}
+.ledger .empty{padding:22px 18px;color:var(--muted);font-size:13px}
+.ledger li{padding:11px 18px 11px 16px;border-left:3px solid var(--line);position:relative;font-size:12.5px;
+  animation:seal .5s cubic-bezier(.2,.8,.2,1)}
+.ledger li+li{border-top:1px solid #EEF1F3}
+.ledger li.def{border-left-color:var(--seal)}
+.ledger li.ins{border-left-color:var(--turn)}
+.ledger .row1{display:flex;align-items:center;gap:8px}
+.ledger .op{font:500 10.5px "IBM Plex Mono",monospace;letter-spacing:.05em;color:#fff;background:var(--seal);
+  padding:1px 6px;border-radius:5px}
+.ledger li.ins .op{background:var(--turn)}
+.ledger .path{font-family:"IBM Plex Mono",monospace;color:var(--ink);font-weight:500}
+.ledger .time{margin-left:auto;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:11px}
+.ledger .val{margin-top:4px;color:var(--ink)}
+.ledger .eid{margin-top:3px;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:10.5px}
+@keyframes seal{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+.foot{color:var(--muted);font-size:12px;padding:6px 4px 20px;line-height:1.5}
+.foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+
+@media (max-width:900px){
+  .grid{grid-template-columns:1fr}
+  .rail{flex-direction:column}
+  .msg{max-width:90%}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Intake</h1>
+    <span class="sub">one question at a time · nothing lost</span>
+    <div class="setup">
+      <select id="modelSel" title="Where the model runs">
+        <option value="echo">Model: Echo (no setup)</option>
+        <option value="webllm">Model: WebLLM (in-browser)</option>
+        <option value="ollama">Model: Ollama (local)</option>
+      </select>
+      <select id="storeSel" title="Where answers are stored">
+        <option value="demo">Store: Demo (this device)</option>
+        <option value="matrix">Store: Matrix (sign in)</option>
+      </select>
+      <button id="resetBtn" title="Clear this document's timeline">Reset</button>
+      <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- conversation -->
+    <section class="chat">
+      <div class="progress">
+        <div class="ring-wrap"><div class="ring" id="ring"></div><b id="ringN">0/0</b></div>
+        <div class="meta"><strong id="docTitle">…</strong><br><span id="progTxt">loading…</span></div>
+      </div>
+      <div class="stream" id="stream"></div>
+      <div class="compose">
+        <textarea id="input" rows="1" placeholder="Type your answer… or ask me anything about this question."></textarea>
+        <button id="send">Send</button>
+      </div>
+      <div class="hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line · type <kbd>?</kbd> if you're stuck</div>
+    </section>
+
+    <!-- right rail -->
+    <aside class="rail">
+      <div class="card">
+        <h2>Your answers <span class="count" id="checkCount"></span></h2>
+        <ul class="check" id="check"></ul>
+      </div>
+      <div class="card">
+        <h2>Stored to the room <span class="count" id="ledgerCount">0 events</span></h2>
+        <div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet. Each answer you confirm is written here as one event.</li></ul></div>
+      </div>
+      <p class="foot">Every confirmed answer is one <code>DEF</code> operator appended to a Matrix room. State is never stored — the checklist above is <code>fold(timeline)</code>, recomputed live. Close the tab and reopen: your place is held.</p>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
