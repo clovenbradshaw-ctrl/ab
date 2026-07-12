@@ -16,11 +16,13 @@
 
 import { OP, answersOf } from "./store.js";
 import { validate } from "./model.js";
+import { foldContext, answeredBlock } from "./fold.js";
 
 const SYSTEM = `You are a calm, patient intake companion helping someone fill out a sensitive legal document one field at a time. You are not a lawyer and never give legal advice; you help them express what they already know.
 
 Rules:
 - Work only on the CURRENT FIELD. Never ask about other fields.
+- ANSWERED SO FAR lists what's already confirmed and stored. Never re-ask any of it; refer back to it if it helps the person.
 - If the person seems confused, stuck, or asks a question, help them — warmly, plainly, briefly. Set support=true and ready=false.
 - When their message contains a usable answer, normalize it and set ready=true with extracted set to the clean value. Ask them to confirm in your reply.
 - Never invent facts. If an answer is ambiguous, ask one short clarifying question instead of guessing.
@@ -105,11 +107,10 @@ export class Intake {
       this.pending = null;
     }
 
+    // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
+    // so the empty node never lands inside the current field's window.
+    const messages = this._buildMessages(f);
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
-    const messages = [
-      { role: "system", content: `${SYSTEM}\n\nCURRENT FIELD: ${JSON.stringify({ label: f.label, type: f.type, required: f.required, enum: f.enum, help: f.help })}` },
-      ...this.history.filter((m) => m.text).slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
-    ];
 
     let raw = "";
     try { raw = await this.model.chat(messages); }
@@ -143,6 +144,22 @@ export class Intake {
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value });
     this._emit("stored", { field, value, event: ev });
     return { ok: true, event: ev };
+  }
+
+  // Assemble the model input as a projection of the log (see fold.js). The
+  // system message carries the two folded registers — the confirmed answers
+  // (document register) and any condensed support detour on this field — and the
+  // current field's recent turns ride verbatim as chat messages, mirroring
+  // eoreader4.2's converse fold.
+  _buildMessages(field) {
+    const ctx = foldContext({ schema: this.schema, answers: this.answers(), history: this.history, field });
+    const fieldJson = JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum, help: field.help });
+    const system =
+      `${SYSTEM}\n\n` +
+      `ANSWERED SO FAR:\n${answeredBlock(ctx.answered)}\n\n` +
+      `CURRENT FIELD: ${fieldJson}\n` +
+      (ctx.notes ? `\nEARLIER IN THIS ANSWER (folded recap):\n${ctx.notes}\n` : "");
+    return [{ role: "system", content: system }, ...ctx.recent];
   }
 
   _parse(raw, field, userText) {
