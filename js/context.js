@@ -20,10 +20,12 @@ export const MINIMAL_SYSTEM =
 Work only on the current field. If they seem stuck or ask a question, help briefly (support=true, ready=false). When their message contains a usable answer, normalize it, set ready=true and extracted to the clean value, and ask them to confirm. Never invent facts; if unsure, ask one short question.
 Reply with ONLY a JSON object: {"reply":string,"support":boolean,"ready":boolean,"extracted":string|null}`;
 
-// assemble -> { messages, stats }
+// assemble -> { messages, parts, stats }
 // stats exposes what the fold decided, so the UI can show it (context is
-// provenance too).
-export function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {} }) {
+// provenance too). parts is the same system message broken into labeled
+// sections, so the UI can *show and reason about* exactly what got folded in.
+// `system` overrides the fixed base instructions (edited live from the UI).
+export function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM }) {
   const B = { knowledge: 700, digest: 400, liveTurns: 6, ...budget };
   const answers = answersOf(fold(timeline), anchor);
 
@@ -56,20 +58,23 @@ export function assemble({ field, discourse = [], timeline = [], knowledge = nul
   const total = schema ? schema.fields.length : Object.keys(answers).length;
   const done = schema ? schema.fields.filter((f) => answers[f.path] != null && answers[f.path] !== "").length : 0;
 
-  const systemParts = [
-    MINIMAL_SYSTEM,
-    `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}`,
+  // Labeled sections. `kind` lets the UI point each one back at its source:
+  // `system` is editable instructions, `memory` is the folded knowledge slice.
+  const parts = [
+    { kind: "system", label: "Instructions", text: system },
+    { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}` },
   ];
-  if (know.text) systemParts.push(`REFERENCE (folded for this field):\n${know.text}`);
-  systemParts.push(`PROGRESS: ${done}/${total} captured.` + (digest ? `\nAlready recorded — do not re-ask:\n${digest}` : ""));
+  if (know.text) parts.push({ kind: "memory", label: `Reference — memory folded for this field (${know.items.length})`, text: `REFERENCE (folded for this field):\n${know.text}` });
+  parts.push({ kind: "progress", label: "Progress + answer digest", text: `PROGRESS: ${done}/${total} captured.` + (digest ? `\nAlready recorded — do not re-ask:\n${digest}` : "") });
 
   const messages = [
-    { role: "system", content: systemParts.join("\n\n") },
+    { role: "system", content: parts.map((p) => p.text).join("\n\n") },
     ...window.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
   ];
 
   return {
     messages,
+    parts,
     stats: {
       knowledgeItems: know.items.length,
       knowledgeChars: know.text.length,
