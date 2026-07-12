@@ -14,9 +14,30 @@
 // eoreader3/surfer's retriever and nothing else changes.
 
 export class KnowledgeStore {
-  constructor(items = []) { this.items = items.map((i, n) => ({ id: i.id || "k" + n, tags: [], scope: {}, ...i })); }
+  constructor(items = []) { this._n = 0; this.items = items.map((i) => this._normalize(i)); }
 
-  add(item) { this.items.push({ id: item.id || "k" + this.items.length, tags: [], scope: {}, ...item }); return this; }
+  _normalize(i = {}) { return { id: i.id || "k" + (this._n++), topic: "", text: "", tags: [], scope: {}, ...i }; }
+
+  add(item) { const it = this._normalize(item); this.items.push(it); return it; }
+
+  // Edit an item in place (topic/text/tags/scope). Used by the memory editor —
+  // the change shows up in the very next fold, no rebuild needed.
+  update(id, patch = {}) {
+    const it = this.items.find((x) => x.id === id);
+    if (!it) return null;
+    Object.assign(it, patch);
+    if (patch.scope) it.scope = { ...patch.scope };
+    if (patch.tags) it.tags = [...patch.tags];
+    return it;
+  }
+
+  remove(id) { const i = this.items.findIndex((x) => x.id === id); if (i >= 0) this.items.splice(i, 1); return i >= 0; }
+
+  list() { return this.items.slice(); }
+
+  // Plain-JSON snapshot / restore, so edited memory can persist across reloads.
+  toJSON() { return this.items.map(({ id, topic, text, tags, scope }) => ({ id, topic, text, tags, scope })); }
+  static fromJSON(arr) { return new KnowledgeStore(Array.isArray(arr) ? arr : []); }
 
   // Fold the relevant slice for a field into a compact reference block.
   // Returns { text, items } where `items` is what was actually included.
