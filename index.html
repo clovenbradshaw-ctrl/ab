@@ -138,6 +138,59 @@ header.top .sub{color:var(--muted);font-size:14px}
 .foot{color:var(--muted);font-size:12px;padding:6px 4px 20px;line-height:1.5}
 .foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
 
+/* ---- context inspector (view & edit the fold) ---- */
+.scrim{position:fixed;inset:0;background:rgba(22,36,43,.34);backdrop-filter:blur(2px);
+  -webkit-backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--paper);
+  border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(22,36,43,.14);z-index:21;
+  transform:translateX(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.drawer .dhead{display:flex;align-items:baseline;gap:10px;padding:20px 22px 14px;border-bottom:1px solid var(--line)}
+.drawer .dhead h2{font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0}
+.drawer .dhead .sub{font-size:12.5px;color:var(--muted)}
+.drawer .dclose{margin-left:auto;border:1px solid var(--line);background:var(--surface);border-radius:9px;
+  width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer;color:var(--muted)}
+.drawer .dbody{flex:1;overflow-y:auto;padding:18px 22px 40px;display:flex;flex-direction:column;gap:26px}
+.sec > h3{font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:0 0 3px;display:flex;align-items:center;gap:8px}
+.sec > .note{font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.sec .btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.sec button,.mem button{font:inherit;font-size:12.5px;padding:6px 12px;border:1px solid var(--line);
+  border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer}
+.sec button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.sec button.ghost{color:var(--muted)}
+.sec button.danger{color:#B0402F;border-color:#E7C6BF}
+.sec textarea{width:100%;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  font:inherit;background:var(--surface);color:var(--ink)}
+.sec textarea.mono,.sec input.mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.5}
+
+/* live folded prompt */
+.foldstats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.foldstats .chip{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);
+  border:1px solid var(--line);border-radius:99px;padding:3px 9px}
+.foldstats .chip b{color:var(--ink);font-weight:600}
+.part{border:1px solid var(--line);border-radius:11px;background:var(--surface);overflow:hidden;margin-bottom:10px}
+.part > .plab{font:600 11px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);
+  padding:8px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.part > .plab .k{font:500 9.5px "IBM Plex Mono",monospace;color:#fff;background:var(--muted);border-radius:4px;padding:1px 5px;letter-spacing:.04em}
+.part.system > .plab .k{background:var(--ink)} .part.memory > .plab .k{background:var(--turn)} .part.field > .plab .k{background:var(--seal)}
+.part > pre{margin:0;padding:11px 12px;white-space:pre-wrap;word-break:break-word;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.55;color:var(--ink)}
+.turn{border:1px dashed var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:13px}
+.turn .r{font:600 10.5px "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:block;margin-bottom:3px}
+.turn.assistant{background:var(--surface)} .turn.user{background:#F2F5F7}
+.empty-turns{font-size:12.5px;color:var(--muted);font-style:italic}
+
+/* memory editor */
+.mem{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:12px;margin-bottom:10px}
+.mem .row{display:flex;gap:8px;margin-bottom:8px}
+.mem .row > *{flex:1;min-width:0}
+.mem label{display:block;font:600 10.5px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.mem input,.mem textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);resize:vertical}
+.mem .memfoot{display:flex;align-items:center;gap:8px;margin-top:2px}
+.mem .memfoot .scoped{font-size:11.5px;color:var(--muted);margin-right:auto}
+.mem.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
+
 @media (max-width:900px){
   .grid{grid-template-columns:1fr}
   .rail{flex-direction:column}
@@ -161,6 +214,7 @@ header.top .sub{color:var(--muted);font-size:14px}
         <option value="demo">Store: Demo (this device)</option>
         <option value="matrix">Store: Matrix (sign in)</option>
       </select>
+      <button id="ctxBtn" title="View & edit the prompt and memory being folded each turn">Context</button>
       <button id="resetBtn" title="Clear this document's timeline">Reset</button>
       <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
     </div>
@@ -204,6 +258,51 @@ header.top .sub{color:var(--muted);font-size:14px}
     </aside>
   </div>
 </div>
+
+<!-- context inspector: view & edit the prompt + memory folded each turn -->
+<div class="scrim" id="ctxScrim"></div>
+<aside class="drawer" id="ctxDrawer" aria-label="Folded context" aria-hidden="true">
+  <div class="dhead">
+    <div>
+      <h2>Folded context</h2>
+      <div class="sub">What gets folded into the model each turn — view it live, edit the parts you own.</div>
+    </div>
+    <button class="dclose" id="ctxClose" title="Close" aria-label="Close">×</button>
+  </div>
+  <div class="dbody">
+
+    <section class="sec" id="secPrompt">
+      <h3>Live prompt for this field</h3>
+      <p class="note">This is the exact message set folded for the current field — nothing is stored, it's recomputed from the logs every turn. Edit the instructions or memory below and watch it change.</p>
+      <div class="foldstats" id="foldStats"></div>
+      <div id="foldParts"></div>
+      <h3 style="margin-top:14px">Live conversation window</h3>
+      <p class="note">Only the turns since your last saved answer ride verbatim; resolved turns fold away into the digest above.</p>
+      <div id="foldTurns"></div>
+    </section>
+
+    <section class="sec" id="secSystem">
+      <h3>System prompt <span class="k" style="font:500 9.5px 'IBM Plex Mono',monospace;color:#fff;background:var(--ink);border-radius:4px;padding:1px 5px;">system</span></h3>
+      <p class="note">The fixed instructions folded in ahead of everything else. Changes apply to the next turn and persist on this device.</p>
+      <textarea id="sysEdit" class="mono" rows="7"></textarea>
+      <div class="btns">
+        <button class="primary" id="sysSave">Save instructions</button>
+        <button class="ghost" id="sysReset">Reset to default</button>
+      </div>
+    </section>
+
+    <section class="sec" id="secMemory">
+      <h3>Memory <span id="memCount" class="k" style="font:500 9.5px 'IBM Plex Mono',monospace;color:#fff;background:var(--turn);border-radius:4px;padding:1px 5px;">0</span></h3>
+      <p class="note">Reference items folded in on demand — only the ones scoped to (or relevant to) the current field reach the prompt. Scope an item to a field <code>path</code> to pin it; leave scope blank to let keyword matching decide.</p>
+      <div id="memList"></div>
+      <div class="btns">
+        <button class="primary" id="memAdd">+ Add memory</button>
+        <button class="ghost" id="memReset">Reset to defaults</button>
+      </div>
+    </section>
+
+  </div>
+</aside>
 
 <script type="module" src="./js/app.js"></script>
 </body>

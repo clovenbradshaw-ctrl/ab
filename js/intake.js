@@ -16,12 +16,13 @@
 
 import { OP, answersOf } from "./store.js";
 import { validate } from "./model.js";
-import { assemble } from "./context.js";
+import { assemble, MINIMAL_SYSTEM } from "./context.js";
 
 export class Intake {
-  constructor({ schema, store, model, knowledge = null, anchor = "applicant" }) {
+  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM }) {
     this.schema = schema; this.store = store; this.model = model;
     this.knowledge = knowledge; this.anchor = anchor;
+    this.systemPrompt = systemPrompt; // editable base instructions; folded in each turn
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
@@ -30,6 +31,19 @@ export class Intake {
 
   on(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
   _emit(kind, data) { for (const fn of this._listeners) fn(kind, data); }
+
+  // Live-edit the base instructions. Takes effect on the next fold; we re-emit
+  // context so an open inspector reflects the change immediately.
+  setSystemPrompt(text) { this.systemPrompt = text ?? ""; this._emitContext(); return this.systemPrompt; }
+
+  // Assemble the prompt for the current field WITHOUT sending anything — lets
+  // the UI show exactly what will be folded in on the next turn.
+  previewContext() {
+    const f = this.nextField() || this.schema.fields[this.schema.fields.length - 1];
+    return { field: f, ...this._assemble(f) };
+  }
+
+  _emitContext() { if (this.nextField() || this.history.length) this._emit("context", this.previewContext()); }
 
   answers() { return answersOf(this.store.fold(), this.anchor); }
 
@@ -75,6 +89,7 @@ export class Intake {
     const f = this.nextField();
     if (!f) { this._say("assistant", "That's everything I need. Your answers are all saved — you can review or edit any of them from the checklist."); this._emit("complete", this.answers()); return; }
     this._emit("field", f);
+    this._emitContext();  // the fold changed with the field — refresh any open inspector
     this._say("assistant", f.prompt, { field: f.path });
   }
 
@@ -100,8 +115,9 @@ export class Intake {
 
     // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
     // so the empty node never lands inside the live window.
-    const { messages, stats } = this._assemble(f);
-    this._emit("context", stats);
+    const assembled = this._assemble(f);
+    const { messages } = assembled;
+    this._emit("context", { field: f, ...assembled });
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
@@ -153,6 +169,7 @@ export class Intake {
       knowledge: this.knowledge,
       schema: this.schema,
       anchor: this.anchor,
+      system: this.systemPrompt,
     });
   }
 

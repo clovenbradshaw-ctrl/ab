@@ -5,14 +5,30 @@ import { SCHEMA } from "./schema.js";
 import { DemoStore, MatrixStore, OP } from "./store.js";
 import { makeModel } from "./model.js";
 import { Intake } from "./intake.js";
-import { DEMO_KNOWLEDGE } from "./knowledge.js";
+import { KnowledgeStore, DEMO_KNOWLEDGE } from "./knowledge.js";
+import { MINIMAL_SYSTEM } from "./context.js";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const HHMM = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const ROOM = "!intake-i589:local"; // demo room id; a real Matrix room id when live
 
-let intake, store;
+let intake, store, knowledge;
+
+// ---- context config: the editable parts of the fold, persisted per room -----
+// The system prompt and memory items are the two things the user can edit; both
+// fold into the prompt each turn (see context.js). We keep them out of the event
+// log (they're config, not answers) and mirror them to localStorage.
+const CTX_KEY = "intake:ctx:" + ROOM;
+const DEFAULT_KNOWLEDGE = DEMO_KNOWLEDGE.toJSON();
+function loadCtxCfg() {
+  try { const c = JSON.parse(localStorage.getItem(CTX_KEY) || "null"); if (c) return c; } catch {}
+  return { systemPrompt: MINIMAL_SYSTEM, knowledge: DEFAULT_KNOWLEDGE };
+}
+function saveCtxCfg() {
+  const cfg = { systemPrompt: intake?.systemPrompt ?? MINIMAL_SYSTEM, knowledge: knowledge ? knowledge.toJSON() : DEFAULT_KNOWLEDGE };
+  try { localStorage.setItem(CTX_KEY, JSON.stringify(cfg)); } catch {}
+}
 
 function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
 
@@ -89,8 +105,10 @@ async function boot() {
     catch (e) { alert(e.message + "\nStart Ollama or pick another model."); $("modelSel").value = "echo"; return boot(); }
   }
 
-  // controller
-  intake = new Intake({ schema: SCHEMA, store, model, knowledge: DEMO_KNOWLEDGE });
+  // controller — seed the editable fold (system prompt + memory) from config.
+  const cfg = loadCtxCfg();
+  knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
+  intake = new Intake({ schema: SCHEMA, store, model, knowledge, systemPrompt: cfg.systemPrompt });
   $("docTitle").textContent = SCHEMA.title;
   $("stream").innerHTML = ""; $("ledger").innerHTML = "";
 
@@ -98,6 +116,8 @@ async function boot() {
   store.subscribe(renderSide);
   renderLedgerFromTimeline();
   renderSide();
+  renderSystemEditor();
+  renderMemoryEditor();
   await intake.begin();
 }
 
@@ -112,6 +132,8 @@ function onIntake(kind, data) {
     flashLedger(data.event);
   } else if (kind === "field") {
     renderSide();
+  } else if (kind === "context") {
+    renderFold(data);
   } else if (kind === "complete") {
     renderSide();
   }
@@ -210,6 +232,164 @@ function wireCompose() {
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
   input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; });
 }
+
+// ---- context inspector: view the fold, edit its parts ----------------------
+// The drawer shows the live folded prompt and lets you edit the two parts you
+// own — the system prompt and the memory items — with the fold recomputing as
+// you go, so the projection stays legible.
+
+// (1) Live folded prompt. `data` is intake's assemble() result: labeled parts +
+// the live conversation window + the fold stats.
+function renderFold(data) {
+  if (!data) return;
+  const { parts = [], messages = [], stats = {} } = data;
+
+  const chips = $("foldStats"); chips.innerHTML = "";
+  const chip = (label, val) => { const c = el("span", "chip"); c.innerHTML = `${label} <b>${val}</b>`; chips.appendChild(c); };
+  chip("memory folded", stats.knowledgeItems ?? 0);
+  chip("live turns", stats.liveTurns ?? 0);
+  chip("dropped", stats.droppedTurns ?? 0);
+  chip("digest lines", stats.digestedAnswers ?? 0);
+  chip("prompt chars", stats.promptChars ?? 0);
+
+  const box = $("foldParts"); box.innerHTML = "";
+  for (const p of parts) {
+    const wrap = el("div", "part " + (p.kind || ""));
+    const lab = el("div", "plab"); lab.appendChild(el("span", "k", p.kind || "part"));
+    lab.appendChild(document.createTextNode(p.label)); wrap.appendChild(lab);
+    const pre = el("pre"); pre.textContent = p.text; wrap.appendChild(pre);
+    box.appendChild(wrap);
+  }
+
+  const turns = $("foldTurns"); turns.innerHTML = "";
+  const live = messages.filter((m) => m.role !== "system");
+  if (!live.length) { turns.appendChild(el("div", "empty-turns", "No live turns yet — the first exchange for this field will appear here.")); }
+  else for (const m of live) {
+    const t = el("div", "turn " + m.role);
+    t.appendChild(el("span", "r", m.role));
+    t.appendChild(document.createTextNode(m.content));
+    turns.appendChild(t);
+  }
+}
+
+// (2) System-prompt editor.
+function renderSystemEditor() { $("sysEdit").value = intake ? intake.systemPrompt : MINIMAL_SYSTEM; }
+$("sysSave").onclick = () => {
+  if (!intake) return;
+  intake.setSystemPrompt($("sysEdit").value);   // re-emits context -> renderFold
+  saveCtxCfg();
+  flashSaved($("sysSave"), "Saved");
+};
+$("sysReset").onclick = () => {
+  if (!intake) return;
+  intake.setSystemPrompt(MINIMAL_SYSTEM);
+  renderSystemEditor(); saveCtxCfg();
+};
+
+// (3) Memory editor. Each card edits one knowledge item in place; saving folds
+// it into the very next prompt.
+function renderMemoryEditor() {
+  const list = $("memList"); if (!list) return;
+  list.innerHTML = "";
+  const items = knowledge ? knowledge.list() : [];
+  $("memCount").textContent = items.length;
+  if (!items.length) list.appendChild(el("div", "empty-turns", "No memory items. Add one — it'll fold in when its field comes up."));
+  for (const it of items) list.appendChild(memCard(it));
+}
+
+function fieldOptions(selected) {
+  const sel = el("select"); sel.className = "mono";
+  const none = el("option", null, "— any field (keyword-matched) —"); none.value = ""; sel.appendChild(none);
+  for (const f of SCHEMA.fields) { const o = el("option", null, `${f.label}  ·  ${f.path}`); o.value = f.path; sel.appendChild(o); }
+  sel.value = selected || "";
+  return sel;
+}
+
+function memCard(it) {
+  const card = el("div", "mem");
+  const markDirty = () => card.classList.add("dirty");
+
+  const topRow = el("div", "row");
+  const topWrap = el("div"); topWrap.appendChild(labeled("Topic"));
+  const topic = el("input"); topic.value = it.topic || ""; topic.oninput = markDirty; topWrap.appendChild(topic);
+  const scopeWrap = el("div"); scopeWrap.appendChild(labeled("Folds in for"));
+  const scope = fieldOptions(it.scope?.field); scope.onchange = markDirty; scopeWrap.appendChild(scope);
+  topRow.appendChild(topWrap); topRow.appendChild(scopeWrap); card.appendChild(topRow);
+
+  const tagWrap = el("div"); tagWrap.appendChild(labeled("Tags (comma-separated)"));
+  const tags = el("input"); tags.className = "mono"; tags.value = (it.tags || []).join(", "); tags.oninput = markDirty; tagWrap.appendChild(tags);
+  card.appendChild(tagWrap);
+
+  const textWrap = el("div"); textWrap.appendChild(labeled("Text"));
+  const text = el("textarea"); text.rows = 3; text.value = it.text || ""; text.oninput = markDirty; textWrap.appendChild(text);
+  card.appendChild(textWrap);
+
+  const foot = el("div", "memfoot");
+  const scoped = el("span", "scoped"); scoped.textContent = it.scope?.field ? "pinned to a field" : "matched by keywords";
+  const save = el("button", "primary", "Save");
+  const del = el("button", "danger", "Delete");
+  save.onclick = () => {
+    knowledge.update(it.id, {
+      topic: topic.value.trim(),
+      text: text.value.trim(),
+      tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
+      scope: scope.value ? { field: scope.value } : {},
+    });
+    card.classList.remove("dirty");
+    saveCtxCfg();
+    if (intake) intake._emitContext();   // refresh the live fold view
+    flashSaved(save, "Saved");
+    renderMemoryEditor();
+  };
+  del.onclick = () => {
+    if (!confirm(`Delete memory "${it.topic || it.id}"?`)) return;
+    knowledge.remove(it.id); saveCtxCfg();
+    if (intake) intake._emitContext();
+    renderMemoryEditor();
+  };
+  foot.appendChild(scoped); foot.appendChild(save); foot.appendChild(del);
+  card.appendChild(foot);
+  return card;
+}
+
+function labeled(t) { return el("label", null, t); }
+
+$("memAdd").onclick = () => {
+  if (!knowledge) return;
+  knowledge.add({ topic: "New reference", text: "", scope: {}, tags: [] });
+  saveCtxCfg(); renderMemoryEditor();
+  $("memList").lastElementChild?.scrollIntoView({ block: "nearest" });
+};
+$("memReset").onclick = () => {
+  if (!confirm("Restore the default memory items? Your edits here will be lost.")) return;
+  knowledge = KnowledgeStore.fromJSON(DEFAULT_KNOWLEDGE);
+  if (intake) intake.knowledge = knowledge;
+  saveCtxCfg(); renderMemoryEditor();
+  if (intake) intake._emitContext();
+};
+
+function flashSaved(btn, txt) {
+  const old = btn.textContent; btn.textContent = txt; btn.disabled = true;
+  setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 900);
+}
+
+// ---- drawer open/close -----------------------------------------------------
+function openCtx() {
+  $("ctxScrim").classList.add("on");
+  $("ctxDrawer").classList.add("on");
+  $("ctxDrawer").setAttribute("aria-hidden", "false");
+  renderSystemEditor(); renderMemoryEditor();
+  if (intake) renderFold(intake.previewContext());   // show the fold as it stands now
+}
+function closeCtx() {
+  $("ctxScrim").classList.remove("on");
+  $("ctxDrawer").classList.remove("on");
+  $("ctxDrawer").setAttribute("aria-hidden", "true");
+}
+$("ctxBtn").onclick = openCtx;
+$("ctxClose").onclick = closeCtx;
+$("ctxScrim").onclick = closeCtx;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx(); });
 
 // ---- setup controls --------------------------------------------------------
 $("modelSel").onchange = boot;
