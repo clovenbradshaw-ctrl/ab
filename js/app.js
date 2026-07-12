@@ -16,8 +16,38 @@ let intake, store;
 
 function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
 
+// ---- model loading overlay -------------------------------------------------
+function showLoader() {
+  const l = $("loader"); if (!l) return;
+  $("loadBar").classList.add("indet");
+  $("loadBar").style.width = "";
+  $("loadPct").textContent = "0%";
+  $("loadName").textContent = "Preparing Llama 3.2 (3B)…";
+  $("loadStage").textContent = "Starting the in-browser engine";
+  l.classList.add("on");
+  setStatus("loading model…", "warn");
+}
+function updateLoader(text, p) {
+  const pct = Math.max(0, Math.min(100, Math.round((Number(p) || 0) * 100)));
+  const bar = $("loadBar");
+  if (p > 0) {                                   // real progress → determinate bar
+    bar.classList.remove("indet");
+    bar.style.width = pct + "%";
+    $("loadPct").textContent = pct + "%";
+  }
+  $("loadName").textContent = pct >= 100 ? "Almost ready — finishing up…" : "Downloading Llama 3.2 (3B)";
+  if (text) $("loadStage").textContent = text;
+  setStatus(`model ${pct}%`, "warn");
+}
+function hideLoader() {
+  const l = $("loader"); if (!l) return;
+  l.classList.remove("on");
+  $("loadBar").classList.remove("indet");
+}
+
 // ---- boot ------------------------------------------------------------------
 async function boot() {
+  hideLoader();
   const modelKind = $("modelSel").value;
   const storeKind = $("storeSel").value;
 
@@ -38,9 +68,22 @@ async function boot() {
   // model
   const model = makeModel(modelKind, { model: modelKind === "ollama" ? "llama3.2" : undefined });
   if (modelKind === "webllm") {
-    setStatus("loading model…", "warn");
-    try { await model.ready((t, p) => setStatus(`model ${(p * 100 | 0)}%`, "warn")); setStatus("webllm ready", "live"); }
-    catch (e) { alert("WebLLM needs a WebGPU browser. Falling back to Echo.\n" + e.message); $("modelSel").value = "echo"; return boot(); }
+    if (!navigator.gpu) {                        // no WebGPU — quietly use the demo model
+      setStatus("demo · this browser has no WebGPU", "warn");
+      $("modelSel").value = "echo";
+      return boot();
+    }
+    showLoader();
+    try {
+      await model.ready((text, p) => updateLoader(text, p));
+      hideLoader();
+      setStatus("Llama 3.2 · ready", "live");
+    } catch (e) {
+      hideLoader();
+      setStatus("demo · model unavailable", "warn");
+      $("modelSel").value = "echo";
+      return boot();
+    }
   } else if (modelKind === "ollama") {
     try { await model.ready(); setStatus("ollama ready", "live"); }
     catch (e) { alert(e.message + "\nStart Ollama or pick another model."); $("modelSel").value = "echo"; return boot(); }
