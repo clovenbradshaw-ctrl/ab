@@ -69,6 +69,29 @@ The prompt therefore stays roughly constant in size no matter how long the
 session runs. `context.assemble` also returns `stats` (items folded in, turns
 kept vs. dropped, prompt chars) — context is provenance too.
 
+### See it, and edit what you own
+
+Because the prompt is *computed*, it can be shown. The **Context** button
+(top-right) opens an inspector that renders the live fold for the current
+field — the system instructions, the field descriptor, the **memory** slice
+retrieved for this field, the answer digest, and the live conversation window —
+alongside the same `stats`. `assemble` returns these as labeled `parts`, so the
+view is the projection itself, not a reconstruction.
+
+Two of those parts are yours to edit, and the change lands in the very next
+fold:
+
+- **System prompt** — the fixed instructions (`MINIMAL_SYSTEM`) folded in ahead
+  of everything else. Editable, with reset-to-default.
+- **Memory** (`js/knowledge.js`) — add, edit, delete, and re-scope reference
+  items. Pin an item to a field `path` so it always folds in for that field, or
+  leave scope blank and let the keyword scorer decide. Only items scoped or
+  relevant to the current field ever reach the prompt.
+
+Edits are config, not answers, so they live outside the event log — mirrored to
+`localStorage` per room and reloaded on boot. Clearing the timeline (Reset)
+leaves them intact.
+
 ## The model contract
 
 Even a 3B local model stays on the rails because every turn returns one JSON
