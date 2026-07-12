@@ -91,61 +91,30 @@ export class DemoStore extends BaseStore {
 }
 
 // ---- Live Matrix backend ---------------------------------------------------
-// Wraps matrix-js-sdk. Sign-in is a Matrix login (no app-managed auth, no
-// credential store) exactly as in amino. Requires window.matrixcs (the SDK)
-// to be loaded — see index.html for the CDN tag.
+// Dependency-free: no SDK. It rides the account session from auth.js (ported
+// from NPJ) and speaks the raw client-server API. Each op is one room event of
+// type EVENT_TYPE, so the log folds alongside amino data in the same room and
+// the admin — invited to every user's room — can fold them all.
 export class MatrixStore extends BaseStore {
-  constructor(client) { super(); this.client = client; this.user = client.getUserId(); }
-
-  static async login({ homeserver, userId, password }) {
-    const sdk = window.matrixcs;
-    if (!sdk) throw new Error("matrix-js-sdk not loaded");
-    const tmp = sdk.createClient({ baseUrl: homeserver });
-    const res = await tmp.loginWithPassword(userId, password);
-    const client = sdk.createClient({
-      baseUrl: homeserver,
-      accessToken: res.access_token,
-      userId: res.user_id,
-      deviceId: res.device_id,
-    });
-    await client.startClient({ initialSyncLimit: 100 });
-    await new Promise((resolve) => {
-      client.once("sync", (state) => state === "PREPARED" && resolve());
-    });
-    return new MatrixStore(client);
-  }
+  constructor(auth, roomId) { super(); this.auth = auth; this.roomId = roomId; this.user = (auth.current() || {}).user_id || null; }
 
   async open(roomId) {
-    this.roomId = roomId;
-    const room = this.client.getRoom(roomId);
-    if (room) {
-      this._events = room.getLiveTimeline().getEvents()
-        .filter((e) => e.getType() === EVENT_TYPE)
-        .map((e) => this._decode(e));
-    }
-    this.client.on("Room.timeline", (event, room) => {
-      if (room.roomId !== this.roomId) return;
-      if (event.getType() !== EVENT_TYPE) return;
-      const ev = this._decode(event);
-      this._events.push(ev);
-      this._notify(ev);
-    });
+    if (roomId) this.roomId = roomId;
+    const evs = await this.auth.roomEvents(this.roomId, EVENT_TYPE);
+    this._events = evs.map((e) => ({ id: e.id, op: e.content.op, payload: e.content.payload, at: new Date(e.ts).toISOString(), by: e.sender }));
     return this;
   }
 
-  _decode(mxEvent) {
-    const c = mxEvent.getContent();
-    return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
-  }
-
   emit(op, payload) {
-    // Optimistic local append; the echo back from Room.timeline will carry
-    // the server event id. The controller only reads fold(), so a transient
-    // duplicate before the echo is harmless (last-write-wins on the same cell).
+    // Optimistic local append; the server assigns the real event id, which we
+    // fold back in on ack. The controller only reads fold(), so a transient
+    // temp-id before the ack is harmless (last-write-wins on the same cell).
     const ev = { id: rid(), op, payload, at: nowIso(), by: this.user, _pending: true };
     this._events.push(ev);
     this._notify(ev);
-    this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+    this.auth.sendEvent(this.roomId, EVENT_TYPE, { op, payload })
+      .then((serverId) => { if (serverId) ev.id = serverId; ev._pending = false; })
+      .catch(() => { /* keep the optimistic copy; a reopen re-reads the true log */ });
     return ev;
   }
 }

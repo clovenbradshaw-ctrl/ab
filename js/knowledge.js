@@ -55,21 +55,21 @@ function keywords(str) {
   return new Set((str.toLowerCase().match(/[a-z][a-z]{2,}/g) || []).filter((w) => !STOP.has(w)));
 }
 
-// Demo reference material scoped to the example schema's fields. Only the
+// Demo reference material scoped to the sample schema's fields. Only the
 // item(s) relevant to the current field will ever reach the prompt.
 export const DEMO_KNOWLEDGE = new KnowledgeStore([
-  { topic: "Legal name", scope: { field: "full_legal_name" }, tags: ["identity"],
-    text: "Use the exact spelling from a government passport. Document mismatches are recorded as a note, not corrected silently." },
-  { topic: "Protected grounds", scope: { field: "fear_basis" }, tags: ["asylum", "eligibility"],
-    text: "Asylum requires a well-founded fear of persecution on one of five grounds: race, religion, nationality, political opinion, or membership in a particular social group. Cases often span several; pick the closest." },
-  { topic: "Particular social group", scope: { field: "fear_basis" }, tags: ["asylum"],
-    text: "A 'particular social group' shares an immutable characteristic (family, gender, sexual orientation, past experience) that the person cannot or should not be forced to change." },
-  { topic: "Meaning of entry", scope: { field: "entry_date" }, tags: ["dates", "procedure"],
-    text: "'Entry' is the most recent physical arrival in the U.S., including on foot. Approximate dates are flagged for review, never rejected." },
-  { topic: "One-year deadline", scope: { field: "entry_date" }, tags: ["asylum", "deadline"],
-    text: "Asylum is generally filed within one year of the last entry; exceptions exist for changed or extraordinary circumstances. The date matters for that test." },
-  { topic: "Statelessness", scope: { field: "nationality" }, tags: ["identity"],
-    text: "If the person holds no citizenship, record 'stateless' and the country of last habitual residence." },
-  { topic: "Trauma-informed narrative", scope: { field: "narrative" }, tags: ["support", "wellbeing"],
-    text: "The account need not be chronological or complete in one sitting. Fragmentary recall is normal after trauma; partial answers are saved and can be extended." },
+  { topic: "Identifying the account", scope: { field: "account_id" }, tags: ["identity"],
+    text: "The account or phone number is on any recent bill or in the online account. Partial digits are enough to identify it — a full number is never required to open a complaint." },
+  { topic: "Tracked reference and deadline", scope: { field: "description" }, tags: ["procedure", "core"],
+    text: "A logged complaint carries a case reference and a set number of business days for a reply; an agent can't close it without responding. Filing does something concrete — it starts that clock." },
+  { topic: "Escalation to the ombudsman", scope: { field: "resolution" }, tags: ["resolution", "escalation"],
+    text: "If the deadline lapses or the reply doesn't resolve it, telecom complaints can be escalated to an independent industry ombudsman, free of charge. Recording the outcome you want sets the bar that escalation is measured against." },
+  { topic: "Outage vs. billing", scope: { field: "issue_type" }, tags: ["triage"],
+    text: "'Service outage' routes to the network team and is checked against known incidents; 'Billing' routes to accounts. Poor handling of either can be logged as 'Poor customer service' in addition." },
+  { topic: "Approximate dates are fine", scope: { field: "started" }, tags: ["dates"],
+    text: "An approximate start (\"early June\", \"about three weeks ago\") is accepted and flagged as approximate, never rejected. A precise date only matters where a specific event (an outage, a charge) anchors it." },
+  { topic: "Prior contact is evidence", scope: { field: "prior_contact" }, tags: ["procedure"],
+    text: "Every earlier call, chat or email counts — especially ones that went unresolved or where no reference was given. A pattern of contact without resolution strengthens the complaint." },
+  { topic: "Impact counts", scope: { field: "impact" }, tags: ["impact", "wellbeing"],
+    text: "Concrete effects beyond the service — hours lost on hold, a missed work call, extra costs — are optional but weigh on how a complaint is handled. Partial answers are saved and can be extended later." },
 ]);

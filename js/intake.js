@@ -100,8 +100,9 @@ export class Intake {
 
     // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
     // so the empty node never lands inside the live window.
-    const { messages, stats } = this._assemble(f);
-    this._emit("context", stats);
+    const { messages, stats, reference } = this._assemble(f);
+    this._lastReference = reference;   // the UI shows this on a support turn
+    this._emit("context", { field: f, stats, reference });
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
@@ -109,7 +110,15 @@ export class Intake {
     catch (e) { thinking.text = "The model isn't responding — you can keep typing and I'll store your answers directly."; thinking.streaming = false; this._emit("message", thinking); return; }
 
     const parsed = this._parse(raw, f, text);
-    thinking.text = parsed.reply; thinking.streaming = false; thinking.support = parsed.support; this._emit("message", thinking);
+    thinking.text = parsed.reply; thinking.streaming = false; thinking.support = parsed.support;
+    // On a help turn, carry the folded reference so the UI can show the same
+    // "Good to know" note the model was given — minus the field's own help,
+    // which is already the body of the reply.
+    if (parsed.support && reference && reference.items) {
+      const extra = reference.items.filter((it) => it.topic !== f.label);
+      if (extra.length) thinking.reference = { items: extra };
+    }
+    this._emit("message", thinking);
 
     if (parsed.ready && parsed.extracted != null) {
       const err = validate(f, parsed.extracted);
@@ -117,6 +126,15 @@ export class Intake {
       this.pending = { field: f, value: parsed.extracted };
       this._emit("pending", this.pending);
     }
+  }
+
+  // Confirm / reject the pending value from the UI's confirm card (equivalent
+  // to typing "yes" / "no", but without a synthetic user turn in the transcript).
+  confirm() { if (this.pending) return this._confirm(); }
+  reject() {
+    if (!this.pending) return;
+    this.pending = null;
+    this._say("assistant", "No problem — go ahead and tell me the right version.");
   }
 
   // Store the confirmed answer as one DEF operator, then advance. Bumping the

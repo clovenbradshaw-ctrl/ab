@@ -70,6 +70,10 @@ export function assemble({ field, discourse = [], timeline = [], knowledge = nul
 
   return {
     messages,
+    // The folded reference for THIS field, handed back so the UI can show the
+    // same "here's what I'm drawing on" note the model reads (context is
+    // provenance too — the "🔎 N help notes" lens renders straight off this).
+    reference: { text: know.text, items: know.items },
     stats: {
       knowledgeItems: know.items.length,
       knowledgeChars: know.text.length,
