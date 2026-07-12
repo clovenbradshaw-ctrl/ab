@@ -38,9 +38,32 @@ index.html        shell + design tokens (the provenance ledger is the signature)
 js/schema.js      the document — an ordered field set (swap this to fill a different form)
 js/store.js       DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
 js/model.js       WebLLM / Ollama / Echo backends + shared validate()
+js/fold.js        the prompt fold: the model's context is a projection of the log
 js/intake.js      the turn loop: fold -> next question -> support/answer -> confirm -> emit
 js/app.js         DOM wiring only (no logic)
 ```
+
+## The prompt is a fold too
+
+State is never stored — and neither is the prompt. Instead of growing the
+context with every turn, each turn recomputes it from the log (`js/fold.js`),
+the same move `store.js` makes for document state. Mirrors eoreader4.2's
+session-register fold (`turn/converse/history.js`): recent turns **verbatim** +
+a **surfed recap** of the older ones. Because intake is a far more *structured*
+conversation, the two registers specialize:
+
+- **Document register** — the confirmed answers, folded to a compact `ANSWERED
+  SO FAR` block. The "lot of information" reduced to minimal structure, so the
+  model reads what's settled instead of re-deriving it from raw transcript (and
+  never re-asks it).
+- **Session register** — only the **current field's** turns, verbatim within a
+  token budget. A long support detour beyond the budget condenses to a one-line
+  recap rather than being dropped. Cross-field chatter isn't recapped in prose:
+  the only thing an earlier field "moved" is its answer, and that already lives
+  in the document register.
+
+The prompt therefore stays as small as the current question, however long the
+session ran.
 
 ## The model contract
 
