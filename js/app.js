@@ -7,6 +7,7 @@ import { makeModel } from "./model.js";
 import { Intake } from "./intake.js";
 import { KnowledgeStore, DEMO_KNOWLEDGE } from "./knowledge.js";
 import { MINIMAL_SYSTEM } from "./context.js";
+import { createVoice, isSupported as voiceSupported } from "./voice.js";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -391,6 +392,70 @@ $("ctxClose").onclick = closeCtx;
 $("ctxScrim").onclick = closeCtx;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx(); });
 
+// ---- voice input (speak your answer) ---------------------------------------
+// A mic button beside Send: hold a recording, then Whisper hears it locally and
+// drops the transcript into the composer for review before it's sent. The button
+// carries all state (idle / recording+timer / transcribing); nothing leaves the
+// browser. Hidden entirely where the browser can't record.
+function wireVoice() {
+  const btn = $("mic"), input = $("input"), note = $("micNote");
+  if (!btn) return;
+  if (!voiceSupported()) { btn.hidden = true; return; }
+  btn.hidden = false;
+
+  let tick = null, downloaded = false;
+  const setNote = (msg, err = false) => { note.textContent = msg || ""; note.classList.toggle("err", !!err); };
+  const stopTick = () => { if (tick) { clearInterval(tick); tick = null; } };
+
+  const voice = createVoice({
+    onState: (s) => {
+      btn.classList.toggle("rec", s === "recording");
+      btn.classList.toggle("busy", s === "transcribing");
+      btn.setAttribute("aria-pressed", String(s === "recording"));
+      btn.disabled = s === "transcribing";
+      const time = btn.querySelector(".mic-time");
+      if (s === "recording") {
+        btn.title = "Stop and transcribe";
+        const t0 = Date.now();
+        const paint = () => { const s = Math.floor((Date.now() - t0) / 1000); time.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+        paint(); stopTick(); tick = setInterval(paint, 500);
+        setNote("Listening… click the mic again to stop.");
+      } else if (s === "transcribing") {
+        stopTick(); time.textContent = "";
+        btn.title = "Transcribing…";
+        setNote(downloaded ? "Transcribing…" : "Preparing the speech model (one-time download)…");
+      } else {
+        stopTick(); time.textContent = "";
+        btn.title = "Speak your answer";
+      }
+    },
+    onProgress: (frac) => { downloaded = true; setNote(`Downloading the speech model… ${Math.round(frac * 100)}%`); },
+  });
+
+  btn.addEventListener("click", async () => {
+    try {
+      if (voice.state === "idle") { setNote(""); await voice.start(); return; }
+      if (voice.state === "recording") {
+        const text = await voice.stop();
+        if (text) {
+          input.value = (input.value.trim() ? input.value.replace(/\s+$/, "") + " " : "") + text;
+          input.dispatchEvent(new Event("input"));   // re-run auto-resize
+          input.focus();
+          setNote("Heard it — edit if needed, then Send.");
+        } else {
+          setNote("Didn't catch any speech — try again.", true);
+        }
+      }
+    } catch (e) {
+      const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+      setNote(denied ? "Microphone permission is needed to speak an answer." : "Couldn't transcribe — you can type instead.", true);
+    }
+  });
+
+  // Escape while recording abandons the take without transcribing.
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape" && voice.state === "recording") { voice.cancel(); setNote(""); } });
+}
+
 // ---- setup controls --------------------------------------------------------
 $("modelSel").onchange = boot;
 $("storeSel").onchange = boot;
@@ -401,4 +466,5 @@ $("resetBtn").onclick = async () => {
 };
 
 wireCompose();
+wireVoice();
 boot();

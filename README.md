@@ -41,8 +41,21 @@ js/model.js       WebLLM / Ollama / Echo backends + shared validate()
 js/knowledge.js   the reference log — INS-shaped items folded per field on demand
 js/context.js     the prompt fold: assemble the model input as a projection of the logs
 js/intake.js      the turn loop: fold -> next question -> support/answer -> confirm -> emit
+js/voice.js       speak your answer — mic -> in-browser Whisper -> text in the composer
 js/app.js         DOM wiring only (no logic)
 ```
+
+## Speak your answer
+
+The composer has a **microphone** button (hidden where the browser can't record).
+Click it to record, click again to stop, and an on-device speech model hears the
+clip and drops the transcript into the input for you to review and edit before
+sending — the same promise as the rest of the app: **nothing leaves your browser**.
+The waveform is decoded locally and transcribed by Whisper running in the browser
+(the same ear eoreader uses in `organs/in/audio.js`), lazy-loaded from a CDN on
+first use and cached on the device thereafter. Press <kbd>Esc</kbd> while recording
+to discard the take. If the model can't load or no speech is heard, the button
+recovers and you can keep typing.
 
 ## The prompt is a projection too
 
