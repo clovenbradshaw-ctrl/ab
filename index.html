@@ -33,8 +33,8 @@ header.top{display:flex;align-items:baseline;gap:16px;padding:22px 4px 18px;flex
 header.top h1{font-family:Fraunces, Georgia, serif;font-weight:560;font-size:26px;letter-spacing:-.01em;margin:0}
 header.top .sub{color:var(--muted);font-size:14px}
 .setup{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.setup select,.setup button{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);
-  border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer}
+.setup select,.setup button,.setup a.btn{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);
+  border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-block}
 .setup button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .status{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
@@ -160,6 +160,7 @@ header.top .sub{color:var(--muted);font-size:14px}
 .sec button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .sec button.ghost{color:var(--muted)}
 .sec button.danger{color:#B0402F;border-color:#E7C6BF}
+.sec a.btn-link{font:inherit;font-size:12.5px;padding:7px 13px;border:1px solid var(--ink);border-radius:8px;background:var(--ink);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
 .sec textarea{width:100%;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
   font:inherit;background:var(--surface);color:var(--ink)}
 .sec textarea.mono,.sec input.mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.5}
@@ -214,7 +215,8 @@ header.top .sub{color:var(--muted);font-size:14px}
         <option value="demo">Store: Demo (this device)</option>
         <option value="matrix">Store: Matrix (sign in)</option>
       </select>
-      <button id="ctxBtn" title="View & edit the prompt and memory being folded each turn">Context</button>
+      <button id="ctxBtn" title="View the prompt and memory being folded each turn">Context</button>
+      <a class="btn" id="adminLink" href="./admin.html" title="Author the questions (admin)">Admin</a>
       <button id="resetBtn" title="Clear this document's timeline">Reset</button>
       <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
     </div>
@@ -265,7 +267,7 @@ header.top .sub{color:var(--muted);font-size:14px}
   <div class="dhead">
     <div>
       <h2>Folded context</h2>
-      <div class="sub">What gets folded into the model each turn — view it live, edit the parts you own.</div>
+      <div class="sub">What gets folded into the model each turn — computed from the logs, so it can be shown.</div>
     </div>
     <button class="dclose" id="ctxClose" title="Close" aria-label="Close">×</button>
   </div>
@@ -281,24 +283,10 @@ header.top .sub{color:var(--muted);font-size:14px}
       <div id="foldTurns"></div>
     </section>
 
-    <section class="sec" id="secSystem">
-      <h3>System prompt <span class="k" style="font:500 9.5px 'IBM Plex Mono',monospace;color:#fff;background:var(--ink);border-radius:4px;padding:1px 5px;">system</span></h3>
-      <p class="note">The fixed instructions folded in ahead of everything else. Changes apply to the next turn and persist on this device.</p>
-      <textarea id="sysEdit" class="mono" rows="7"></textarea>
-      <div class="btns">
-        <button class="primary" id="sysSave">Save instructions</button>
-        <button class="ghost" id="sysReset">Reset to default</button>
-      </div>
-    </section>
-
-    <section class="sec" id="secMemory">
-      <h3>Memory <span id="memCount" class="k" style="font:500 9.5px 'IBM Plex Mono',monospace;color:#fff;background:var(--turn);border-radius:4px;padding:1px 5px;">0</span></h3>
-      <p class="note">Reference items folded in on demand — only the ones scoped to (or relevant to) the current field reach the prompt. Scope an item to a field <code>path</code> to pin it; leave scope blank to let keyword matching decide.</p>
-      <div id="memList"></div>
-      <div class="btns">
-        <button class="primary" id="memAdd">+ Add memory</button>
-        <button class="ghost" id="memReset">Reset to defaults</button>
-      </div>
+    <section class="sec" id="secAuthoring">
+      <h3>Where this comes from</h3>
+      <p class="note">The instructions, the memory, and the questions themselves aren't stored on your device — they live in a <strong>shared config room</strong> that everyone using this intake reads. Your answers and anything you type stay in your own <strong>private room</strong>, never mixed in with anyone else's. Whoever runs the intake authors the questions and help material from the admin surface.</p>
+      <div class="btns"><a class="btn-link" href="./admin.html">Open the admin surface →</a></div>
     </section>
 
   </div>
