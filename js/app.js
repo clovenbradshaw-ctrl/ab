@@ -1,12 +1,20 @@
 // app.js — wires the controller to the DOM. No business logic lives here;
 // it renders what the Intake controller emits and forwards user input back.
+//
+// Two rooms, by design (see questions.js):
+//   configStore  — the SHARED room every user reads. The questions, their order,
+//                  and the help material live here; the questions surface writes it.
+//                  We only fold it (read) to learn the current document.
+//   store        — this user's PRIVATE room. Everything they confirm, every
+//                  document they upload, and everything specific to them is
+//                  written here, never mixed with another user's timeline.
 
-import { SCHEMA } from "./schema.js";
 import { DemoStore, MatrixStore, OP, newId } from "./store.js";
 import { makeModel } from "./model.js";
 import { Intake } from "./intake.js";
-import { KnowledgeStore, DEMO_KNOWLEDGE } from "./knowledge.js";
+import { KnowledgeStore } from "./knowledge.js";
 import { MINIMAL_SYSTEM } from "./context.js";
+import { CONFIG_ROOM, answerRoomFor, foldConfig, ensureSeeded, DEFAULT_CONFIG } from "./questions.js";
 import { encryptBytes } from "./crypto.js";
 import { DemoMedia, MatrixMedia } from "./media.js";
 import { previewDocument } from "./docview.js";
@@ -16,25 +24,12 @@ import { ADMIN_USER_ID } from "./config.js";
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const HHMM = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const ROOM = "!intake-i589:local"; // demo room id; a real Matrix room id when live
 const MAX_DOC_BYTES = 25 * 1024 * 1024;
 
-let intake, store, knowledge, currentStoreKind = "demo";
-
-// ---- context config: the editable parts of the fold, persisted per room -----
-// The system prompt and memory items are the two things the user can edit; both
-// fold into the prompt each turn (see context.js). We keep them out of the event
-// log (they're config, not answers) and mirror them to localStorage.
-const CTX_KEY = "intake:ctx:" + ROOM;
-const DEFAULT_KNOWLEDGE = DEMO_KNOWLEDGE.toJSON();
-function loadCtxCfg() {
-  try { const c = JSON.parse(localStorage.getItem(CTX_KEY) || "null"); if (c) return c; } catch {}
-  return { systemPrompt: MINIMAL_SYSTEM, knowledge: DEFAULT_KNOWLEDGE };
-}
-function saveCtxCfg() {
-  const cfg = { systemPrompt: intake?.systemPrompt ?? MINIMAL_SYSTEM, knowledge: knowledge ? knowledge.toJSON() : DEFAULT_KNOWLEDGE };
-  try { localStorage.setItem(CTX_KEY, JSON.stringify(cfg)); } catch {}
-}
+// store = this user's private answers+documents room; configStore = the shared
+// question-config room (read-only here). currentStoreKind gates the media
+// backend + admin-dashboard access below.
+let intake, store, configStore, knowledge, currentStoreKind = "demo";
 
 function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
 
@@ -74,17 +69,25 @@ async function boot() {
   const storeKind = $("storeSel").value;
   currentStoreKind = storeKind;
 
-  // store
+  // stores — shared config room (read) + this user's private answers room.
   if (storeKind === "matrix") {
     const homeserver = prompt("Homeserver URL", "https://matrix.org");
     const userId = prompt("Matrix user ID", "@you:matrix.org");
     const password = prompt("Password");
     if (!homeserver || !userId || !password) { $("storeSel").value = "demo"; return boot(); }
+    const configRoom = prompt("Shared config room id (questions — all users read)", CONFIG_ROOM) || CONFIG_ROOM;
+    const answersRoom = prompt("Your private answers room id", answerRoomFor(userId)) || answerRoomFor(userId);
     setStatus("signing in…", "warn");
-    try { store = await MatrixStore.login({ homeserver, userId, password }); await store.open(ROOM); setStatus("live · " + userId, "live"); }
-    catch (e) { alert("Login failed: " + e.message + "\nFalling back to demo."); $("storeSel").value = "demo"; return boot(); }
+    try {
+      const base = await MatrixStore.login({ homeserver, userId, password });
+      configStore = await new MatrixStore(base.client).open(configRoom);
+      store = await new MatrixStore(base.client).open(answersRoom);
+      setStatus("live · " + userId, "live");
+    } catch (e) { alert("Login failed: " + e.message + "\nFalling back to demo."); $("storeSel").value = "demo"; return boot(); }
   } else {
-    store = await new DemoStore().open(ROOM);
+    const userId = "@demo:local";
+    configStore = await new DemoStore("@admin:local").open(CONFIG_ROOM);
+    store = await new DemoStore(userId).open(answerRoomFor(userId));
     setStatus("demo · this device");
   }
 
@@ -112,22 +115,42 @@ async function boot() {
     catch (e) { alert(e.message + "\nStart Ollama or pick another model."); $("modelSel").value = "echo"; return boot(); }
   }
 
-  // controller — seed the editable fold (system prompt + memory) from config.
-  const cfg = loadCtxCfg();
+  // Fold the SHARED config room into the live document (seed the example if the
+  // room is empty). The schema, help, system prompt, and memory the model works
+  // from all come from here — authored in questions.html, read-only for the user.
+  const cfg = ensureSeeded(configStore);
+  const schema = {
+    id: cfg.schema.id,
+    title: cfg.schema.title,
+    blurb: cfg.schema.blurb || DEFAULT_CONFIG.meta.blurb,
+    fields: cfg.schema.fields.length ? cfg.schema.fields : DEFAULT_CONFIG.fields,
+  };
+  const systemPrompt = cfg.systemPrompt || MINIMAL_SYSTEM;
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
-  intake = new Intake({ schema: SCHEMA, store, model, knowledge, systemPrompt: cfg.systemPrompt });
-  $("docTitle").textContent = SCHEMA.title;
+
+  // controller — answers go to the private room; questions/help come from config.
+  intake = new Intake({ schema, store, model, knowledge, systemPrompt });
+  $("docTitle").textContent = schema.title;
   $("stream").innerHTML = ""; $("ledger").innerHTML = "";
 
   intake.on(onIntake);
   store.subscribe(renderSide);
   store.subscribe(renderDocs);
+  configStore.subscribe(onConfigChange);  // admin edits (live over Matrix) prompt a reload
   renderLedgerFromTimeline();
   renderSide();
   renderDocs();
-  renderSystemEditor();
-  renderMemoryEditor();
   await intake.begin();
+}
+
+// The admin changed the shared question set while a user is mid-session. We
+// don't yank the conversation out from under them — we flag it so they can
+// reload to pick up the new questions when they're ready.
+let configDirty = false;
+function onConfigChange() {
+  if (configDirty) return;
+  configDirty = true;
+  setStatus("questions updated by admin — reload to apply", "warn");
 }
 
 // ---- controller events -> DOM ---------------------------------------------
@@ -333,13 +356,12 @@ function wireCompose() {
   input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; });
 }
 
-// ---- context inspector: view the fold, edit its parts ----------------------
-// The drawer shows the live folded prompt and lets you edit the two parts you
-// own — the system prompt and the memory items — with the fold recomputing as
-// you go, so the projection stays legible.
-
-// (1) Live folded prompt. `data` is intake's assemble() result: labeled parts +
-// the live conversation window + the fold stats.
+// ---- context inspector: view the live fold ---------------------------------
+// The prompt is computed, so it can be shown. The drawer renders the live fold
+// for the current field — instructions, the field descriptor, the memory slice
+// retrieved for it, the answer digest, and the live window. Authoring these (the
+// instructions, the memory, the questions) happens in the admin surface, which
+// writes the shared config room; here they are read-only.
 function renderFold(data) {
   if (!data) return;
   const { parts = [], messages = [], stats = {} } = data;
@@ -372,113 +394,11 @@ function renderFold(data) {
   }
 }
 
-// (2) System-prompt editor.
-function renderSystemEditor() { $("sysEdit").value = intake ? intake.systemPrompt : MINIMAL_SYSTEM; }
-$("sysSave").onclick = () => {
-  if (!intake) return;
-  intake.setSystemPrompt($("sysEdit").value);   // re-emits context -> renderFold
-  saveCtxCfg();
-  flashSaved($("sysSave"), "Saved");
-};
-$("sysReset").onclick = () => {
-  if (!intake) return;
-  intake.setSystemPrompt(MINIMAL_SYSTEM);
-  renderSystemEditor(); saveCtxCfg();
-};
-
-// (3) Memory editor. Each card edits one knowledge item in place; saving folds
-// it into the very next prompt.
-function renderMemoryEditor() {
-  const list = $("memList"); if (!list) return;
-  list.innerHTML = "";
-  const items = knowledge ? knowledge.list() : [];
-  $("memCount").textContent = items.length;
-  if (!items.length) list.appendChild(el("div", "empty-turns", "No memory items. Add one — it'll fold in when its field comes up."));
-  for (const it of items) list.appendChild(memCard(it));
-}
-
-function fieldOptions(selected) {
-  const sel = el("select"); sel.className = "mono";
-  const none = el("option", null, "— any field (keyword-matched) —"); none.value = ""; sel.appendChild(none);
-  for (const f of SCHEMA.fields) { const o = el("option", null, `${f.label}  ·  ${f.path}`); o.value = f.path; sel.appendChild(o); }
-  sel.value = selected || "";
-  return sel;
-}
-
-function memCard(it) {
-  const card = el("div", "mem");
-  const markDirty = () => card.classList.add("dirty");
-
-  const topRow = el("div", "row");
-  const topWrap = el("div"); topWrap.appendChild(labeled("Topic"));
-  const topic = el("input"); topic.value = it.topic || ""; topic.oninput = markDirty; topWrap.appendChild(topic);
-  const scopeWrap = el("div"); scopeWrap.appendChild(labeled("Folds in for"));
-  const scope = fieldOptions(it.scope?.field); scope.onchange = markDirty; scopeWrap.appendChild(scope);
-  topRow.appendChild(topWrap); topRow.appendChild(scopeWrap); card.appendChild(topRow);
-
-  const tagWrap = el("div"); tagWrap.appendChild(labeled("Tags (comma-separated)"));
-  const tags = el("input"); tags.className = "mono"; tags.value = (it.tags || []).join(", "); tags.oninput = markDirty; tagWrap.appendChild(tags);
-  card.appendChild(tagWrap);
-
-  const textWrap = el("div"); textWrap.appendChild(labeled("Text"));
-  const text = el("textarea"); text.rows = 3; text.value = it.text || ""; text.oninput = markDirty; textWrap.appendChild(text);
-  card.appendChild(textWrap);
-
-  const foot = el("div", "memfoot");
-  const scoped = el("span", "scoped"); scoped.textContent = it.scope?.field ? "pinned to a field" : "matched by keywords";
-  const save = el("button", "primary", "Save");
-  const del = el("button", "danger", "Delete");
-  save.onclick = () => {
-    knowledge.update(it.id, {
-      topic: topic.value.trim(),
-      text: text.value.trim(),
-      tags: tags.value.split(",").map((t) => t.trim()).filter(Boolean),
-      scope: scope.value ? { field: scope.value } : {},
-    });
-    card.classList.remove("dirty");
-    saveCtxCfg();
-    if (intake) intake._emitContext();   // refresh the live fold view
-    flashSaved(save, "Saved");
-    renderMemoryEditor();
-  };
-  del.onclick = () => {
-    if (!confirm(`Delete memory "${it.topic || it.id}"?`)) return;
-    knowledge.remove(it.id); saveCtxCfg();
-    if (intake) intake._emitContext();
-    renderMemoryEditor();
-  };
-  foot.appendChild(scoped); foot.appendChild(save); foot.appendChild(del);
-  card.appendChild(foot);
-  return card;
-}
-
-function labeled(t) { return el("label", null, t); }
-
-$("memAdd").onclick = () => {
-  if (!knowledge) return;
-  knowledge.add({ topic: "New reference", text: "", scope: {}, tags: [] });
-  saveCtxCfg(); renderMemoryEditor();
-  $("memList").lastElementChild?.scrollIntoView({ block: "nearest" });
-};
-$("memReset").onclick = () => {
-  if (!confirm("Restore the default memory items? Your edits here will be lost.")) return;
-  knowledge = KnowledgeStore.fromJSON(DEFAULT_KNOWLEDGE);
-  if (intake) intake.knowledge = knowledge;
-  saveCtxCfg(); renderMemoryEditor();
-  if (intake) intake._emitContext();
-};
-
-function flashSaved(btn, txt) {
-  const old = btn.textContent; btn.textContent = txt; btn.disabled = true;
-  setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 900);
-}
-
 // ---- drawer open/close -----------------------------------------------------
 function openCtx() {
   $("ctxScrim").classList.add("on");
   $("ctxDrawer").classList.add("on");
   $("ctxDrawer").setAttribute("aria-hidden", "false");
-  renderSystemEditor(); renderMemoryEditor();
   if (intake) renderFold(intake.previewContext());   // show the fold as it stands now
 }
 function closeCtx() {
