@@ -2,6 +2,8 @@
 
 A chatbot that walks someone through a document one field at a time, gives
 support when they're stuck, and stores every confirmed answer to a Matrix room.
+An **admin surface** authors the questions — what's asked, in what order, and
+the material used to help the user — as a shared configuration everyone reads.
 Net new, but built on the two patterns from your repos:
 
 - **Storage = amino.** A room is a table, events are rows, `fold(timeline)` is
@@ -21,6 +23,35 @@ Opens straight into the **Echo + Demo** path — no model download, no homeserve
 answers persist to `localStorage`. Walk the whole intake immediately. Then flip
 the two dropdowns top-right to swap in real backends.
 
+The **Questions** link (top-right, or open `questions.html`) is where you author
+the questions: add/reorder/edit them, write the help each one shows, and edit the
+assistant's instructions and memory. (The separate **Admin** button opens the
+document-review dashboard — see below.) Everything is walkable with zero setup
+too.
+
+## Two rooms: shared questions, private answers
+
+The questions live apart from the answers, on purpose.
+
+- **Shared config room** (`!intake-config:local` in demo) — the questions, their
+  order, the assistant's instructions, and the memory notes used to help the
+  user. *Every* user reads it; nothing in it is specific to any one person. The
+  admin surface writes it. It's an event log like everything else, so the live
+  question set is `foldConfig(timeline)` — recomputed, never stored — and an
+  admin edit reaches every user the next time they fold, with full provenance.
+- **Per-user answers room** (`!intake-answers-<user>:local` in demo) — one per
+  person. Everything they confirm and everything they type lands here and
+  nowhere else, so one person's content is never visible in another's timeline.
+  This is the safety/privacy boundary.
+
+The intake app reads the shared room to learn *what* to ask and writes only the
+signed-in user's room with *their* answers. Because a small local model has a
+limited context window, the fold matters here: the per-field help and memory
+come from the shared room folded to just this field's slice, and the answer
+digest comes from the user's room — so the prompt only ever carries what's
+salient for the question in front of the user, no matter how big either room
+grows.
+
 ## The two forks you chose
 
 | | Options (top-right dropdowns) |
@@ -34,20 +65,29 @@ Backend-agnostic: the controller only calls `model.chat(messages)` and
 ## Files
 
 ```
-index.html        shell + design tokens (the provenance ledger is the signature)
-js/schema.js      the document — an ordered field set (swap this to fill a different form)
-js/store.js       DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
-js/model.js       WebLLM / Ollama / Echo backends + shared validate()
-js/knowledge.js   the reference log — INS-shaped items folded per field on demand
-js/context.js     the prompt fold: assemble the model input as a projection of the logs
-js/intake.js      the turn loop: fold -> next question -> support/answer -> confirm -> emit
-js/config.js      shared constants — currently just the admin account id
-js/crypto.js      AES-256-GCM encrypt/decrypt for uploaded files (Web Crypto, no deps)
-js/media.js       the media store: DemoMedia (IndexedDB) + MatrixMedia (content repo), ciphertext only
-js/docview.js     shared "decrypt and show" modal for a document record
-js/admin.js       admin dashboard: aggregates documents across rooms, table + kanban views
-js/app.js         DOM wiring only (no logic)
+index.html            intake shell + design tokens (the provenance ledger is the signature)
+questions.html        the question-authoring surface — author questions/order/help + instructions/memory
+js/questions.js       the shared question-config room: config events + foldConfig() + seeding; room ids
+js/questions-admin.js question-authoring DOM wiring — edits the shared config room, one event per change
+js/schema.js          the seed document — the ordered field set a fresh config room starts from
+js/store.js           DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
+js/model.js           WebLLM / Ollama / Echo backends + shared validate()
+js/knowledge.js       the reference log — INS-shaped items folded per field on demand
+js/context.js         the prompt fold: assemble the model input as a projection of the logs
+js/intake.js          the turn loop: fold -> next question -> support/answer -> confirm -> emit
+js/config.js          shared constants — currently just the admin account id (document dashboard)
+js/crypto.js          AES-256-GCM encrypt/decrypt for uploaded files (Web Crypto, no deps)
+js/media.js           the media store: DemoMedia (IndexedDB) + MatrixMedia (content repo), ciphertext only
+js/docview.js         shared "decrypt and show" modal for a document record
+js/admin.js           document dashboard: aggregates documents across rooms, table + kanban views
+js/app.js             intake DOM wiring — folds the shared room, writes the user's room + documents
+test/                 Node smoke tests (config fold + the two-room flow end to end)
 ```
+
+Two admin surfaces, kept separate on purpose: **`questions.html`** (this PR)
+authors what's asked and how the assistant helps; the **Admin** dashboard
+(`js/admin.js`, opened from the intake) reviews the documents applicants
+upload. Both read the same per-user rooms; neither touches the other's data.
 
 ## Supporting documents: encrypted at rest, decrypted only for the admin
 
@@ -178,6 +218,13 @@ value awaiting the person's confirmation. On "yes" → one `DEF` is appended.
 
 ## Tests
 
-Core logic (fold, validation, the full confirm-and-store loop, resumability,
-the support path) has a Node smoke test — see the `smoke.mjs` block in the
-build notes; it runs with plain `node` and no browser.
+Core logic has Node smoke tests that run with plain `node` and no browser:
+
+```
+node test/config.smoke.mjs        # the shared config fold: define/edit/reorder/delete questions,
+                                   # system prompt + memory, seeding idempotence
+node test/integration.smoke.mjs   # the two-room flow end to end: an admin authors the shared
+                                   # room, the intake folds it, a user answers into their OWN
+                                   # room — asserting no answer ever leaks into the shared room,
+                                   # and that a fresh controller resumes purely from fold()
+```

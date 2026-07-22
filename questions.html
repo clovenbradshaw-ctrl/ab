@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Intake · Questions — author what gets asked</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Live Matrix backend (optional). Demo needs nothing. -->
+<script src="https://unpkg.com/matrix-js-sdk@34.3.1/dist/browser-matrix.min.js"></script>
+
+<style>
+:root{
+  --ink:#16242B; --paper:#E9EDF0; --surface:#FFFFFF; --line:#D3DADF;
+  --muted:#5C6B72; --seal:#2E6F5E; --seal-soft:#E4EFEA; --turn:#B67A2E;
+  --shadow:0 1px 2px rgba(22,36,43,.06), 0 8px 24px rgba(22,36,43,.05);
+  --r:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+a{color:var(--seal)}
+
+.wrap{max-width:1180px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 20px}
+header.top{display:flex;align-items:baseline;gap:16px;padding:22px 4px 18px;flex-wrap:wrap}
+header.top h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:26px;letter-spacing:-.01em;margin:0}
+header.top .sub{color:var(--muted);font-size:14px}
+.setup{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.setup select,.setup button,.setup a.btn{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none}
+.status{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.dot.live{background:var(--seal)} .dot.warn{background:var(--turn)}
+
+.banner{background:var(--seal-soft);border:1px solid #C9E0D5;border-radius:11px;padding:11px 14px;font-size:13px;color:var(--ink);margin:0 4px 16px;line-height:1.5}
+.banner code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+
+.grid{display:grid;grid-template-columns:1fr 340px;gap:22px;flex:1;padding-bottom:26px;min-height:0}
+.col{display:flex;flex-direction:column;gap:22px;min-width:0}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.card > h2{font-family:Fraunces,serif;font-weight:560;font-size:16px;margin:0;padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+.card > h2 .count{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:var(--muted)}
+.card .body{padding:16px 18px}
+.card .body > .note{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.5}
+
+label.lab{display:block;font:600 10.5px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+input.f,textarea.f,select.f{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink);resize:vertical}
+input.f:focus,textarea.f:focus,select.f:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.row{display:flex;gap:10px}
+.row > *{flex:1;min-width:0}
+.fieldgrp{margin-bottom:11px}
+.check-inline{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink);margin-top:22px}
+.check-inline input{width:16px;height:16px}
+
+button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
+button.ghost{color:var(--muted)}
+button.danger{color:#B0402F;border-color:#E7C6BF;background:var(--surface)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.iconbtn{font:inherit;font-size:12.5px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+.iconbtn{padding:5px 9px;line-height:1}
+
+/* question cards */
+.qlist{display:flex;flex-direction:column;gap:12px}
+.q{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.q .qhead{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#F7F9FA;border-bottom:1px solid var(--line)}
+.q .qnum{font:600 11px "IBM Plex Mono",monospace;color:#fff;background:var(--seal);border-radius:6px;padding:2px 7px;flex:none}
+.q .qpath{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);flex:none}
+.q .qlbl{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q .qspacer{margin-left:auto}
+.q .qmove{display:flex;gap:4px}
+.q .qbody{padding:12px;display:none}
+.q.open .qbody{display:block}
+.q.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
+.q .qtype{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 6px;flex:none}
+.q .req{font:600 9.5px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--turn);flex:none}
+.enumwrap{margin-top:2px}
+
+.foot{color:var(--muted);font-size:12px;padding:6px 4px 22px;line-height:1.5}
+.foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+
+/* ledger (shared config room, as an event log) */
+.ledger-wrap{max-height:420px;overflow-y:auto}
+.ledger{list-style:none;margin:0;padding:0}
+.ledger .empty{padding:22px 18px;color:var(--muted);font-size:13px}
+.ledger li{padding:10px 16px;border-left:3px solid var(--line);font-size:12.5px}
+.ledger li+li{border-top:1px solid #EEF1F3}
+.ledger li.def{border-left-color:var(--turn)}
+.ledger li.ins{border-left-color:var(--seal)}
+.ledger .row1{display:flex;align-items:center;gap:8px}
+.ledger .op{font:500 10.5px "IBM Plex Mono",monospace;letter-spacing:.05em;color:#fff;background:var(--seal);padding:1px 6px;border-radius:5px}
+.ledger li.def .op{background:var(--turn)}
+.ledger .path{font-family:"IBM Plex Mono",monospace;color:var(--ink);font-weight:500}
+.ledger .time{margin-left:auto;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:11px}
+.ledger .val{margin-top:4px;color:var(--ink);word-break:break-word}
+.ledger .eid{margin-top:3px;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:10.5px}
+
+/* memory cards */
+.mem{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:12px;margin-bottom:10px}
+.mem.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
+.mem .memfoot{display:flex;align-items:center;gap:8px;margin-top:4px}
+.mem .memfoot .scoped{font-size:11.5px;color:var(--muted);margin-right:auto}
+
+@media (max-width:900px){ .grid{grid-template-columns:1fr} }
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Intake · Questions</h1>
+    <span class="sub">author the questions every user is asked</span>
+    <div class="setup">
+      <select id="storeSel" title="Where the shared question set is stored">
+        <option value="demo">Store: Demo (this device)</option>
+        <option value="matrix">Store: Matrix (sign in)</option>
+      </select>
+      <a class="btn" id="openIntake" href="./index.html" title="Open the intake the user sees">Open intake →</a>
+      <button id="resetBtn" title="Clear the shared config room and re-seed the example">Reset to example</button>
+      <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">loading…</span></span>
+    </div>
+  </header>
+
+  <div class="banner">
+    You're editing the <strong>shared config room</strong> — the questions, their order, and the material used to help the
+    user. Every user reads this room; nothing here is specific to any one person. What a user answers, and everything they
+    say, is written to <strong>their own private room</strong> (<code id="roomHint">answers room</code>) — never here.
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <!-- document meta -->
+      <section class="card">
+        <h2>Document</h2>
+        <div class="body">
+          <p class="note">The title and the opening line the assistant greets the user with.</p>
+          <div class="fieldgrp"><label class="lab" for="mTitle">Title</label><input class="f" id="mTitle" placeholder="e.g. Asylum intake (I-589, short form)"></div>
+          <div class="fieldgrp"><label class="lab" for="mBlurb">Opening line (blurb)</label><textarea class="f" id="mBlurb" rows="2" placeholder="We'll go through this one question at a time…"></textarea></div>
+          <div class="btns"><button class="primary" id="mSave">Save document</button></div>
+        </div>
+      </section>
+
+      <!-- questions -->
+      <section class="card">
+        <h2>Questions <span class="count" id="qCount">0</span></h2>
+        <div class="body">
+          <p class="note">Each question is asked in order, top to bottom. Reorder with ▲▼. The <strong>help</strong> text and any <strong>memory</strong> below are folded into the model only for that question — so a small local model always sees just what's salient for the field in front of the user.</p>
+          <div class="qlist" id="qlist"></div>
+          <div class="btns" style="margin-top:14px"><button class="primary" id="qAdd">+ Add question</button></div>
+        </div>
+      </section>
+
+      <!-- system prompt -->
+      <section class="card">
+        <h2>Assistant instructions</h2>
+        <div class="body">
+          <p class="note">The fixed system prompt folded in ahead of every turn. Keep it short — it rides on every request to the local model.</p>
+          <textarea class="f mono" id="sysEdit" rows="7"></textarea>
+          <div class="btns" style="margin-top:10px"><button class="primary" id="sysSave">Save instructions</button><button class="ghost" id="sysReset">Reset to default</button></div>
+        </div>
+      </section>
+
+      <!-- memory -->
+      <section class="card">
+        <h2>Memory <span class="count" id="memCount">0</span></h2>
+        <div class="body">
+          <p class="note">Reference notes folded in on demand. Pin a note to a question to always fold it in there; leave the scope blank to let keyword matching decide. Only notes relevant to the current question ever reach the prompt.</p>
+          <div id="memList"></div>
+          <div class="btns" style="margin-top:4px"><button class="primary" id="memAdd">+ Add memory</button></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- right rail: the shared room as an event log -->
+    <aside class="col">
+      <section class="card">
+        <h2>Shared config room <span class="count" id="ledgerCount">0 events</span></h2>
+        <div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Loading…</li></ul></div>
+      </section>
+      <p class="foot">Every edit here is one event appended to the shared room. The live question set is <code>foldConfig(timeline)</code> — recomputed, never stored — so any user picks up your changes the next time they open the intake, with full provenance.</p>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="./js/questions-admin.js"></script>
+</body>
+</html>
