@@ -19,6 +19,8 @@
 //   INS  { entity, id, attrs }         a record was inserted
 //   CON  { from, to, kind }            a relationship was asserted
 
+import { ADMIN_USER_ID } from "./config.js";
+
 export const OP = Object.freeze({ DEF: "DEF", INS: "INS", CON: "CON" });
 
 // Namespace the events so a live homeserver folds them alongside amino's
@@ -60,7 +62,12 @@ export function answersOf(folded, anchor = "_root") {
 }
 
 function nowIso() { return new Date().toISOString(); }
-function rid() { return "e_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+export function newId(prefix = "e") { return prefix + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+export function decodeMxEvent(mxEvent) {
+  const c = mxEvent.getContent();
+  return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
+}
 
 class BaseStore {
   constructor() { this._subs = new Set(); this._events = []; }
@@ -81,13 +88,37 @@ export class DemoStore extends BaseStore {
     return this;
   }
   emit(op, payload) {
-    const ev = { id: rid(), op, payload, at: nowIso(), by: this.user };
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user };
     this._events.push(ev);
     try { localStorage.setItem(this._key, JSON.stringify(this._events)); } catch {}
     this._notify(ev);
     return ev;
   }
   async reset() { this._events = []; try { localStorage.removeItem(this._key); } catch {} this._notify(null); }
+
+  // ---- room enumeration, for the admin dashboard --------------------------
+  // In demo mode "the server" is just this device, so every room ever opened
+  // here lives in localStorage under the same "intake:<roomId>" convention
+  // `open()` uses. This is how the admin view finds every applicant's
+  // submissions without a real multi-user backend to query.
+  static listRoomIds() {
+    const ids = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("intake:") && !k.startsWith("intake:ctx:")) ids.push(k.slice("intake:".length));
+    }
+    return ids;
+  }
+  static loadEvents(roomId) {
+    try { return JSON.parse(localStorage.getItem("intake:" + roomId) || "[]"); } catch { return []; }
+  }
+  static appendEvent(roomId, op, payload, by) {
+    const events = DemoStore.loadEvents(roomId);
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by };
+    events.push(ev);
+    try { localStorage.setItem("intake:" + roomId, JSON.stringify(events)); } catch {}
+    return ev;
+  }
 }
 
 // ---- Live Matrix backend ---------------------------------------------------
@@ -122,6 +153,7 @@ export class MatrixStore extends BaseStore {
       this._events = room.getLiveTimeline().getEvents()
         .filter((e) => e.getType() === EVENT_TYPE)
         .map((e) => this._decode(e));
+      this._ensureAdminInvited(room);
     }
     this.client.on("Room.timeline", (event, room) => {
       if (room.roomId !== this.roomId) return;
@@ -133,19 +165,39 @@ export class MatrixStore extends BaseStore {
     return this;
   }
 
-  _decode(mxEvent) {
-    const c = mxEvent.getContent();
-    return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
+  // Give the admin visibility into this room, the same way a caseworker gets
+  // added to a case file — without this, "the admin can see everything" is
+  // just a claim, since Matrix room membership is what actually gates who
+  // can read the document keys folded into these events. Best-effort: silently
+  // no-ops if we lack invite permission or the admin is already a member.
+  // This is a convenience, not the security boundary — room membership is.
+  async _ensureAdminInvited(room) {
+    if (this.user === ADMIN_USER_ID) return;
+    if (room.getMember(ADMIN_USER_ID)) return;
+    try { await this.client.invite(this.roomId, ADMIN_USER_ID); } catch {}
   }
+
+  _decode(mxEvent) { return decodeMxEvent(mxEvent); }
 
   emit(op, payload) {
     // Optimistic local append; the echo back from Room.timeline will carry
     // the server event id. The controller only reads fold(), so a transient
     // duplicate before the echo is harmless (last-write-wins on the same cell).
-    const ev = { id: rid(), op, payload, at: nowIso(), by: this.user, _pending: true };
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user, _pending: true };
     this._events.push(ev);
     this._notify(ev);
     this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
     return ev;
+  }
+
+  // ---- room enumeration, for the admin dashboard --------------------------
+  // The admin's own joined-rooms list already reflects real Matrix room
+  // membership (built up via _ensureAdminInvited above), so this is exactly
+  // "every room the admin actually has access to" — no separate index needed.
+  static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
+  static foldRoomEvents(client, roomId) {
+    const room = client.getRoom(roomId);
+    if (!room) return [];
+    return room.getLiveTimeline().getEvents().filter((e) => e.getType() === EVENT_TYPE).map(decodeMxEvent);
   }
 }
