@@ -9,13 +9,13 @@
 //
 // Default is WebLLM, in-browser, zero server. Ollama is there for bigger
 // models on a local daemon. Echo needs nothing at all and makes the whole
-// intake flow demonstrable offline — it fakes a small instruct model well
+// intake flow demonstrable offline — it fakes a small, fast instruct model well
 // enough to drive the conversation and return the structured JSON the
 // controller expects.
 
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 export class WebLLMModel {
-  constructor(modelId = "Llama-3.2-3B-Instruct-q4f16_1-MLC") {
+  constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
     this.modelId = modelId; this.engine = null;
   }
   async ready(onProgress) {
