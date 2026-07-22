@@ -38,7 +38,7 @@ function showLoader() {
   $("loadBar").classList.add("indet");
   $("loadBar").style.width = "";
   $("loadPct").textContent = "0%";
-  $("loadName").textContent = "Preparing Llama 3.2 (3B)…";
+  $("loadName").textContent = "Preparing Llama 3.2 (1B)…";
   $("loadStage").textContent = "Starting the in-browser engine";
   l.classList.add("on");
   setStatus("loading model…", "warn");
@@ -51,7 +51,7 @@ function updateLoader(text, p) {
     bar.style.width = pct + "%";
     $("loadPct").textContent = pct + "%";
   }
-  $("loadName").textContent = pct >= 100 ? "Almost ready — finishing up…" : "Downloading Llama 3.2 (3B)";
+  $("loadName").textContent = pct >= 100 ? "Almost ready — finishing up…" : "Downloading Llama 3.2 (1B)";
   if (text) $("loadStage").textContent = text;
   setStatus(`model ${pct}%`, "warn");
 }
@@ -93,7 +93,7 @@ async function boot() {
     try {
       await model.ready((text, p) => updateLoader(text, p));
       hideLoader();
-      setStatus("Llama 3.2 · ready", "live");
+      setStatus("Llama 3.2 1B · ready", "live");
     } catch (e) {
       hideLoader();
       setStatus("demo · model unavailable", "warn");
