@@ -23,10 +23,11 @@ Opens straight into the **Echo + Demo** path — no model download, no homeserve
 answers persist to `localStorage`. Walk the whole intake immediately. Then flip
 the two dropdowns top-right to swap in real backends.
 
-The **Admin** button (top-right, or open `admin.html`) is where you author the
-questions: add/reorder/edit them, write the help each one shows, and edit the
-assistant's instructions and memory. Everything you do there is walkable with
-zero setup too.
+The **Questions** link (top-right, or open `questions.html`) is where you author
+the questions: add/reorder/edit them, write the help each one shows, and edit the
+assistant's instructions and memory. (The separate **Admin** button opens the
+document-review dashboard — see below.) Everything is walkable with zero setup
+too.
 
 ## Two rooms: shared questions, private answers
 
@@ -64,19 +65,82 @@ Backend-agnostic: the controller only calls `model.chat(messages)` and
 ## Files
 
 ```
-index.html        intake shell + design tokens (the provenance ledger is the signature)
-admin.html        the admin surface — author questions/order/help + instructions/memory
-js/config.js      the shared config room: config events + foldConfig() + seeding; room ids
-js/schema.js      the seed document — the ordered field set a fresh config room starts from
-js/store.js       DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
-js/model.js       WebLLM / Ollama / Echo backends + shared validate()
-js/knowledge.js   the reference log — INS-shaped items folded per field on demand
-js/context.js     the prompt fold: assemble the model input as a projection of the logs
-js/intake.js      the turn loop: fold -> next question -> support/answer -> confirm -> emit
-js/app.js         intake DOM wiring — folds the shared room, writes the user's room
-js/admin.js       admin DOM wiring — edits the shared config room, one event per change
-test/             Node smoke tests (config fold + the two-room flow end to end)
+index.html            intake shell + design tokens (the provenance ledger is the signature)
+questions.html        the question-authoring surface — author questions/order/help + instructions/memory
+js/questions.js       the shared question-config room: config events + foldConfig() + seeding; room ids
+js/questions-admin.js question-authoring DOM wiring — edits the shared config room, one event per change
+js/schema.js          the seed document — the ordered field set a fresh config room starts from
+js/store.js           DemoStore + MatrixStore behind one interface; OP.DEF/INS/CON + fold()
+js/model.js           WebLLM / Ollama / Echo backends + shared validate()
+js/knowledge.js       the reference log — INS-shaped items folded per field on demand
+js/context.js         the prompt fold: assemble the model input as a projection of the logs
+js/intake.js          the turn loop: fold -> next question -> support/answer -> confirm -> emit
+js/config.js          shared constants — currently just the admin account id (document dashboard)
+js/crypto.js          AES-256-GCM encrypt/decrypt for uploaded files (Web Crypto, no deps)
+js/media.js           the media store: DemoMedia (IndexedDB) + MatrixMedia (content repo), ciphertext only
+js/docview.js         shared "decrypt and show" modal for a document record
+js/admin.js           document dashboard: aggregates documents across rooms, table + kanban views
+js/app.js             intake DOM wiring — folds the shared room, writes the user's room + documents
+test/                 Node smoke tests (config fold + the two-room flow end to end)
 ```
+
+Two admin surfaces, kept separate on purpose: **`questions.html`** (this PR)
+authors what's asked and how the assistant helps; the **Admin** dashboard
+(`js/admin.js`, opened from the intake) reviews the documents applicants
+upload. Both read the same per-user rooms; neither touches the other's data.
+
+## Supporting documents: encrypted at rest, decrypted only for the admin
+
+Applicants can attach supporting documents (the "Supporting documents" card
+in the right rail, or drag-and-drop). Each file is:
+
+1. Read into memory and encrypted client-side with a fresh AES-256-GCM key
+   (`js/crypto.js`) — the plaintext never leaves the browser.
+2. Uploaded as ciphertext to the media store (`js/media.js`) — `DemoMedia`
+   (IndexedDB, standing in for a homeserver) in demo mode, or the real Matrix
+   content repository (`client.uploadContent`) in live mode. The media store
+   itself only ever sees encrypted bytes.
+3. Recorded as one `INS` "document" event in the room (filename, mimetype,
+   size, the upload's `url`, and the AES key/iv/hash needed to decrypt it) —
+   the same operator algebra as everything else in this app.
+
+Whoever can read that event can decrypt the file — for Matrix that's whoever
+is a member of the room. `MatrixStore.open()` best-effort invites the admin
+account (`js/config.js`, `@abc:hyphae.social` for now) into every applicant's
+room as it's opened, so the admin ends up joined to all of them, the same way
+a caseworker gets added to a case file. That invite is a convenience, not the
+security boundary — room membership is.
+
+### Admin dashboard
+
+The **Admin** button (top-right) opens a dashboard with **Table** and
+**Kanban** views over every document across every room the signed-in admin
+can see:
+
+- **Table** — one row per document (applicant, filename, type, size,
+  uploaded, status), with a status dropdown and a **View** button.
+- **Kanban** — the same documents grouped into `New / In review / Verified /
+  Flagged` columns; drag a card to change its status.
+
+Status changes are themselves just a `DEF` (`anchor: <documentId>, path:
+"status"`), so they fold the same way everything else does — no separate
+mutable state.
+
+**View** fetches the ciphertext from the media store and decrypts it
+in-browser (`js/docview.js`) into a blob URL scoped to that tab — images and
+PDFs preview inline, everything else offers a decrypted download. The file is
+never written back to disk or the store as plaintext.
+
+In Matrix mode the dashboard is gated to the admin account; in demo mode
+(this device only, no real multi-user auth) it's open for trying the feature
+without a homeserver — every room ever opened on this device shows up via
+`DemoStore.listRoomIds()`.
+
+**Known limitation:** the AES key for a file rides in the room event itself.
+If the room isn't end-to-end encrypted (see the E2EE note below), that key —
+and therefore the file, once fetched — is only as protected as the room's
+transport security. The media *repository* never sees plaintext either way;
+closing that last gap means finishing the E2EE wiring noted below.
 
 ## The prompt is a projection too
 
