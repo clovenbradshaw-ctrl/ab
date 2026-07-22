@@ -206,7 +206,7 @@ header.top .sub{color:var(--muted);font-size:14px}
     <span class="sub">one question at a time · nothing lost</span>
     <div class="setup">
       <select id="modelSel" title="Where the model runs">
-        <option value="webllm">Model: Llama 3.2 · in-browser</option>
+        <option value="webllm">Model: SmolLM2 360M q4 · in-browser</option>
         <option value="echo">Model: Demo (no download)</option>
         <option value="ollama">Model: Ollama (local)</option>
       </select>
@@ -230,7 +230,7 @@ header.top .sub{color:var(--muted);font-size:14px}
         <div class="pbar"><i id="loadBar"></i></div>
         <div class="lname" id="loadName">Preparing the in-browser model…</div>
         <div class="lstage mono" id="loadStage">Starting up</div>
-        <p class="lnote">The model runs entirely in your browser. The first load downloads it once (~1.9&nbsp;GB) and caches it on this device, so it opens instantly next time. Nothing you type leaves your browser.</p>
+        <p class="lnote">The model runs entirely in your browser. The first load downloads a quantized model once (~376&nbsp;MB) and caches it on this device, so it opens instantly next time. Nothing you type leaves your browser.</p>
       </div>
       <div class="progress">
         <div class="ring-wrap"><div class="ring" id="ring"></div><b id="ringN">0/0</b></div>

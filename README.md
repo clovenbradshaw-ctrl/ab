@@ -94,7 +94,7 @@ leaves them intact.
 
 ## The model contract
 
-Even a 3B local model stays on the rails because every turn returns one JSON
+Even a small quantized local model stays on the rails because every turn returns one JSON
 envelope, parsed leniently (prose/fences tolerated, falls back to treating a
 valid raw answer as the value):
 
