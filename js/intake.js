@@ -6,7 +6,7 @@
 // operator into the store. Progress is the room timeline, so the flow is
 // resumable for free — reopen the room and fold tells you where you stopped.
 //
-// The model contract is a small JSON envelope, so even a 3B local model stays
+// The model contract is a small JSON envelope, so even a 1B local model stays
 // on the rails:
 //   { reply, support?: bool, ready?: bool, extracted?: string|null }
 //     reply     — what to say to the person (always)
