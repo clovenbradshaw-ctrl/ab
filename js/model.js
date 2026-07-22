@@ -13,6 +13,27 @@
 // enough to drive the conversation and return the structured JSON the
 // controller expects.
 
+// ---- Shared envelope schema -------------------------------------------------
+// intake.js's contract is one fixed JSON shape (see below). Rather than only
+// asking for it in the system prompt, we hand backends that support grammar-
+// constrained decoding this schema directly — output can't structurally be
+// anything else, and generation halts the instant it's satisfied. That's what
+// keeps a 1B model "on the rails": fast (no wasted tokens rambling past the
+// envelope, bounded by max_tokens/num_predict below) and reliable (no
+// malformed-JSON fallback needed on the happy path).
+const REPLY_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    support: { type: "boolean" },
+    ready: { type: "boolean" },
+    extracted: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  required: ["reply", "support", "ready", "extracted"],
+};
+const REPLY_SCHEMA_STR = JSON.stringify(REPLY_SCHEMA);
+const MAX_REPLY_TOKENS = 200; // one short conversational turn — keeps a small model snappy
+
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 export class WebLLMModel {
   constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
@@ -26,12 +47,18 @@ export class WebLLMModel {
     });
   }
   async chat(messages) {
-    const r = await this.engine.chat.completions.create({ messages, temperature: 0.3 });
+    const r = await this.engine.chat.completions.create({
+      messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS,
+      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+    });
     return r.choices[0].message.content;
   }
   async stream(messages, onToken) {
     let full = "";
-    const it = await this.engine.chat.completions.create({ messages, temperature: 0.3, stream: true });
+    const it = await this.engine.chat.completions.create({
+      messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS, stream: true,
+      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+    });
     for await (const chunk of it) {
       const t = chunk.choices[0]?.delta?.content || "";
       if (t) { full += t; onToken?.(t); }
@@ -52,7 +79,7 @@ export class OllamaModel {
   async chat(messages) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: false, options: { temperature: 0.3 } }),
+      body: JSON.stringify({ model: this.model, messages, stream: false, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const d = await r.json();
     return d.message.content;
@@ -60,7 +87,7 @@ export class OllamaModel {
   async stream(messages, onToken) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: true, options: { temperature: 0.3 } }),
+      body: JSON.stringify({ model: this.model, messages, stream: true, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const reader = r.body.getReader(); const dec = new TextDecoder(); let full = "";
     for (;;) {
