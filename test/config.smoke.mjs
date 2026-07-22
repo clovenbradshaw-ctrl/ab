@@ -10,7 +10,7 @@
 import {
   foldConfig, putField, deleteField, setFieldOrder, setSystemPrompt,
   setMeta, putKnowledge, deleteKnowledge, seedConfig, ensureSeeded, DEFAULT_CONFIG,
-} from "../js/config.js";
+} from "../js/questions.js";
 
 // Minimal store: just the append-log surface config.js uses (emit + timeline).
 function makeStore() {

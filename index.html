@@ -192,10 +192,96 @@ header.top .sub{color:var(--muted);font-size:14px}
 .mem .memfoot .scoped{font-size:11.5px;color:var(--muted);margin-right:auto}
 .mem.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
 
+.hidden{display:none!important}
+
+/* ---- supporting documents (upload) ---- */
+.docs-drop{margin:10px 12px;padding:16px 14px;border:1.5px dashed var(--line);border-radius:11px;text-align:center;
+  background:#FAFBFC;transition:border-color .15s ease,background .15s ease}
+.docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
+.docs-drop p{margin:0 0 6px;font-size:12.5px;color:var(--muted)}
+.docs-drop p:last-child{margin-bottom:0;font-size:11.5px}
+.docs-drop button{font:inherit;font-size:inherit;color:var(--seal);background:none;border:none;padding:0;
+  text-decoration:underline;cursor:pointer}
+.docs-list{list-style:none;margin:0;padding:0 12px 10px}
+.docs-list .doc{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px;background:var(--surface)}
+.docs-list .doc.pending{opacity:.75}
+.docs-list .doc.error{border-color:#E7C6BF;background:#FBF2EF}
+.docs-list .drow1{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:500}
+.docs-list .dsize{color:var(--muted);font:500 11px "IBM Plex Mono",monospace;flex:none}
+.docs-list .drow2{display:flex;align-items:center;gap:8px;margin-top:6px}
+.docs-list .docs-status{font-size:12px;color:var(--muted)}
+.docs-list .dview{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface);color:var(--ink);cursor:pointer}
+.docs-list .dstatus{font:500 10.5px "IBM Plex Mono",monospace;letter-spacing:.03em;text-transform:uppercase;
+  color:var(--muted);margin-left:auto;padding:2px 7px;border-radius:99px;background:#F2F5F7}
+.docs-list .doc.status-verified .dstatus{background:var(--seal-soft);color:var(--seal)}
+.docs-list .doc.status-flagged .dstatus{background:#FBE7E1;color:#B0402F}
+.docs-list .doc.status-in_review .dstatus{background:#FBF1E3;color:var(--turn)}
+
+/* ---- decrypted-document preview modal ---- */
+.docscrim{position:fixed;inset:0;background:rgba(22,36,43,.4);backdrop-filter:blur(2px);z-index:40;
+  display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease}
+.docscrim.on{opacity:1;pointer-events:auto}
+.docmodal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);width:min(640px,92vw);
+  max-height:86vh;overflow:auto;padding:22px 24px;position:relative}
+.docclose{position:absolute;top:14px;right:14px;border:1px solid var(--line);background:var(--surface);
+  border-radius:9px;width:30px;height:30px;font-size:16px;cursor:pointer;color:var(--muted)}
+.dochead{font-family:Fraunces,serif;font-weight:560;font-size:18px;margin:0 30px 14px 0;word-break:break-word}
+.docbody{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.docstatus{font-size:13.5px;color:var(--muted);margin:0}
+.docstatus.error{color:#B0402F}
+.docimg{max-width:100%;max-height:60vh;border-radius:10px;border:1px solid var(--line)}
+.docframe{width:100%;height:60vh;border:1px solid var(--line);border-radius:10px}
+.docdownload{font:600 13.5px Inter;color:#fff;background:var(--ink);padding:9px 16px;border-radius:9px;
+  text-decoration:none}
+
+/* ---- admin dashboard ---- */
+.adminview{max-width:1280px;margin:0 auto;padding:22px 20px 40px;min-height:100%}
+.atop{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.atop h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:24px;margin:0}
+.atop .sub{color:var(--muted);font-size:13px}
+.atabs{margin-left:auto;display:flex;gap:6px}
+.atab{font:600 13px Inter;padding:8px 16px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface);color:var(--muted);cursor:pointer}
+.atab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.aclose{font:inherit;font-size:13px;padding:8px 14px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface);color:var(--ink);cursor:pointer}
+.aempty{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:40px 24px;
+  text-align:center;color:var(--muted);font-size:14px}
+
+.atable-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:auto}
+.atable{width:100%;border-collapse:collapse;font-size:13.5px}
+.atable th{text-align:left;font:600 11px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);
+  padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+.atable td{padding:11px 14px;border-bottom:1px solid #EEF1F3;vertical-align:middle}
+.atable tr:last-child td{border-bottom:none}
+.atable .acell-mime,.atable .acell-size,.atable .acell-date{color:var(--muted);font-size:12px;white-space:nowrap}
+.atable .acell-name{font-weight:600}
+.astatus-sel{font:500 12px Inter;padding:5px 8px;border-radius:7px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);cursor:pointer}
+.aview{font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
+
+.kanban{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;overflow-x:auto}
+.kcol{background:#F2F5F7;border:1px solid var(--line);border-radius:var(--r);padding:12px;min-height:120px}
+.khead{display:flex;justify-content:space-between;align-items:center;font:600 13px Inter;margin-bottom:10px}
+.kcount{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);
+  border-radius:99px;padding:1px 8px}
+.klist{display:flex;flex-direction:column;gap:8px;min-height:60px;border-radius:9px;transition:background .12s ease}
+.klist.over{background:var(--seal-soft)}
+.kcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+  cursor:grab;box-shadow:var(--shadow)}
+.kcard:active{cursor:grabbing}
+.kname{font-size:13px;font-weight:600;word-break:break-word}
+.kapp{font-size:12px;color:var(--muted);margin-top:2px}
+.kmeta{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);margin:5px 0 8px}
+
 @media (max-width:900px){
   .grid{grid-template-columns:1fr}
   .rail{flex-direction:column}
   .msg{max-width:90%}
+  .kanban{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -216,7 +302,8 @@ header.top .sub{color:var(--muted);font-size:14px}
         <option value="matrix">Store: Matrix (sign in)</option>
       </select>
       <button id="ctxBtn" title="View the prompt and memory being folded each turn">Context</button>
-      <a class="btn" id="adminLink" href="./admin.html" title="Author the questions (admin)">Admin</a>
+      <a class="btn" id="questionsLink" href="./questions.html" title="Author the questions every user is asked">Questions</a>
+      <button id="adminBtn" title="Admin dashboard — table & kanban views of uploaded documents, decrypted">Admin</button>
       <button id="resetBtn" title="Clear this document's timeline">Reset</button>
       <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
     </div>
@@ -253,6 +340,15 @@ header.top .sub{color:var(--muted);font-size:14px}
         <ul class="check" id="check"></ul>
       </div>
       <div class="card">
+        <h2>Supporting documents <span class="count" id="docsCount"></span></h2>
+        <div class="docs-drop" id="docsDrop">
+          <input type="file" id="docsInput" multiple hidden>
+          <p>Drop files here or <button id="docsBrowse" type="button">browse</button></p>
+          <p class="docs-note">Encrypted in your browser before upload — the server only ever stores ciphertext. Only you and your caseworker can open them.</p>
+        </div>
+        <ul class="docs-list" id="docsList"></ul>
+      </div>
+      <div class="card">
         <h2>Stored to the room <span class="count" id="ledgerCount">0 events</span></h2>
         <div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet. Each answer you confirm is written here as one event.</li></ul></div>
       </div>
@@ -286,11 +382,27 @@ header.top .sub{color:var(--muted);font-size:14px}
     <section class="sec" id="secAuthoring">
       <h3>Where this comes from</h3>
       <p class="note">The instructions, the memory, and the questions themselves aren't stored on your device — they live in a <strong>shared config room</strong> that everyone using this intake reads. Your answers and anything you type stay in your own <strong>private room</strong>, never mixed in with anyone else's. Whoever runs the intake authors the questions and help material from the admin surface.</p>
-      <div class="btns"><a class="btn-link" href="./admin.html">Open the admin surface →</a></div>
+      <div class="btns"><a class="btn-link" href="./questions.html">Open the questions surface →</a></div>
     </section>
 
   </div>
 </aside>
+
+<!-- admin dashboard: table + kanban views over every applicant's uploaded
+     documents, decrypted on demand. Only reachable by the admin account
+     (config.js ADMIN_USER_ID) in Matrix mode; open to try in demo mode. -->
+<main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
+  <header class="atop">
+    <h1>Submissions</h1>
+    <span class="sub" id="adminWho"></span>
+    <div class="atabs">
+      <button class="atab on" data-view="table" type="button">Table</button>
+      <button class="atab" data-view="kanban" type="button">Kanban</button>
+    </div>
+    <button class="aclose" id="adminClose" type="button">← Back to intake</button>
+  </header>
+  <div class="abody" id="adminBody"></div>
+</main>
 
 <script type="module" src="./js/app.js"></script>
 </body>

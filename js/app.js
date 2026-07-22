@@ -1,26 +1,35 @@
 // app.js — wires the controller to the DOM. No business logic lives here;
 // it renders what the Intake controller emits and forwards user input back.
 //
-// Two rooms, by design (see config.js):
+// Two rooms, by design (see questions.js):
 //   configStore  — the SHARED room every user reads. The questions, their order,
-//                  and the help material live here; the admin surface writes it.
+//                  and the help material live here; the questions surface writes it.
 //                  We only fold it (read) to learn the current document.
-//   store        — this user's PRIVATE answers room. Everything they confirm and
-//                  everything specific to them is written here, never mixed with
-//                  another user's timeline.
+//   store        — this user's PRIVATE room. Everything they confirm, every
+//                  document they upload, and everything specific to them is
+//                  written here, never mixed with another user's timeline.
 
-import { DemoStore, MatrixStore } from "./store.js";
+import { DemoStore, MatrixStore, OP, newId } from "./store.js";
 import { makeModel } from "./model.js";
 import { Intake } from "./intake.js";
 import { KnowledgeStore } from "./knowledge.js";
 import { MINIMAL_SYSTEM } from "./context.js";
-import { CONFIG_ROOM, answerRoomFor, foldConfig, ensureSeeded, DEFAULT_CONFIG } from "./config.js";
+import { CONFIG_ROOM, answerRoomFor, foldConfig, ensureSeeded, DEFAULT_CONFIG } from "./questions.js";
+import { encryptBytes } from "./crypto.js";
+import { DemoMedia, MatrixMedia } from "./media.js";
+import { previewDocument } from "./docview.js";
+import { initAdminView } from "./admin.js";
+import { ADMIN_USER_ID } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const HHMM = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const MAX_DOC_BYTES = 25 * 1024 * 1024;
 
-let intake, store, configStore, knowledge;
+// store = this user's private answers+documents room; configStore = the shared
+// question-config room (read-only here). currentStoreKind gates the media
+// backend + admin-dashboard access below.
+let intake, store, configStore, knowledge, currentStoreKind = "demo";
 
 function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
 
@@ -58,6 +67,7 @@ async function boot() {
   hideLoader();
   const modelKind = $("modelSel").value;
   const storeKind = $("storeSel").value;
+  currentStoreKind = storeKind;
 
   // stores — shared config room (read) + this user's private answers room.
   if (storeKind === "matrix") {
@@ -107,7 +117,7 @@ async function boot() {
 
   // Fold the SHARED config room into the live document (seed the example if the
   // room is empty). The schema, help, system prompt, and memory the model works
-  // from all come from here — authored in admin.html, read-only for the user.
+  // from all come from here — authored in questions.html, read-only for the user.
   const cfg = ensureSeeded(configStore);
   const schema = {
     id: cfg.schema.id,
@@ -125,9 +135,11 @@ async function boot() {
 
   intake.on(onIntake);
   store.subscribe(renderSide);
+  store.subscribe(renderDocs);
   configStore.subscribe(onConfigChange);  // admin edits (live over Matrix) prompt a reload
   renderLedgerFromTimeline();
   renderSide();
+  renderDocs();
   await intake.begin();
 }
 
@@ -208,6 +220,97 @@ function editFromChecklist(f) {
   const r = intake.editField(f.path, next);
   if (!r.ok) alert(r.error);
 }
+
+// ---- supporting documents ---------------------------------------------------
+// Uploads never touch the store or the media backend as plaintext: each file
+// is AES-encrypted in the browser (crypto.js), the ciphertext goes to the
+// media store (media.js), and only the resulting url + key/iv/hash — never
+// the file itself — is written to the room as one INS "document" record.
+function mediaBackend() { return currentStoreKind === "matrix" ? new MatrixMedia(store.client) : new DemoMedia(); }
+function fmtBytes(n) {
+  if (n == null) return "";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + " " + u[i];
+}
+const DOC_STATUS_LABEL = { new: "New", in_review: "In review", verified: "Verified", flagged: "Flagged" };
+
+function wireDocs() {
+  const drop = $("docsDrop"), input = $("docsInput");
+  $("docsBrowse").onclick = () => input.click();
+  input.onchange = () => { handleFiles(input.files); input.value = ""; };
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
+}
+
+async function handleFiles(fileList) {
+  if (!store) return;
+  for (const file of Array.from(fileList)) {
+    if (file.size > MAX_DOC_BYTES) { alert(`"${file.name}" is over the 25 MB limit.`); continue; }
+    const row = el("li", "doc pending");
+    row.appendChild(el("div", "drow1", file.name));
+    const status = el("div", "docs-status", "Encrypting & uploading…");
+    row.appendChild(status);
+    $("docsList").prepend(row);
+    try {
+      const buf = await file.arrayBuffer();
+      const { ciphertext, key, iv, hash } = await encryptBytes(buf);
+      const id = newId("doc");
+      const url = await mediaBackend().put(id, ciphertext);
+      store.emit(OP.INS, {
+        entity: "document",
+        id,
+        attrs: { filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, url, key, iv, hash, status: "new" },
+      });
+      row.remove(); // renderDocs() picks the stored record up from the timeline
+    } catch (e) {
+      status.textContent = "Failed: " + e.message;
+      row.classList.add("error");
+    }
+  }
+}
+
+function renderDocs() {
+  if (!store) return;
+  const folded = store.fold();
+  const docs = Object.entries(folded.records)
+    .filter(([, r]) => r.entity === "document")
+    .map(([id, r]) => ({ id, ...r.attrs, uploadedAt: r.at }));
+  const list = $("docsList");
+  list.querySelectorAll(".doc:not(.pending)").forEach((n) => n.remove());
+  $("docsCount").textContent = docs.length ? String(docs.length) : "";
+  for (const d of docs.reverse()) list.appendChild(docRow(d));
+}
+
+function docRow(d) {
+  const li = el("li", "doc status-" + d.status);
+  const top = el("div", "drow1");
+  top.appendChild(el("span", "dname", d.filename));
+  top.appendChild(el("span", "dsize", fmtBytes(d.size)));
+  li.appendChild(top);
+  const bottom = el("div", "drow2");
+  const view = el("button", "dview", "View"); view.onclick = () => previewDocument(d, mediaBackend());
+  bottom.appendChild(view);
+  bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
+  li.appendChild(bottom);
+  return li;
+}
+
+// ---- admin dashboard ---------------------------------------------------------
+const adminCtl = initAdminView({
+  onClose: () => { $("adminView").classList.add("hidden"); document.querySelector(".wrap").classList.remove("hidden"); },
+});
+$("adminBtn").onclick = () => {
+  if (!store) return;
+  if (currentStoreKind === "matrix" && store.user !== ADMIN_USER_ID) {
+    alert(`Sign in as the admin account (${ADMIN_USER_ID}) to view submissions.`);
+    return;
+  }
+  document.querySelector(".wrap").classList.add("hidden");
+  $("adminView").classList.remove("hidden");
+  adminCtl.show({ storeKind: currentStoreKind, client: store.client, currentUserId: store.user });
+};
 
 // ---- provenance ledger -----------------------------------------------------
 function renderLedgerFromTimeline() {
@@ -318,4 +421,5 @@ $("resetBtn").onclick = async () => {
 };
 
 wireCompose();
+wireDocs();
 boot();

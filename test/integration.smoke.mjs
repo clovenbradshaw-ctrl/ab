@@ -14,7 +14,7 @@ import { DemoStore } from "../js/store.js";
 import { EchoModel } from "../js/model.js";
 import { KnowledgeStore } from "../js/knowledge.js";
 import { Intake } from "../js/intake.js";
-import { foldConfig, ensureSeeded, putField, setFieldOrder, CONFIG_ANCHOR } from "../js/config.js";
+import { foldConfig, ensureSeeded, putField, setFieldOrder, CONFIG_ANCHOR } from "../js/questions.js";
 
 let passed = 0, failed = 0;
 const ok = (c, m) => { c ? passed++ : (failed++, console.error("  ✗ " + m)); };
