@@ -3,407 +3,2893 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Intake — one question at a time</title>
+<title>eoAI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-<!-- Live Matrix backend (optional). Demo + Echo need nothing. -->
 <script src="https://unpkg.com/matrix-js-sdk@34.3.1/dist/browser-matrix.min.js"></script>
-
 <style>
-:root{
-  --ink:#16242B; --paper:#E9EDF0; --surface:#FFFFFF; --line:#D3DADF;
-  --muted:#5C6B72; --seal:#2E6F5E; --seal-soft:#E4EFEA; --turn:#B67A2E;
-  --shadow:0 1px 2px rgba(22,36,43,.06), 0 8px 24px rgba(22,36,43,.05);
-  --r:14px;
-}
-*{box-sizing:border-box}
-html,body{margin:0;height:100%}
-body{
-  background:var(--paper); color:var(--ink);
-  font:400 16px/1.55 Inter, system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing:antialiased;
-}
-.mono{font-family:"IBM Plex Mono", ui-monospace, monospace}
+:root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.hidden{display:none!important}
+@media(prefers-color-scheme:dark){:root{--ink:#E9EDF0;--paper:#11181C;--surface:#1A2429;--line:#2A353C;--muted:#88969E;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);--shadow-lg:0 4px 16px rgba(0,0,0,.4),0 16px 48px rgba(0,0,0,.3);--seal-soft:#1A2F28;--turn-soft:#2F2416;--red-soft:#2F1814}.msg.user{background:var(--seal)!important;color:#fff!important}.msg.assistant{background:#1F2A30!important;border-color:var(--line)!important}.msg.support{background:var(--seal-soft)!important}.loader{background:rgba(17,24,28,.92)!important}.kcol{background:#1A2429!important}.kcard{background:#1F2A30!important}.docs-drop{background:#1A2429!important}.atable th{background:var(--surface)!important}.drawer{background:var(--paper)!important}.mem,.q{border-color:var(--line)!important}.scrim,.docscrim{background:rgba(0,0,0,.5)!important}}
+@media(max-width:900px){.grid{grid-template-columns:1fr}.rail{max-height:none;overflow:visible}.msg-group{max-width:95%}.kanban{grid-template-columns:1fr 1fr}}
+@media(max-width:500px){.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-/* ---- shell ---- */
-.wrap{max-width:1180px;margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 20px}
-header.top{display:flex;align-items:baseline;gap:16px;padding:22px 4px 18px;flex-wrap:wrap}
-header.top h1{font-family:Fraunces, Georgia, serif;font-weight:560;font-size:26px;letter-spacing:-.01em;margin:0}
-header.top .sub{color:var(--muted);font-size:14px}
-.setup{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.setup select,.setup button,.setup a.btn{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);
-  border-radius:9px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-block}
-.setup button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.status{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
-.dot.live{background:var(--seal)} .dot.warn{background:var(--turn)}
+/* Login screen */
+.login{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:var(--paper);transition:opacity .4s ease,transform .4s ease}
+.login.closing{opacity:0;transform:scale(1.03);pointer-events:none}
+.login.closed{display:none}
+.login-card{background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);width:min(480px,94vw);padding:36px 32px 28px;max-height:96vh;overflow-y:auto}
+.login-logo{width:56px;height:56px;border-radius:14px;background:var(--seal);display:grid;place-items:center;font:700 30px Inter;color:#fff;margin-bottom:14px}
+.login-card h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:24px;margin:0 0 4px;letter-spacing:-.01em}
+.login-card .sub{color:var(--muted);font-size:14px;margin:0 0 20px;line-height:1.5}
+.login-card .divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted);font-size:12px}
+.login-card .divider::before,.login-card .divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.login-card .form-group{margin-bottom:12px}
+.login-card label{display:block;font:600 11px Inter;letter-spacing:.03em;text-transform:upperercase;color:var(--muted);margin-bottom:4px}
+.login-card input{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink);transition:border-color .15s ease}
+.login-card input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.login-card .login-error{font-size:12.5px;color:var(--red);margin:8px 0 0;display:none}
+.login-card .login-error.show{display:block}
+.login-btn{display:block;width:100%;padding:11px;border:none;border-radius:9px;font:600 15px Inter;cursor:pointer;transition:opacity .15s ease,transform .1s ease;text-align:center}
+.login-btn.primary{background:var(--ink);color:#fff}
+.login-btn.primary:hover{opacity:.88}
+.login-btn.primary:active{transform:scale(.98)}
+.login-btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:8px}
+.login-btn.ghost:hover{background:#F2F5F7}
+.login-btn:disabled{opacity:.4;cursor:default;transform:none}
+.login-card .matrix-fields{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease;opacity:0}
+.login-card .matrix-fields.open{max-height:600px;opacity:1}
+.login-card .sso-hint{font-size:12px;color:var(--muted);text-align:center;margin-top:12px}
 
-.grid{display:grid;grid-template-columns:1fr 340px;gap:22px;flex:1;padding-bottom:26px;min-height:0}
+/* Nav */
+.wrap{max-width:var(--max-w);margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 16px}
+.shell{flex:1;display:flex;flex-direction:column;min-height:0}
+nav.top{display:flex;align-items:center;gap:10px;padding:10px 0;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:16px}
+nav.top .brand{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);cursor:pointer}
+nav.top .brand .logo{width:32px;height:32px;border-radius:8px;background:var(--seal);display:grid;place-items:center;font:700 16px Inter;color:#fff}
+nav.top .brand h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0;letter-spacing:-.01em}
+nav.top .brand .sub{color:var(--muted);font-size:12px;display:none}
+@media(min-width:640px){nav.top .brand .sub{display:inline}}
+nav .spacer{flex:1;min-width:8px}
+nav .setup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+nav .setup select,nav .setup button,nav .setup a.btn{font:inherit;font-size:11.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:background .15s ease}
+nav .setup button:hover{background:#F2F5F7}
+nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-size:14px}
+.status{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:4px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--seal)}.dot.warn{background:var(--turn)}.dot.err{background:var(--red)}
 
-/* ---- conversation ---- */
-.chat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+/* Grid */
+.grid{display:grid;grid-template-columns:1fr minmax(280px,var(--col-w));gap:18px;flex:1;padding-bottom:16px;min-height:0}
 
-/* ---- model loading overlay ---- */
-.loader{position:absolute;inset:0;z-index:6;display:none;flex-direction:column;align-items:center;
-  justify-content:center;text-align:center;gap:14px;padding:36px 32px;
-  background:rgba(233,237,240,.86);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+/* Chat */
+.chat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
+.loader{position:absolute;inset:0;z-index:6;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:36px 32px;background:rgba(233,237,240,.92);backdrop-filter:blur(6px)}
 .loader.on{display:flex;animation:fade .3s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
-.loader .spin{width:44px;height:44px;border-radius:50%;border:3px solid var(--line);
-  border-top-color:var(--seal);animation:spin 1s linear infinite}
+.loader .spin{width:44px;height:44px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--seal);animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.loader .pct{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:34px;letter-spacing:-.01em;
-  color:var(--ink);line-height:1;font-variant-numeric:tabular-nums;min-height:34px}
-.loader .pbar{width:min(380px,78%);height:8px;border-radius:99px;background:var(--line);overflow:hidden}
-.loader .pbar>i{display:block;height:100%;width:0;border-radius:99px;
-  background:linear-gradient(90deg,var(--seal),var(--turn));transition:width .35s ease}
-.loader .pbar>i.indet{width:34%;background:linear-gradient(90deg,transparent,var(--seal),transparent);
-  animation:indet 1.15s ease-in-out infinite}
+.loader .pct{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:34px;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.loader .pbar{width:min(380px,78%);height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.loader .pbar>i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--seal),var(--turn));transition:width .35s ease}
+.loader .pbar>i.indet{width:34%;background:linear-gradient(90deg,transparent,var(--seal),transparent);animation:indet 1.15s ease-in-out infinite}
 @keyframes indet{0%{margin-left:-34%}100%{margin-left:100%}}
-.loader .lname{font-size:15px;font-weight:600;color:var(--ink)}
-.loader .lstage{font-size:12px;color:var(--muted);max-width:min(420px,88%);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.loader .lnote{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--muted);max-width:min(440px,90%)}
-.progress{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px}
-.ring{--p:0;width:38px;height:38px;border-radius:50%;flex:none;
-  background:conic-gradient(var(--seal) calc(var(--p)*1%), var(--line) 0);
-  display:grid;place-items:center}
-.ring::after{content:"";width:28px;height:28px;border-radius:50%;background:var(--surface)}
-.ring b{position:absolute;font-size:11px;font-weight:600}
+.loader .lname{font-size:14px;font-weight:600;color:var(--ink)}
+.loader .lstage{font-size:11.5px;color:var(--muted)}
+.loader .lnote{font-size:11.5px;color:var(--muted);max-width:min(440px,90%)}
+.progress{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;transition:background .2s ease}
+.progress.complete{background:var(--seal-soft)}
+.ring{--p:0;width:34px;height:34px;border-radius:50%;flex:none;background:conic-gradient(var(--seal) calc(var(--p)*1%),var(--line) 0);display:grid;place-items:center}
+.ring::after{content:"";width:24px;height:24px;border-radius:50%;background:var(--surface)}
+.ring b{position:absolute;font-size:10px;font-weight:600}
 .ring-wrap{position:relative;display:grid;place-items:center}
-.progress .meta{font-size:13px;color:var(--muted)}
-.progress .meta strong{color:var(--ink);font-weight:600}
-
-.stream{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:14px}
-.msg{max-width:82%;padding:11px 15px;border-radius:14px;font-size:15px;white-space:pre-wrap;animation:rise .28s ease}
-.msg.assistant{align-self:flex-start;background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:5px}
-.msg.user{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:5px}
-.msg.support{background:var(--seal-soft);border-color:#C9E0D5}
-.msg .tag{display:block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);margin-bottom:4px;font-weight:600}
-@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.typing{display:inline-flex;gap:4px}.typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
+.progress .meta{font-size:12px;color:var(--muted);line-height:1.4;min-width:0}
+.progress .meta strong{color:var(--ink);font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.progress .meta .prog-sub{font-size:11px}
+.badge{font:500 9.5px "IBM Plex Mono",monospace;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;background:var(--seal-soft);color:var(--seal);margin-left:auto;flex:none}
+.stream{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.stream::-webkit-scrollbar{width:4px}.stream::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+.msg-group{display:flex;gap:10px;max-width:88%;animation:msgIn .3s var(--ease-out)}
+.msg-group.end{justify-content:flex-end;align-self:flex-end}
+.msg-group.start{align-self:flex-start}
+.avatar{width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;font:600 11px Inter;color:#fff;margin-top:2px}
+.avatar.admin{background:var(--seal)}.avatar.user{background:var(--ink)}.avatar.ai{background:var(--turn)}
+.msg-group.end .avatar{order:1}
+.msg-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.msg-meta{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
+.msg-group.end .msg-meta{justify-content:flex-end}
+.msg-name{font-weight:600}
+.msg-bubble{padding:9px 12px;border-radius:12px;font-size:14px;white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.msg-group.end .msg-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:4px}
+.msg-group.start .msg-bubble{background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg-group.start .msg-bubble.support{background:var(--seal-soft);border-color:#C9E0D5}
+.msg .tag{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
+.msg .tag.help{color:var(--turn)}
+.msg .value{display:inline-block;margin-top:3px;padding:2px 7px;border-radius:4px;background:rgba(46,111,94,.12);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--seal)}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+.typing{display:inline-flex;gap:4px;padding:3px 0}.typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
+.compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)}
+.compose .input-wrap{flex:1;display:flex;align-items:flex-end;gap:6px;border:1px solid var(--line);border-radius:10px;padding:3px 3px 3px 10px;background:var(--surface);transition:border-color .15s ease}
+.compose .input-wrap:focus-within{border-color:var(--seal);box-shadow:0 0 0 3px rgba(46,111,94,.1)}
+.compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:100px;background:transparent;color:var(--ink);outline:none}
+.compose .input-actions{display:flex;gap:3px}
+.compose .input-actions button{border:none;background:transparent;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;font-size:15px;line-height:1;display:grid;place-items:center}
+.compose .input-actions button:hover{background:#F2F5F7;color:var(--ink)}
+.compose .send-btn{border:none;background:var(--ink);color:#fff;border-radius:8px;padding:0 14px;height:34px;font:600 13px Inter;cursor:pointer;flex:none;transition:opacity .15s ease,transform .1s ease}
+.compose .send-btn:active{transform:scale(.96)}
+.compose .send-btn:disabled{opacity:.35;cursor:default;transform:none}
+.hint{padding:0 14px 8px;font-size:11px;color:var(--muted)}
+.hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
 
-.compose{border-top:1px solid var(--line);padding:14px 16px;display:flex;gap:10px;align-items:flex-end}
-.compose textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:11px;padding:11px 13px;
-  font:inherit;font-size:15px;max-height:140px;background:var(--surface);color:var(--ink)}
-.compose textarea:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
-.compose button{border:none;background:var(--ink);color:#fff;border-radius:11px;padding:0 18px;height:44px;
-  font:600 15px Inter;cursor:pointer;flex:none}
-.compose button:disabled{opacity:.4;cursor:default}
-.hint{padding:0 16px 12px;font-size:12px;color:var(--muted)}
-.hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:11px}
-
-/* ---- right rail ---- */
-.rail{display:flex;flex-direction:column;gap:22px;min-height:0}
+/* Rail */
+.rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
-.card h2{font-family:Fraunces,serif;font-weight:560;font-size:16px;margin:0;padding:15px 18px;border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:9px}
-.card h2 .count{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:var(--muted)}
-
-/* checklist */
-.check{list-style:none;margin:0;padding:6px}
-.check li{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:9px;cursor:pointer}
+.card h2{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
+.card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:#F2F5F7}
+.check{list-style:none;margin:0;padding:4px;max-height:260px;overflow-y:auto;scrollbar-width:thin}
+.check li{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer;transition:background .12s ease}
 .check li:hover{background:#F2F5F7}
-.check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:5px;flex:none;margin-top:2px;display:grid;place-items:center}
-.check li.done .box{background:var(--seal);border-color:var(--seal)}
-.check li.done .box::after{content:"✓";color:#fff;font-size:11px;line-height:1}
+.check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;flex:none;margin-top:1px;display:grid;place-items:center;transition:all .2s ease;font-size:10px}
+.check li.done .box{background:var(--seal);border-color:var(--seal);color:#fff}
 .check li.active .box{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.15)}
-.check .lab{font-size:13.5px}
-.check .val{display:block;font-size:12px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
-
-/* provenance ledger — the signature */
-.ledger-wrap{max-height:360px;overflow-y:auto}
+.check .lab{font-size:12.5px}
+.check .val{display:block;font-size:11px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+.ledger-wrap{max-height:240px;overflow-y:auto;scrollbar-width:thin}
 .ledger{list-style:none;margin:0;padding:0}
-.ledger .empty{padding:22px 18px;color:var(--muted);font-size:13px}
-.ledger li{padding:11px 18px 11px 16px;border-left:3px solid var(--line);position:relative;font-size:12.5px;
-  animation:seal .5s cubic-bezier(.2,.8,.2,1)}
+.ledger .empty{padding:16px 12px;color:var(--muted);font-size:11.5px;text-align:center}
+.ledger li{padding:8px 12px 8px 10px;border-left:3px solid var(--line);font-size:11.5px;animation:seal .4s var(--ease-out)}
 .ledger li+li{border-top:1px solid #EEF1F3}
 .ledger li.def{border-left-color:var(--seal)}
 .ledger li.ins{border-left-color:var(--turn)}
-.ledger .row1{display:flex;align-items:center;gap:8px}
-.ledger .op{font:500 10.5px "IBM Plex Mono",monospace;letter-spacing:.05em;color:#fff;background:var(--seal);
-  padding:1px 6px;border-radius:5px}
+.ledger .row1{display:flex;align-items:center;gap:5px}
+.ledger .op{font:500 9.5px "IBM Plex Mono",monospace;color:#fff;background:var(--seal);padding:1px 5px;border-radius:3px;flex:none}
 .ledger li.ins .op{background:var(--turn)}
-.ledger .path{font-family:"IBM Plex Mono",monospace;color:var(--ink);font-weight:500}
-.ledger .time{margin-left:auto;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:11px}
-.ledger .val{margin-top:4px;color:var(--ink)}
-.ledger .eid{margin-top:3px;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:10.5px}
-@keyframes seal{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+.ledger .path{font-family:"IBM Plex Mono",monospace;color:var(--ink);font-weight:500;font-size:10.5px}
+.ledger .time{margin-left:auto;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:9.5px}
+.ledger .val{margin-top:2px;color:var(--ink);font-size:11px;word-break:break-word}
+.ledger .eid{margin-top:2px;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:9.5px}
+@keyframes seal{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.foot{color:var(--muted);font-size:11px;padding:4px 2px 10px;line-height:1.5}
+.foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:3px;font-size:10px}
 
-.foot{color:var(--muted);font-size:12px;padding:6px 4px 20px;line-height:1.5}
-.foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 5px;border-radius:5px}
-
-/* ---- context inspector (view & edit the fold) ---- */
-.scrim{position:fixed;inset:0;background:rgba(22,36,43,.34);backdrop-filter:blur(2px);
-  -webkit-backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:20}
-.scrim.on{opacity:1;pointer-events:auto}
-.drawer{position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--paper);
-  border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(22,36,43,.14);z-index:21;
-  transform:translateX(100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
-.drawer.on{transform:none}
-.drawer .dhead{display:flex;align-items:baseline;gap:10px;padding:20px 22px 14px;border-bottom:1px solid var(--line)}
-.drawer .dhead h2{font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0}
-.drawer .dhead .sub{font-size:12.5px;color:var(--muted)}
-.drawer .dclose{margin-left:auto;border:1px solid var(--line);background:var(--surface);border-radius:9px;
-  width:30px;height:30px;font-size:16px;line-height:1;cursor:pointer;color:var(--muted)}
-.drawer .dbody{flex:1;overflow-y:auto;padding:18px 22px 40px;display:flex;flex-direction:column;gap:26px}
-.sec > h3{font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:0 0 3px;display:flex;align-items:center;gap:8px}
-.sec > .note{font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.5}
-.sec .btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-.sec button,.mem button{font:inherit;font-size:12.5px;padding:6px 12px;border:1px solid var(--line);
-  border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer}
-.sec button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.sec button.ghost{color:var(--muted)}
-.sec button.danger{color:#B0402F;border-color:#E7C6BF}
-.sec a.btn-link{font:inherit;font-size:12.5px;padding:7px 13px;border:1px solid var(--ink);border-radius:8px;background:var(--ink);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
-.sec textarea{width:100%;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
-  font:inherit;background:var(--surface);color:var(--ink)}
-.sec textarea.mono,.sec input.mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.5}
-
-/* live folded prompt */
-.foldstats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-.foldstats .chip{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);
-  border:1px solid var(--line);border-radius:99px;padding:3px 9px}
-.foldstats .chip b{color:var(--ink);font-weight:600}
-.part{border:1px solid var(--line);border-radius:11px;background:var(--surface);overflow:hidden;margin-bottom:10px}
-.part > .plab{font:600 11px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);
-  padding:8px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
-.part > .plab .k{font:500 9.5px "IBM Plex Mono",monospace;color:#fff;background:var(--muted);border-radius:4px;padding:1px 5px;letter-spacing:.04em}
-.part.system > .plab .k{background:var(--ink)} .part.memory > .plab .k{background:var(--turn)} .part.field > .plab .k{background:var(--seal)}
-.part > pre{margin:0;padding:11px 12px;white-space:pre-wrap;word-break:break-word;
-  font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.55;color:var(--ink)}
-.turn{border:1px dashed var(--line);border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:13px}
-.turn .r{font:600 10.5px "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:block;margin-bottom:3px}
-.turn.assistant{background:var(--surface)} .turn.user{background:#F2F5F7}
-.empty-turns{font-size:12.5px;color:var(--muted);font-style:italic}
-
-/* memory editor */
-.mem{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:12px;margin-bottom:10px}
-.mem .row{display:flex;gap:8px;margin-bottom:8px}
-.mem .row > *{flex:1;min-width:0}
-.mem label{display:block;font:600 10.5px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
-.mem input,.mem textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink);resize:vertical}
-.mem .memfoot{display:flex;align-items:center;gap:8px;margin-top:2px}
-.mem .memfoot .scoped{font-size:11.5px;color:var(--muted);margin-right:auto}
-.mem.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
-
-.hidden{display:none!important}
-
-/* ---- supporting documents (upload) ---- */
-.docs-drop{margin:10px 12px;padding:16px 14px;border:1.5px dashed var(--line);border-radius:11px;text-align:center;
-  background:#FAFBFC;transition:border-color .15s ease,background .15s ease}
+/* Docs */
+.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:#FAFBFC;transition:border-color .15s ease,background .15s ease}
 .docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
-.docs-drop p{margin:0 0 6px;font-size:12.5px;color:var(--muted)}
-.docs-drop p:last-child{margin-bottom:0;font-size:11.5px}
-.docs-drop button{font:inherit;font-size:inherit;color:var(--seal);background:none;border:none;padding:0;
-  text-decoration:underline;cursor:pointer}
-.docs-list{list-style:none;margin:0;padding:0 12px 10px}
-.docs-list .doc{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px;background:var(--surface)}
-.docs-list .doc.pending{opacity:.75}
-.docs-list .doc.error{border-color:#E7C6BF;background:#FBF2EF}
-.docs-list .drow1{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:500}
-.docs-list .dsize{color:var(--muted);font:500 11px "IBM Plex Mono",monospace;flex:none}
-.docs-list .drow2{display:flex;align-items:center;gap:8px;margin-top:6px}
-.docs-list .docs-status{font-size:12px;color:var(--muted)}
-.docs-list .dview{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--line);border-radius:7px;
-  background:var(--surface);color:var(--ink);cursor:pointer}
-.docs-list .dstatus{font:500 10.5px "IBM Plex Mono",monospace;letter-spacing:.03em;text-transform:uppercase;
-  color:var(--muted);margin-left:auto;padding:2px 7px;border-radius:99px;background:#F2F5F7}
+.docs-drop p{margin:0 0 3px;font-size:11.5px;color:var(--muted)}
+.docs-drop p:last-child{margin-bottom:0;font-size:10.5px}
+.docs-drop button{font:inherit;font-size:inherit;color:var(--seal);background:none;border:none;padding:0;text-decoration:underline;cursor:pointer}
+.docs-list{list-style:none;margin:0;padding:0 8px 6px}
+.docs-list .doc{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:5px;background:var(--surface)}
+.docs-list .doc.pending{opacity:.7}
+.docs-list .doc.error{border-color:var(--red-soft);background:var(--red-soft)}
+.docs-list .drow1{display:flex;justify-content:space-between;gap:6px;font-size:12px;font-weight:500}
+.docs-list .dsize{color:var(--muted);font:500 10px "IBM Plex Mono",monospace;flex:none}
+.docs-list .drow2{display:flex;align-items:center;gap:5px;margin-top:4px}
+.docs-list .docs-status{font-size:11px;color:var(--muted)}
+.docs-list .dview{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
+.docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:#F2F5F7}
 .docs-list .doc.status-verified .dstatus{background:var(--seal-soft);color:var(--seal)}
-.docs-list .doc.status-flagged .dstatus{background:#FBE7E1;color:#B0402F}
-.docs-list .doc.status-in_review .dstatus{background:#FBF1E3;color:var(--turn)}
-
-/* ---- decrypted-document preview modal ---- */
-.docscrim{position:fixed;inset:0;background:rgba(22,36,43,.4);backdrop-filter:blur(2px);z-index:40;
-  display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease}
+.docs-list .doc.status-flagged .dstatus{background:var(--red-soft);color:var(--red)}
+.docs-list .doc.status-in_review .dstatus{background:var(--turn-soft);color:var(--turn)}
+.docscrim{position:fixed;inset:0;background:rgba(22,36,43,.4);backdrop-filter:blur(3px);z-index:40;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease}
 .docscrim.on{opacity:1;pointer-events:auto}
-.docmodal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);width:min(640px,92vw);
-  max-height:86vh;overflow:auto;padding:22px 24px;position:relative}
-.docclose{position:absolute;top:14px;right:14px;border:1px solid var(--line);background:var(--surface);
-  border-radius:9px;width:30px;height:30px;font-size:16px;cursor:pointer;color:var(--muted)}
-.dochead{font-family:Fraunces,serif;font-weight:560;font-size:18px;margin:0 30px 14px 0;word-break:break-word}
-.docbody{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
-.docstatus{font-size:13.5px;color:var(--muted);margin:0}
-.docstatus.error{color:#B0402F}
-.docimg{max-width:100%;max-height:60vh;border-radius:10px;border:1px solid var(--line)}
-.docframe{width:100%;height:60vh;border:1px solid var(--line);border-radius:10px}
-.docdownload{font:600 13.5px Inter;color:#fff;background:var(--ink);padding:9px 16px;border-radius:9px;
-  text-decoration:none}
+.docmodal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow-lg);width:min(660px,94vw);max-height:88vh;overflow:auto;padding:22px;position:relative;animation:modalIn .25s var(--ease-out)}
+@keyframes modalIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+.docclose{position:absolute;top:10px;right:10px;border:1px solid var(--line);background:var(--surface);border-radius:7px;width:30px;height:30px;font-size:16px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.dochead{font-family:Fraunces,serif;font-weight:560;font-size:17px;margin:0 30px 10px 0;word-break:break-word}
+.docbody{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.docstatus{font-size:12.5px;color:var(--muted);margin:0}
+.docstatus.error{color:var(--red)}
+.docimg{max-width:100%;max-height:55vh;border-radius:9px;border:1px solid var(--line)}
+.docframe{width:100%;height:55vh;border:1px solid var(--line);border-radius:9px}
+.docdownload{font:600 12.5px Inter;color:#fff;background:var(--ink);padding:8px 15px;border-radius:8px;text-decoration:none}
 
-/* ---- admin dashboard ---- */
-.adminview{max-width:1280px;margin:0 auto;padding:22px 20px 40px;min-height:100%}
-.atop{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:18px}
-.atop h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:24px;margin:0}
-.atop .sub{color:var(--muted);font-size:13px}
-.atabs{margin-left:auto;display:flex;gap:6px}
-.atab{font:600 13px Inter;padding:8px 16px;border:1px solid var(--line);border-radius:9px;
-  background:var(--surface);color:var(--muted);cursor:pointer}
-.atab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-.aclose{font:inherit;font-size:13px;padding:8px 14px;border:1px solid var(--line);border-radius:9px;
-  background:var(--surface);color:var(--ink);cursor:pointer}
-.aempty{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:40px 24px;
-  text-align:center;color:var(--muted);font-size:14px}
+/* Toast */
+.toast-container{position:fixed;bottom:16px;right:16px;z-index:50;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
+.toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
+.toast .toast-icon{font-size:14px;flex:none}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
+@keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
 
-.atable-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
-  box-shadow:var(--shadow);overflow:auto}
-.atable{width:100%;border-collapse:collapse;font-size:13.5px}
-.atable th{text-align:left;font:600 11px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);
-  padding:12px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
-.atable td{padding:11px 14px;border-bottom:1px solid #EEF1F3;vertical-align:middle}
+/* Toast */
+.toast-container{position:fixed;bottom:16px;right:16px;z-index:50;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
+.toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
+.toast .toast-icon{font-size:14px;flex:none}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
+@keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
+
+/* Inline editor */
+.inline-editor{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(22,36,43,.3);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .2s ease}
+.inline-editor.on{opacity:1;pointer-events:auto}
+.inline-editor .modal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow-lg);width:min(420px,92vw);padding:18px 20px;animation:modalIn .2s var(--ease-out)}
+.inline-editor h3{font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:0 0 3px}
+.inline-editor .field-path{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace;margin:0 0 10px}
+.inline-editor .field-input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);margin-bottom:10px;resize:vertical}
+.inline-editor .field-input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.inline-editor .field-enum{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.inline-editor .field-enum label{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13.5px;transition:border-color .15s ease,background .15s ease}
+.inline-editor .field-enum label:hover{border-color:var(--seal);background:var(--seal-soft)}
+.inline-editor .field-enum input[type=radio]{accent-color:var(--seal)}
+.inline-editor .btns{display:flex;gap:7px;justify-content:flex-end}
+.inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.inline-editor .btns button.cancel:hover{background:#F2F5F7}
+
+/* Admin view */
+.adminview{max-width:1280px;margin:0 auto;padding:14px 20px 40px;min-height:100%}
+.atop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.atop h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0}
+.atop .sub{color:var(--muted);font-size:12px}
+.atabs{margin-left:auto;display:flex;gap:3px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:3px}
+.atab{font:600 11.5px Inter;padding:5px 12px;border:none;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;transition:all .15s ease}
+.atab.on{background:var(--ink);color:#fff}
+.aclose{font:inherit;font-size:11.5px;padding:5px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.aempty{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:30px 18px;text-align:center;color:var(--muted);font-size:13px}
+.atable-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:auto;max-height:calc(100vh - 180px)}
+.atable{width:100%;border-collapse:collapse;font-size:12.5px}
+.atable th{text-align:left;font:600 10px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+.atable td{padding:8px 11px;border-bottom:1px solid #EEF1F3;vertical-align:middle}
 .atable tr:last-child td{border-bottom:none}
-.atable .acell-mime,.atable .acell-size,.atable .acell-date{color:var(--muted);font-size:12px;white-space:nowrap}
+.atable tr:hover td{background:#F7F9FA}
 .atable .acell-name{font-weight:600}
-.astatus-sel{font:500 12px Inter;padding:5px 8px;border-radius:7px;border:1px solid var(--line);
-  background:var(--surface);color:var(--ink);cursor:pointer}
-.aview{font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;
-  background:var(--surface);color:var(--ink);cursor:pointer;white-space:nowrap}
-
-.kanban{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;overflow-x:auto}
-.kcol{background:#F2F5F7;border:1px solid var(--line);border-radius:var(--r);padding:12px;min-height:120px}
-.khead{display:flex;justify-content:space-between;align-items:center;font:600 13px Inter;margin-bottom:10px}
-.kcount{font:500 11px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);
-  border-radius:99px;padding:1px 8px}
-.klist{display:flex;flex-direction:column;gap:8px;min-height:60px;border-radius:9px;transition:background .12s ease}
+.atable .acell-val{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atable .acell-mime,.atable .acell-size,.atable .acell-date{color:var(--muted);font-size:11px;white-space:nowrap}
+.astatus-sel{font:500 11px Inter;padding:3px 6px;border-radius:5px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.aview{font:inherit;font-size:11.5px;padding:3px 10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
+.kanban{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px}
+.kcol{background:#F2F5F7;border:1px solid var(--line);border-radius:var(--r);padding:9px;min-height:80px}
+.khead{display:flex;justify-content:space-between;align-items:center;font:600 11.5px Inter;margin-bottom:6px}
+.kcount{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);border-radius:99px;padding:1px 6px}
+.klist{display:flex;flex-direction:column;gap:5px;min-height:40px;border-radius:7px;transition:background .12s ease;padding:3px}
 .klist.over{background:var(--seal-soft)}
-.kcard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;
-  cursor:grab;box-shadow:var(--shadow)}
-.kcard:active{cursor:grabbing}
-.kname{font-size:13px;font-weight:600;word-break:break-word}
-.kapp{font-size:12px;color:var(--muted);margin-top:2px}
-.kmeta{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);margin:5px 0 8px}
+.kcard{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 9px;cursor:grab;box-shadow:var(--shadow)}
+.kcard:active{cursor:grabbing;transform:scale(.98)}
+.kname{font-size:12px;font-weight:600;word-break:break-word}
+.kapp{font-size:11px;color:var(--muted);margin-top:1px}
+.kmeta{font:500 9.5px "IBM Plex Mono",monospace;color:var(--muted);margin:3px 0 5px}
 
-@media (max-width:900px){
-  .grid{grid-template-columns:1fr}
-  .rail{flex-direction:column}
-  .msg{max-width:90%}
-  .kanban{grid-template-columns:1fr}
-}
-@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+/* Context drawer */
+.scrim{position:fixed;inset:0;background:rgba(22,36,43,.34);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(520px,94vw);background:var(--paper);border-left:1px solid var(--line);box-shadow:-16px 0 48px rgba(22,36,43,.14);z-index:21;transform:translateX(100%);transition:transform .28s var(--ease-out);display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.drawer .dhead{display:flex;align-items:baseline;gap:8px;padding:16px 18px 10px;border-bottom:1px solid var(--line);flex:none}
+.drawer .dhead h2{font-family:Fraunces,serif;font-weight:560;font-size:17px;margin:0}
+.drawer .dhead .sub{font-size:11px;color:var(--muted)}
+.drawer .dclose{margin-left:auto;border:1px solid var(--line);background:var(--surface);border-radius:7px;width:28px;height:28px;font-size:15px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
+.drawer .dbody{flex:1;overflow-y:auto;padding:14px 18px 30px;display:flex;flex-direction:column;gap:18px}
+.sec>h3{font-family:Fraunces,serif;font-weight:560;font-size:13px;margin:0 0 2px}
+.sec>.note{font-size:11px;color:var(--muted);margin:0 0 7px;line-height:1.5}
+.sec .btns{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap}
+.focus-bar{font:500 11px "IBM Plex Mono",monospace;color:var(--ink);background:var(--seal-soft);border:1px solid #C9E0D5;border-radius:7px;padding:4px 8px;margin-bottom:7px;display:flex;align-items:center;gap:5px}
+.focus-bar .focus-icon{width:16px;height:16px;border-radius:50%;background:var(--seal);color:#fff;font-size:9px;display:grid;place-items:center;flex:none}
+.foldstats{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px}
+.foldstats .chip{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:2px 7px}
+.foldstats .chip b{color:var(--ink);font-weight:600}
+.part{border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden;margin-bottom:7px}
+.part>.plab{font:600 10px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);padding:5px 9px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:5px}
+.part>.plab .k{font:500 8.5px "IBM Plex Mono",monospace;color:#fff;background:var(--muted);border-radius:3px;padding:1px 4px}
+.part.system>.plab .k{background:var(--ink)}.part.memory>.plab .k{background:var(--turn)}.part.field>.plab .k{background:var(--seal)}.part.focus>.plab .k{background:#6B4C9A}
+.part>pre{margin:0;padding:8px 9px;white-space:pre-wrap;word-break:break-word;font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.5;color:var(--ink)}
+.turn{border:1px dashed var(--line);border-radius:8px;padding:6px 9px;margin-bottom:5px;font-size:12px}
+.turn .r{font:600 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:1px}
+.turn.assistant{background:var(--surface)}.turn.user{background:#F2F5F7}
+.empty-turns{font-size:11.5px;color:var(--muted);font-style:italic}
+
+/* Question authoring (admin panel) */
+.q-panel{max-width:var(--max-w);margin:0 auto;padding:0 20px 30px}
+.q-panel .banner{background:var(--seal-soft);border:1px solid #C9E0D5;border-radius:10px;padding:10px 13px;font-size:12.5px;color:var(--ink);margin-bottom:14px;line-height:1.5}
+.q-panel .banner code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:4px;font-size:11px}
+.q-grid{display:grid;grid-template-columns:1fr 320px;gap:18px}
+.q-col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.q-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.q-card>.qh{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
+.q-card>.qh .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted)}
+.q-card>.body{padding:14px}
+.q-card>.body>.note{font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+label.lab{display:block;font:600 10px Inter;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);margin:0 0 3px}
+input.f,textarea.f,select.f{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);resize:vertical}
+input.f:focus,textarea.f:focus,select.f:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.q-row{display:flex;gap:8px}.q-row>*{flex:1;min-width:0}
+.fieldgrp{margin-bottom:9px}
+.check-inline{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin-top:16px}
+.check-inline input{width:15px;height:15px}
+button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
+.btns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.qlist{display:flex;flex-direction:column;gap:10px}
+.q{border:1px solid var(--line);border-radius:11px;background:var(--surface);overflow:hidden}
+.q .qhead{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#F7F9FA;border-bottom:1px solid var(--line)}
+.q .qnum{font:600 10.5px "IBM Plex Mono",monospace;color:#fff;background:var(--seal);border-radius:5px;padding:2px 6px;flex:none}
+.q .qpath{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);flex:none}
+.q .qlbl{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.q .qspacer{margin-left:auto}
+.q .qbody{padding:10px;display:none}
+.q.open .qbody{display:block}
+.q.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
+.q .qtype{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex:none}
+.q .req{font:600 9px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--turn);flex:none}
+.sec button,.mem button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.sec button.danger{color:var(--red);border-color:var(--red-soft)}
+.q-panel button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.q-panel button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.q-panel button.danger{color:var(--red);border-color:var(--red-soft)}
+.mem{border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:10px;margin-bottom:8px}
+.mem.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
+.mem .memfoot{display:flex;align-items:center;gap:6px;margin-top:3px}
+.mem .memfoot .scoped{font-size:11px;color:var(--muted);margin-right:auto}
+.iconbtn{padding:4px 8px;line-height:1}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <h1>Intake</h1>
-    <span class="sub">one question at a time · nothing lost</span>
-    <div class="setup">
-      <select id="modelSel" title="Where the model runs">
-        <option value="webllm">Model: Llama 3.2 1B · in-browser</option>
-        <option value="echo">Model: Demo (no download)</option>
-        <option value="ollama">Model: Ollama (local)</option>
-      </select>
-      <select id="storeSel" title="Where answers are stored">
-        <option value="demo">Store: Demo (this device)</option>
-        <option value="matrix">Store: Matrix (sign in)</option>
-      </select>
-      <button id="ctxBtn" title="View the prompt and memory being folded each turn">Context</button>
-      <a class="btn" id="questionsLink" href="./questions.html" title="Author the questions every user is asked">Questions</a>
-      <button id="adminBtn" title="Admin dashboard — table & kanban views of uploaded documents, decrypted">Admin</button>
-      <button id="resetBtn" title="Clear this document's timeline">Reset</button>
-      <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
+
+<!-- Login screen -->
+<div class="login" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">◈</div>
+    <h1>eoAI</h1>
+    <p class="sub">Document your experience with a government agency. Your responses are encrypted and stored privately.</p>
+
+    <button class="login-btn primary" id="loginDemo">Continue as Demo (no account needed)</button>
+
+    <div class="divider">or sign in with Matrix</div>
+
+    <div class="login-error" id="loginError"></div>
+
+    <button class="login-btn ghost" id="loginShowMatrix">Sign in with Matrix →</button>
+
+    <div class="matrix-fields" id="matrixFields">
+      <div class="form-group"><label>Homeserver URL</label><input id="loginHomeserver" value="https://matrix.org" placeholder="https://matrix.org"></div>
+      <div class="form-group"><label>User ID</label><input id="loginUserId" placeholder="@user:matrix.org"></div>
+      <div class="form-group"><label>Password</label><input id="loginPassword" type="password" placeholder="••••••••"></div>
+      <button class="login-btn primary" id="loginMatrix">Sign in</button>
     </div>
-  </header>
 
-  <div class="grid">
-    <!-- conversation -->
-    <section class="chat">
-      <!-- model loading overlay -->
-      <div class="loader" id="loader" aria-live="polite" role="status">
-        <div class="spin"></div>
-        <div class="pct" id="loadPct">0%</div>
-        <div class="pbar"><i id="loadBar"></i></div>
-        <div class="lname" id="loadName">Preparing the in-browser model…</div>
-        <div class="lstage mono" id="loadStage">Starting up</div>
-        <p class="lnote">The model runs entirely in your browser. The first load downloads it once (~880&nbsp;MB) and caches it on this device, so it opens instantly next time. Nothing you type leaves your browser.</p>
-      </div>
-      <div class="progress">
-        <div class="ring-wrap"><div class="ring" id="ring"></div><b id="ringN">0/0</b></div>
-        <div class="meta"><strong id="docTitle">…</strong><br><span id="progTxt">loading…</span></div>
-      </div>
-      <div class="stream" id="stream"></div>
-      <div class="compose">
-        <textarea id="input" rows="1" placeholder="Type your answer… or ask me anything about this question."></textarea>
-        <button id="send">Send</button>
-      </div>
-      <div class="hint"><kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line · type <kbd>?</kbd> if you're stuck</div>
-    </section>
-
-    <!-- right rail -->
-    <aside class="rail">
-      <div class="card">
-        <h2>Your answers <span class="count" id="checkCount"></span></h2>
-        <ul class="check" id="check"></ul>
-      </div>
-      <div class="card">
-        <h2>Supporting documents <span class="count" id="docsCount"></span></h2>
-        <div class="docs-drop" id="docsDrop">
-          <input type="file" id="docsInput" multiple hidden>
-          <p>Drop files here or <button id="docsBrowse" type="button">browse</button></p>
-          <p class="docs-note">Encrypted in your browser before upload — the server only ever stores ciphertext. Only you and your caseworker can open them.</p>
-        </div>
-        <ul class="docs-list" id="docsList"></ul>
-      </div>
-      <div class="card">
-        <h2>Stored to the room <span class="count" id="ledgerCount">0 events</span></h2>
-        <div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet. Each answer you confirm is written here as one event.</li></ul></div>
-      </div>
-      <p class="foot">Every confirmed answer is one <code>DEF</code> operator appended to a Matrix room. State is never stored — the checklist above is <code>fold(timeline)</code>, recomputed live. Close the tab and reopen: your place is held.</p>
-    </aside>
+    <p class="sso-hint">Your credentials are used only to connect to your Matrix homeserver and are never stored.</p>
   </div>
 </div>
 
-<!-- context inspector: view & edit the prompt + memory folded each turn -->
+<!-- Main app -->
+<div class="wrap" id="appWrap">
+  <nav class="top" id="topNav">
+    <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>eoAI</h1><span class="sub">agency service complaint</span></a>
+    <span class="spacer"></span>
+    <div class="setup">
+      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Llama 3.2 1B</option><option value="ollama">☀ Ollama</option></select>
+      <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
+      <button id="ctxBtn" class="icon-btn" title="View folded context">⊡</button>
+      <button id="submissionBtn" title="View my submission" style="display:none">📋</button>
+      <button id="adminBtn" title="Admin dashboard">Admin</button>
+      <button id="questionsBtn" title="Author questions">✎</button>
+      <button id="resetBtn" title="Reset">↺</button>
+      <button id="logoutBtn" title="Switch account">⇥</button>
+    </div>
+  </nav>
+
+  <div class="shell" id="appShell">
+    <div class="grid">
+      <section class="chat">
+        <div class="loader" id="loader">
+          <div class="spin"></div>
+          <div class="pct" id="loadPct">0%</div>
+          <div class="pbar"><i id="loadBar"></i></div>
+          <div class="lname" id="loadName">Preparing model…</div>
+          <div class="lstage mono" id="loadStage">Starting up</div>
+          <p class="lnote">The model runs entirely in your browser. Nothing you type leaves.</p>
+        </div>
+        <div class="progress" id="progressBar">
+          <div class="ring-wrap"><div class="ring" id="ring"></div><b id="ringN">0/0</b></div>
+          <div class="meta"><strong id="docTitle">…</strong><span class="prog-sub" id="progTxt">loading…</span></div>
+          <span class="badge" id="phaseBadge"></span>
+        </div>
+        <div class="stream" id="stream"></div>
+        <div class="compose">
+          <div class="input-wrap">
+            <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
+            <div class="input-actions"><button id="attachBtn" title="Attach a file" type="button">📎</button></div>
+          </div>
+          <button class="send-btn" id="send">Send</button>
+        </div>
+        <div class="hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck</div>
+      </section>
+      <aside class="rail">
+        <div class="card"><h2>Your answers <span class="count" id="checkCount"></span></h2><ul class="check" id="check"></ul></div>
+        <div class="card">
+          <h2>Supporting docs <span class="count" id="docsCount"></span></h2>
+          <div class="docs-drop" id="docsDrop">
+            <input type="file" id="docsInput" multiple hidden>
+            <p>Drop files or <button id="docsBrowse" type="button">browse</button></p>
+            <p>Encrypted before upload.</p>
+          </div>
+          <ul class="docs-list" id="docsList"></ul>
+        </div>
+        <div class="card"><h2>Event log <span class="count" id="ledgerCount">0</span></h2><div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet.</li></ul></div></div>
+        <div class="card" id="chatCard">
+          <h2>Chat with admin <span class="count" id="chatCount"></span></h2>
+          <div id="chatPane" style="display:flex;flex-direction:column;min-height:120px;max-height:240px">
+            <div class="chat-msg-list" id="chatMsgList" style="flex:1;overflow-y:auto;padding:8px 10px"></div>
+            <div style="display:flex;gap:6px;border-top:1px solid var(--line);padding:6px 8px">
+              <textarea id="chatInput" rows="1" placeholder="Message the admin…" style="flex:1;resize:none;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink);outline:none;max-height:60px"></textarea>
+              <button id="chatSend" style="border:none;background:var(--ink);color:#fff;border-radius:7px;padding:0 10px;font:600 12px Inter;cursor:pointer">Send</button>
+            </div>
+          </div>
+        </div>
+        <p class="foot">Every answer is one <code>DEF</code> in the room. <code>fold(timeline)</code> recomputes state. Resumable by construction.</p>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<!-- My Submission pane -->
+<div class="hidden pane" id="submissionPane"></div>
+
+<!-- Inline editor -->
+<div class="inline-editor" id="inlineEditor"><div class="modal">
+  <h3 id="ieTitle">Edit</h3><p class="field-path" id="iePath"></p><div id="ieBody"></div>
+  <div class="btns"><button class="cancel" id="ieCancel">Cancel</button><button class="primary" id="ieSave">Save</button></div>
+</div></div>
+
+<!-- Document preview -->
+<div class="docscrim" id="docScrim"><div class="docmodal">
+  <button class="docclose" id="docClose">&times;</button>
+  <div class="dochead" id="docHead"></div><div class="docbody" id="docBody"></div>
+</div></div>
+
+<!-- Context drawer -->
 <div class="scrim" id="ctxScrim"></div>
 <aside class="drawer" id="ctxDrawer" aria-label="Folded context" aria-hidden="true">
-  <div class="dhead">
-    <div>
-      <h2>Folded context</h2>
-      <div class="sub">What gets folded into the model each turn — computed from the logs, so it can be shown.</div>
-    </div>
-    <button class="dclose" id="ctxClose" title="Close" aria-label="Close">×</button>
-  </div>
+  <div class="dhead"><div><h2>Folded context</h2><div class="sub">Computed from the logs each turn</div></div><button class="dclose" id="ctxClose">&times;</button></div>
   <div class="dbody">
-
-    <section class="sec" id="secPrompt">
+    <section class="sec">
       <h3>Live prompt for this field</h3>
-      <p class="note">This is the exact message set folded for the current field — nothing is stored, it's recomputed from the logs every turn. Edit the instructions or memory below and watch it change.</p>
+      <p class="note">Resolved turns fold into the digest — only the live window rides verbatim.</p>
+      <div class="focus-bar" id="foldFocus"><span class="focus-icon">◈</span><span id="foldFocusText"></span></div>
       <div class="foldstats" id="foldStats"></div>
       <div id="foldParts"></div>
-      <h3 style="margin-top:14px">Live conversation window</h3>
-      <p class="note">Only the turns since your last saved answer ride verbatim; resolved turns fold away into the digest above.</p>
+      <h3 style="margin-top:10px">Live conversation window</h3>
+      <p class="note">Turns since your last saved answer.</p>
       <div id="foldTurns"></div>
     </section>
-
-    <section class="sec" id="secAuthoring">
-      <h3>Where this comes from</h3>
-      <p class="note">The instructions, the memory, and the questions themselves aren't stored on your device — they live in a <strong>shared config room</strong> that everyone using this intake reads. Your answers and anything you type stay in your own <strong>private room</strong>, never mixed in with anyone else's. Whoever runs the intake authors the questions and help material from the admin surface.</p>
-      <div class="btns"><a class="btn-link" href="./questions.html">Open the questions surface →</a></div>
-    </section>
-
   </div>
 </aside>
 
-<!-- admin dashboard: table + kanban views over every applicant's uploaded
-     documents, decrypted on demand. Only reachable by the admin account
-     (config.js ADMIN_USER_ID) in Matrix mode; open to try in demo mode. -->
+<!-- Question authoring panel -->
+<div class="hidden" id="questionsPanel">
+    <nav class="top"><div class="brand" id="qBack" style="cursor:pointer"><span class="logo">◈</span><h1>eoAI · Questions</h1><span class="sub">author the question set</span></div><span class="spacer"></span><div class="setup"><span class="status"><span class="dot" id="qDot"></span><span id="qStatusTxt">ready</span></span></div></nav>
+  <div class="q-panel" id="qPanelBody"></div>
+</div>
+
+<!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
-  <header class="atop">
-    <h1>Submissions</h1>
-    <span class="sub" id="adminWho"></span>
-    <div class="atabs">
-      <button class="atab on" data-view="table" type="button">Table</button>
-      <button class="atab" data-view="kanban" type="button">Kanban</button>
-    </div>
-    <button class="aclose" id="adminClose" type="button">← Back to intake</button>
+  <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
+    <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="eval">Retrieval Eval</button></div>
+    <button class="aclose" id="adminClose">← Back</button>
   </header>
   <div class="abody" id="adminBody"></div>
 </main>
 
-<script type="module" src="./js/app.js"></script>
-</body>
-</html>
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+
+
+// config.js — small shared constants that don't belong to any one layer.
+//
+// The admin account: whoever is signed in as this Matrix user gets folded
+// into every applicant's room (see store.js MatrixStore._ensureAdminInvited)
+// and can open the Admin dashboard (see admin.js) to review uploaded
+// documents across every applicant.
+
+const ADMIN_USER_ID = "@planetary_nebula996083:hyphae.social";
+
+
+const KEY_STORE_PREFIX = "intake:key:";
+
+const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)).buffer;
+
+async function sha256B64(buf) {
+  return toB64(await crypto.subtle.digest("SHA-256", buf));
+}
+
+async function encryptBytes(plainBuf) {
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plainBuf);
+  const jwk = await crypto.subtle.exportKey("jwk", key);
+  return { ciphertext, key: jwk, iv: toB64(iv), hash: await sha256B64(ciphertext) };
+}
+
+async function decryptBytes(ciphertext, jwk, ivB64, expectHashB64) {
+  if (expectHashB64) {
+    const actual = await sha256B64(ciphertext);
+    if (actual !== expectHashB64) throw new Error("integrity check failed");
+  }
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, false, ["decrypt"]);
+  return crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(ivB64) }, key, ciphertext);
+}
+
+async function ensureRoomKey(roomId) {
+  const stored = localStorage.getItem(KEY_STORE_PREFIX + roomId);
+  if (stored) {
+    try { return JSON.parse(stored); } catch {}
+  }
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const jwk = await crypto.subtle.exportKey("jwk", key);
+  const kp = { key: jwk, created: Date.now() };
+  try { localStorage.setItem(KEY_STORE_PREFIX + roomId, JSON.stringify(kp)); } catch {}
+  return kp;
+}
+
+function getRoomKey(roomId) {
+  const stored = localStorage.getItem(KEY_STORE_PREFIX + roomId);
+  if (!stored) return null;
+  try { return JSON.parse(stored); } catch { return null; }
+}
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+async function encryptText(plaintext, jwk) {
+  if (!plaintext) return null;
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
+  return { ct: toB64(ciphertext), iv: toB64(iv) };
+}
+
+async function decryptText(cipherObj, jwk) {
+  if (!cipherObj || !jwk) return null;
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, false, ["decrypt"]);
+  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(cipherObj.iv) }, key, fromB64(cipherObj.ct));
+  return dec.decode(plainBuf);
+}
+
+function isEncrypted(value) {
+  return value && typeof value === "object" && value.ct && value.iv;
+}
+
+
+const SCHEMA = {
+  id: "agency-complaint",
+  title: "Agency service complaint",
+  blurb: "We'll walk through the details of your experience with the government agency. Nothing is saved until you confirm it, and you can stop and come back anytime.",
+  fields: [
+    {
+      path: "full_name",
+      label: "Your full name",
+      type: "text",
+      required: true,
+      prompt: "Let's start. What's your full name so we know who's filing this?",
+      help: "First and last name is fine. If you'd prefer to remain anonymous, you can say 'anonymous' and we'll note it.",
+    },
+    {
+      path: "contact_email",
+      label: "Email address",
+      type: "email",
+      required: false,
+      prompt: "What email address should we use to follow up with you?",
+      help: "We'll only use this to communicate about your complaint. If you'd rather not share it, just say so.",
+    },
+    {
+      path: "agency_name",
+      label: "Agency or department",
+      type: "text",
+      required: true,
+      prompt: "Which government agency or department are you filing a complaint about?",
+      help: "The full name if you know it — e.g. 'Department of Motor Vehicles', 'Social Security Administration', 'City Housing Authority'. An acronym is fine if that's what you know it by.",
+    },
+    {
+      path: "agency_level",
+      label: "Level of government",
+      type: "enum",
+      enum: ["Federal", "State", "County / City / Local", "Tribal", "Not sure"],
+      required: true,
+      prompt: "Is this a federal, state, or local agency?",
+      help: "Federal agencies include things like the IRS, SSA, USCIS, VA. State includes DMV, state health departments. Local includes city hall, county clerk, school boards.",
+    },
+    {
+      path: "service_sought",
+      label: "Service or benefit you were seeking",
+      type: "text",
+      required: true,
+      prompt: "What service, benefit, or assistance were you trying to get from this agency?",
+      help: "Be as specific as you're comfortable with — e.g. 'a driver's license renewal', 'food stamp benefits', 'a building permit', 'my tax refund'. If this has been going on a while, tell us what it started as.",
+    },
+    {
+      path: "incident_date",
+      label: "Date this started",
+      type: "date",
+      required: true,
+      prompt: "When did you first try to get this service or first experience the problem?",
+      help: "An approximate date is fine if you don't remember the exact day. We just need a general timeframe.",
+    },
+    {
+      path: "communication_failures",
+      label: "How communication broke down",
+      type: "text",
+      required: true,
+      prompt: "Tell us about how the agency communicated with you — or didn't. Were calls returned? Did you get conflicting information? Were you left waiting without updates?",
+      help: "Common issues: no response to calls or emails, long hold times, being transferred between departments, getting different answers from different staff, not being told about delays, language barriers, no accommodation for disabilities.",
+    },
+    {
+      path: "service_failure",
+      label: "What the agency failed to provide",
+      type: "text",
+      required: true,
+      prompt: "What specifically did the agency fail to do or provide? What should have happened that didn't?",
+      help: "Examples: never processed an application past the deadline, denied a benefit you believe you qualify for, lost your paperwork, refused to provide a service available to others, didn't make reasonable accommodations.",
+    },
+    {
+      path: "attempts_to_resolve",
+      label: "What you've tried so far",
+      type: "text",
+      required: false,
+      prompt: "Have you tried to resolve this already? If so, what steps have you taken and what happened?",
+      help: "Include any complaints you've already filed, supervisors you've spoken to, appeals you've submitted, or elected officials you've contacted. Even if nothing came of it, it helps to know what's been tried.",
+    },
+    {
+      path: "impact",
+      label: "How this has affected you",
+      type: "text",
+      required: true,
+      prompt: "How has this agency's failure affected you or your household?",
+      help: "This can include financial harm, health impacts, lost work, stress, inability to access necessities, missed opportunities. Everything you share helps document the real cost of the service failure.",
+    },
+    {
+      path: "desired_outcome",
+      label: "What would resolve this",
+      type: "text",
+      required: false,
+      prompt: "What would a good outcome look like from your perspective?",
+      help: "The service you originally asked for? An apology? A policy change? Compensation? Reimbursement for costs incurred? There's no wrong answer — this is about what would make things right for you.",
+    },
+  ],
+};
+
+
+
+const OP = Object.freeze({ DEF: "DEF", INS: "INS", CON: "CON" });
+const EVENT_TYPE = "io.matrix-events.op";
+
+function fold(events) {
+  const anchors = {};
+  const records = {};
+  const edges = [];
+  for (const e of events) {
+    if (e.op === OP.DEF) {
+      const a = e.payload.anchor || "_root";
+      (anchors[a] ||= {})[e.payload.path] = {
+        value: e.payload.value,
+        at: e.at,
+        by: e.by,
+        eventId: e.id,
+      };
+    } else if (e.op === OP.INS) {
+      records[e.payload.id] = { entity: e.payload.entity, attrs: e.payload.attrs || {}, at: e.at };
+    } else if (e.op === OP.CON) {
+      edges.push({ from: e.payload.from, to: e.payload.to, kind: e.payload.kind, at: e.at });
+    }
+  }
+  return { anchors, records, edges };
+}
+
+function answersOf(folded, anchor = "_root") {
+  const out = {};
+  const a = folded.anchors[anchor] || {};
+  for (const [path, cell] of Object.entries(a)) out[path] = cell.value;
+  return out;
+}
+
+function nowIso() { return new Date().toISOString(); }
+function newId(prefix = "e") { return prefix + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+function decodeMxEvent(mxEvent) {
+  const c = mxEvent.getContent();
+  return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
+}
+
+class BaseStore {
+  constructor() { this._subs = new Set(); this._events = []; }
+  timeline() { return this._events.slice(); }
+  fold() { return fold(this._events); }
+  subscribe(fn) { this._subs.add(fn); return () => this._subs.delete(fn); }
+  _notify(ev) { for (const fn of this._subs) fn(ev, this._events); }
+}
+
+class DemoStore extends BaseStore {
+  constructor(user = "@demo:local") { super(); this.user = user; }
+  async open(roomId) {
+    this.roomId = roomId;
+    this._key = "intake:" + roomId;
+    try { this._events = JSON.parse(localStorage.getItem(this._key) || "[]"); }
+    catch { this._events = []; }
+    return this;
+  }
+  emit(op, payload) {
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user };
+    this._events.push(ev);
+    try { localStorage.setItem(this._key, JSON.stringify(this._events)); } catch {}
+    this._notify(ev);
+    return ev;
+  }
+  async reset() { this._events = []; try { localStorage.removeItem(this._key); } catch {} this._notify(null); }
+
+  static listRoomIds() {
+    const ids = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("intake:") && !k.startsWith("intake:ctx:")) ids.push(k.slice("intake:".length));
+    }
+    return ids;
+  }
+  static loadEvents(roomId) {
+    try { return JSON.parse(localStorage.getItem("intake:" + roomId) || "[]"); } catch { return []; }
+  }
+  static appendEvent(roomId, op, payload, by) {
+    const events = DemoStore.loadEvents(roomId);
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by };
+    events.push(ev);
+    try { localStorage.setItem("intake:" + roomId, JSON.stringify(events)); } catch {}
+    return ev;
+  }
+}
+
+class MatrixStore extends BaseStore {
+  constructor(client) { super(); this.client = client; this.user = client.getUserId(); }
+
+  static async login({ homeserver, userId, password }) {
+    const sdk = window.matrixcs;
+    if (!sdk) throw new Error("matrix-js-sdk not loaded");
+    const tmp = sdk.createClient({ baseUrl: homeserver });
+    const res = await tmp.loginWithPassword(userId, password);
+    const client = sdk.createClient({
+      baseUrl: homeserver, accessToken: res.access_token,
+      userId: res.user_id, deviceId: res.device_id,
+    });
+    await client.startClient({ initialSyncLimit: 100 });
+    await new Promise((resolve) => {
+      client.once("sync", (state) => state === "PREPARED" && resolve());
+    });
+    return new MatrixStore(client);
+  }
+
+  async open(roomId) {
+    this.roomId = roomId;
+    const room = this.client.getRoom(roomId);
+    if (room) {
+      this._events = room.getLiveTimeline().getEvents()
+        .filter((e) => e.getType() === EVENT_TYPE)
+        .map((e) => this._decode(e));
+      this._ensureAdminInvited(room);
+    }
+    this.client.on("Room.timeline", (event, room) => {
+      if (room.roomId !== this.roomId) return;
+      if (event.getType() !== EVENT_TYPE) return;
+      const ev = this._decode(event);
+      this._events.push(ev);
+      this._notify(ev);
+    });
+    return this;
+  }
+
+  async _ensureAdminInvited(room) {
+    if (this.user === ADMIN_USER_ID) return;
+    if (room.getMember(ADMIN_USER_ID)) return;
+    try { await this.client.invite(this.roomId, ADMIN_USER_ID); } catch {}
+  }
+
+  _decode(mxEvent) { return decodeMxEvent(mxEvent); }
+
+  emit(op, payload) {
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user, _pending: true };
+    this._events.push(ev);
+    this._notify(ev);
+    this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+    return ev;
+  }
+
+  static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
+  static foldRoomEvents(client, roomId) {
+    const room = client.getRoom(roomId);
+    if (!room) return [];
+    return room.getLiveTimeline().getEvents().filter((e) => e.getType() === EVENT_TYPE).map(decodeMxEvent);
+  }
+}
+
+
+
+const TERRAINS = {
+  EXISTENCE: "Existence",
+  STRUCTURE: "Structure",
+  INTERPRETATION: "Interpretation",
+};
+
+const STANCES = {
+  DIFFERENTIATE: "Differentiate",
+  RELATE: "Relate",
+  GENERATE: "Generate",
+};
+
+const OPERATORS = {
+  NUL: { terrain: TERRAINS.EXISTENCE, stance: STANCES.DIFFERENTIATE, label: "NUL" },
+  SIG: { terrain: TERRAINS.EXISTENCE, stance: STANCES.RELATE, label: "SIG" },
+  INS: { terrain: TERRAINS.EXISTENCE, stance: STANCES.GENERATE, label: "INS" },
+  SEG: { terrain: TERRAINS.STRUCTURE, stance: STANCES.DIFFERENTIATE, label: "SEG" },
+  CON: { terrain: TERRAINS.STRUCTURE, stance: STANCES.RELATE, label: "CON" },
+  SYN: { terrain: TERRAINS.STRUCTURE, stance: STANCES.GENERATE, label: "SYN" },
+  DEF: { terrain: TERRAINS.INTERPRETATION, stance: STANCES.DIFFERENTIATE, label: "DEF" },
+  EVA: { terrain: TERRAINS.INTERPRETATION, stance: STANCES.RELATE, label: "EVA" },
+  REC: { terrain: TERRAINS.INTERPRETATION, stance: STANCES.GENERATE, label: "REC" },
+};
+
+function keywords(str) {
+  const STOP = new Set("the a an of to for and or in on is are your you what which was were with about".split(" "));
+  return new Set((str.toLowerCase().match(/[a-z][a-z]{2,}/g) || []).filter((w) => !STOP.has(w)));
+}
+
+function jaccard(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const k of a) if (b.has(k)) inter++;
+  const union = new Set([...a, ...b]);
+  return inter / union.size;
+}
+
+function classifyTerrainStance(field, pending, discourse) {
+  const kws = keywords((field?.label || "") + " " + (field?.help || ""));
+  const userKws = keywords(discourse.filter((m) => m.role === "user").map((m) => m.text || "").join(" "));
+
+  const supportKws = new Set(["help", "what", "why", "explain", "mean", "unsure", "stuck", "dont", "doubt", "clarify"]);
+  const confirmKws = new Set(["confirm", "looks good", "correct", "right", "okay", "yes", "yes", "done", "finished"]);
+  const answerKws = new Set(["answer", "reply", "say", "tell", "provide", "fill", "enter", "type"]);
+
+  let active = discourse.filter((m) => m.epoch === Math.max(0, ...discourse.map((x) => x.epoch || 0)));
+  const lastUser = [...active].reverse().find((m) => m.role === "user")?.text || "";
+  const lastAssistant = [...active].reverse().find((m) => m.role === "assistant")?.text || "";
+
+  if (pending) return { operator: OPERATORS.DEF, focus: "confirming" };
+  if (jaccard(userKws, supportKws) > 0.15) return { operator: OPERATORS.NUL, focus: "supporting" };
+  if (jaccard(userKws, confirmKws) > 0.15) return { operator: OPERATORS.EVA, focus: "evaluating" };
+  if (field && lastAssistant && !lastUser) return { operator: OPERATORS.SEG, focus: "asking" };
+  if (field && lastUser && !active.some((m) => m.support)) return { operator: OPERATORS.DEF, focus: "extracting" };
+  return { operator: OPERATORS.NUL, focus: "listening" };
+}
+
+function classifyFocus({ field, pending, discourse = [] }) {
+  const { operator, focus } = classifyTerrainStance(field, pending, discourse);
+  return {
+    operator,
+    terrain: operator.terrain,
+    stance: operator.stance,
+    focus,
+    label: `${operator.terrain}/${operator.stance} · ${focus}`,
+    system: `FOCUS: ${operator.terrain} / ${operator.stance} — ${focus}
+You are currently ${focus} the applicant about "${field?.label || "the intake"}". Respond in a way that matches this mode:
+- asking: present the question clearly, one at a time
+- supporting: explain, reassure, give examples
+- extracting: listen for the answer, normalize it
+- confirming: verify the extracted value before storing
+- evaluating: confirm the answer looks correct`,
+  };
+}
+
+
+class KnowledgeStore {
+  constructor(items = []) { this._n = 0; this.items = items.map((i) => this._normalize(i)); }
+
+  _normalize(i = {}) { return { id: i.id || "k" + (this._n++), topic: "", text: "", tags: [], scope: {}, ...i }; }
+
+  add(item) { const it = this._normalize(item); this.items.push(it); return it; }
+
+  update(id, patch = {}) {
+    const it = this.items.find((x) => x.id === id);
+    if (!it) return null;
+    Object.assign(it, patch);
+    if (patch.scope) it.scope = { ...patch.scope };
+    if (patch.tags) it.tags = [...patch.tags];
+    return it;
+  }
+
+  remove(id) { const i = this.items.findIndex((x) => x.id === id); if (i >= 0) this.items.splice(i, 1); return i >= 0; }
+
+  list() { return this.items.slice(); }
+
+  toJSON() { return this.items.map(({ id, topic, text, tags, scope }) => ({ id, topic, text, tags, scope })); }
+  static fromJSON(arr) { return new KnowledgeStore(Array.isArray(arr) ? arr : []); }
+
+  retrieve(field, { budget = 700, seed = [] } = {}) {
+    const fieldKws = keywords(`${field.label} ${field.help || ""}`);
+    const idf = this._idfWeights();
+    const scored = this.items.map((it) => ({ it, s: this._score(it, field, fieldKws, idf) }))
+      .filter((x) => x.s >= 0.15)
+      .sort((a, b) => b.s - a.s);
+
+    const chosen = [];
+    let used = 0;
+    for (const s of [...seed, ...scored.map((x) => x.it)]) {
+      const block = `• ${s.topic}: ${s.text}`;
+      if (used + block.length > budget && chosen.length) break;
+      if (chosen.some((c) => c.id === s.id)) continue;
+      chosen.push(s); used += block.length + 1;
+      if (used >= budget) break;
+    }
+    const text = chosen.map((s) => `• ${s.topic}: ${s.text}`).join("\n");
+    return { text, items: chosen };
+  }
+
+  surface(query, { limit = 3, budget = 500 } = {}) {
+    const qKws = keywords(query);
+    const idf = this._idfWeights();
+    const scored = this.items.map((it) => {
+      const textKws = keywords(`${it.topic} ${it.text} ${(it.tags || []).join(" ")}`);
+      const overlap = [...qKws].filter((k) => textKws.has(k)).length;
+      const maxLen = Math.max(qKws.size, 1);
+      const tf = overlap / maxLen;
+      const idfScore = [...qKws].reduce((sum, k) => sum + (idf.get(k) || 1), 0) / Math.max(qKws.size, 1);
+      return { item: it, score: tf * idfScore };
+    }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+
+    const chosen = [];
+    let used = 0;
+    for (const { item } of scored) {
+      const block = `• ${item.topic}: ${item.text}`;
+      if (used + block.length > budget && chosen.length) break;
+      chosen.push(item); used += block.length + 1;
+    }
+    const text = chosen.map((s) => `• ${s.topic}: ${s.text}`).join("\n");
+    return { text, items: chosen };
+  }
+
+  _idfWeights() {
+    const N = Math.max(this.items.length, 1);
+    const df = new Map();
+    for (const it of this.items) {
+      const seen = new Set();
+      const kws = keywords(`${it.topic} ${it.text} ${(it.tags || []).join(" ")}`);
+      for (const k of kws) { if (!seen.has(k)) { seen.add(k); df.set(k, (df.get(k) || 0) + 1); } }
+    }
+    const idf = new Map();
+    for (const [k, d] of df) idf.set(k, Math.max(0.5, Math.log((N - d + 0.5) / (d + 0.5) + 1)));
+    return idf;
+  }
+
+  _score(item, field, fieldKws, idf) {
+    let s = 0;
+    if (item.scope?.field === field.path) s += 0.5;
+    if (Array.isArray(field.tags) && Array.isArray(item.tags))
+      s += field.tags.filter((t) => item.tags.includes(t)).length * 0.2;
+    const hay = keywords(`${item.topic} ${item.text} ${(item.tags || []).join(" ")}`);
+    const overlap = [...fieldKws].filter((k) => hay.has(k));
+    if (overlap.length > 0) {
+      const idfWeight = overlap.reduce((sum, k) => sum + (idf.get(k) || 1), 0) / overlap.length;
+      s += (overlap.length / Math.max(fieldKws.size, 1)) * idfWeight;
+    }
+    return s;
+  }
+}
+
+const STOP = new Set("the a an of to for and or in on is are your you what which was were with about".split(" "));
+function keywords(str) {
+  return new Set((str.toLowerCase().match(/[a-z][a-z]{2,}/g) || []).filter((w) => !STOP.has(w)));
+}
+
+const DEMO_KNOWLEDGE = new KnowledgeStore([
+  { topic: "Describing agency failures clearly", scope: { field: "service_failure" }, tags: ["evidence", "specificity"],
+    text: "Encourage the person to be specific about what the agency did or didn't do. Vague descriptions are common but harder to act on. Help them identify: what was promised vs what happened, any deadlines that were missed, any written communication they received. If they have documents, ask them to upload them." },
+  { topic: "Communication barriers with agencies", scope: { field: "communication_failures" }, tags: ["access", "language"],
+    text: "Document all forms of communication breakdown: unanswered calls or emails, being transferred repeatedly, being told different things by different staff, long hold times, lack of return calls, inaccessible formats for people with disabilities, language barriers. Note dates and times if they have them — even approximate ones help establish a pattern." },
+  { topic: "Documenting impact on the person", scope: { field: "impact" }, tags: ["evidence", "harm"],
+    text: "Impact can be financial (lost wages, incurred costs), physical (health deteriorated while waiting), emotional (stress, anxiety, humiliation), or practical (lost housing, inability to work, missed medical care). Every detail matters for building a complete picture of the harm caused by the service failure." },
+  { topic: "Agency complaint escalation paths", scope: { field: "attempts_to_resolve" }, tags: ["procedure", "ombudsman"],
+    text: "Common next steps after a complaint: ask for a supervisor, file a formal grievance through the agency's process, contact the agency's inspector general or ombudsman, reach out to an elected representative (city council, state assembly, congressional office), file for a hearing or appeal if one exists, or contact a legal aid organization." },
+  { topic: "What constitutes a valid agency complaint", tags: ["eligibility", "jurisdiction"],
+    text: "A valid agency service complaint typically involves: failure to provide a service the agency is legally required to provide, unreasonable delay, failure to communicate, providing incorrect information, discrimination, retaliation, or failure to accommodate a disability. Complaints can be filed by the person affected or by someone acting on their behalf." },
+  { topic: "Trauma-informed intake approach", tags: ["support", "wellbeing"],
+    text: "People filing complaints about government agencies are often frustrated, stressed, or traumatized by their experience. Allow them to tell their story at their own pace. Reassure them that partial information is okay — answers can be supplemented later. Acknowledge that navigating agency bureaucracy is genuinely difficult and their frustration is valid." },
+]);
+
+
+
+const MINIMAL_SYSTEM =
+`You are a calm intake companion helping someone fill a sensitive document one field at a time. You are not a lawyer and give no legal advice.
+Work only on the current field. If they seem stuck or ask a question, help briefly (support=true, ready=false). When their message contains a usable answer, normalize it, set ready=true and extracted to the clean value, and ask them to confirm. Never invent facts; if unsure, ask one short question.
+Reply with ONLY a JSON object: {"reply":string,"support":boolean,"ready":boolean,"extracted":string|null}`;
+
+function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null }) {
+  const B = { knowledge: 700, digest: 400, liveTurns: 6, ...budget };
+  const answers = answersOf(fold(timeline), anchor);
+
+  const focus = classifyFocus({ field, pending, discourse });
+
+  const seed = field.help ? [{ topic: field.label, text: field.help }] : [];
+  const know = knowledge
+    ? knowledge.retrieve(field, { budget: B.knowledge, seed })
+    : { text: seed.map((s) => `• ${s.topic}: ${s.text}`).join("\n"), items: seed };
+
+  const digest = buildDigest(schema, answers, B.digest);
+
+  const texted = discourse.filter((m) => m.text && (m.role === "user" || m.role === "assistant"));
+  const hasEpoch = texted.some((m) => typeof m.epoch === "number");
+  let live;
+  if (hasEpoch) {
+    const maxEpoch = Math.max(...texted.map((m) => m.epoch ?? 0));
+    live = texted.filter((m) => (m.epoch ?? 0) === maxEpoch);
+  } else {
+    const lastStoreAt = lastDefAt(timeline);
+    live = texted.filter((m) => !lastStoreAt || new Date(m.at).getTime() > new Date(lastStoreAt).getTime());
+  }
+  const dropped = texted.length - live.length;
+  const window = live.slice(-B.liveTurns);
+
+  const total = schema ? schema.fields.length : Object.keys(answers).length;
+  const done = schema ? schema.fields.filter((f) => answers[f.path] != null && answers[f.path] !== "").length : 0;
+
+  const parts = [
+    { kind: "system", label: "Instructions", text: system },
+    { kind: "focus", label: "Focus — how to steer", text: focus.system },
+    { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}` },
+  ];
+  if (know.text) parts.push({ kind: "memory", label: `Reference — memory folded for this field (${know.items.length})`, text: `REFERENCE (folded for this field):\n${know.text}` });
+  parts.push({ kind: "progress", label: "Progress + answer digest", text: `PROGRESS: ${done}/${total} captured.` + (digest ? `\nAlready recorded — do not re-ask:\n${digest}` : "") });
+
+  const messages = [
+    { role: "system", content: parts.map((p) => p.text).join("\n\n") },
+    ...window.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
+  ];
+
+  return {
+    messages, parts, focus,
+    stats: {
+      knowledgeItems: know.items.length, knowledgeChars: know.text.length,
+      liveTurns: window.length, droppedTurns: Math.max(0, dropped),
+      digestedAnswers: digest ? digest.split("\n").length : 0,
+      promptChars: messages.reduce((n, m) => n + m.content.length, 0),
+    },
+  };
+}
+
+function buildDigest(schema, answers, budget) {
+  if (!schema) return "";
+  const lines = [];
+  let used = 0;
+  for (const f of schema.fields) {
+    const v = answers[f.path];
+    if (v == null || v === "") continue;
+    const line = `${f.label}: ${clip(String(v), 80)}`;
+    if (used + line.length > budget && lines.length) break;
+    lines.push(line); used += line.length + 1;
+  }
+  return lines.join("\n");
+}
+
+function lastDefAt(timeline) {
+  let at = null;
+  for (const e of timeline) if (e.op === "DEF") at = e.at;
+  return at;
+}
+
+function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+
+// model.js — the model membrane.
+//
+// One interface, three backends (mirrors eoreader4.2's model/ faculty:
+// webllm / qwen-coders / echo). The controller only ever calls:
+//
+//   await model.ready()
+//   await model.chat(messages) -> string           (full completion)
+//   model.stream(messages, onToken) -> Promise      (optional streaming)
+//
+// Default is WebLLM, in-browser, zero server. Ollama is there for bigger
+// models on a local daemon. Echo needs nothing at all and makes the whole
+// intake flow demonstrable offline — it fakes a small, fast instruct model well
+// enough to drive the conversation and return the structured JSON the
+// controller expects.
+
+// ---- Shared envelope schema -------------------------------------------------
+// intake.js's contract is one fixed JSON shape (see below). Rather than only
+// asking for it in the system prompt, we hand backends that support grammar-
+// constrained decoding this schema directly — output can't structurally be
+// anything else, and generation halts the instant it's satisfied. That's what
+// keeps a 1B model "on the rails": fast (no wasted tokens rambling past the
+// envelope, bounded by max_tokens/num_predict below) and reliable (no
+// malformed-JSON fallback needed on the happy path).
+const REPLY_SCHEMA = {
+  type: "object",
+  properties: {
+    reply: { type: "string" },
+    support: { type: "boolean" },
+    ready: { type: "boolean" },
+    extracted: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  required: ["reply", "support", "ready", "extracted"],
+};
+const REPLY_SCHEMA_STR = JSON.stringify(REPLY_SCHEMA);
+const MAX_REPLY_TOKENS = 200; // one short conversational turn — keeps a small model snappy
+
+// ---- WebLLM: in-browser, WebGPU -------------------------------------------
+class WebLLMModel {
+  constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
+    this.modelId = modelId; this.engine = null;
+  }
+  async ready(onProgress) {
+    if (this.engine) return;
+    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    this.engine = await webllm.CreateMLCEngine(this.modelId, {
+      initProgressCallback: (r) => onProgress?.(r.text, r.progress),
+    });
+  }
+  async chat(messages) {
+    const r = await this.engine.chat.completions.create({
+      messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS,
+      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+    });
+    return r.choices[0].message.content;
+  }
+  async stream(messages, onToken) {
+    let full = "";
+    const it = await this.engine.chat.completions.create({
+      messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS, stream: true,
+      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+    });
+    for await (const chunk of it) {
+      const t = chunk.choices[0]?.delta?.content || "";
+      if (t) { full += t; onToken?.(t); }
+    }
+    return full;
+  }
+}
+
+// ---- Ollama: local daemon --------------------------------------------------
+class OllamaModel {
+  constructor(model = "llama3.2", host = "http://localhost:11434") {
+    this.model = model; this.host = host;
+  }
+  async ready() {
+    const r = await fetch(this.host + "/api/tags").catch(() => null);
+    if (!r || !r.ok) throw new Error("Ollama not reachable at " + this.host);
+  }
+  async chat(messages) {
+    const r = await fetch(this.host + "/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: this.model, messages, stream: false, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+    });
+    const d = await r.json();
+    return d.message.content;
+  }
+  async stream(messages, onToken) {
+    const r = await fetch(this.host + "/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: this.model, messages, stream: true, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+    });
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let full = "";
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      for (const line of dec.decode(value).split("\n")) {
+        if (!line.trim()) continue;
+        try { const j = JSON.parse(line); const t = j.message?.content || ""; if (t) { full += t; onToken?.(t); } } catch {}
+      }
+    }
+    return full;
+  }
+}
+
+// ---- Echo: no model, deterministic ----------------------------------------
+// Not an LLM. It reads the same system contract the real backends get, finds
+// the "CURRENT FIELD" block the controller injects, and returns the structured
+// JSON the controller parses — so you can walk the entire intake with zero
+// setup, then swap in WebLLM/Ollama without touching the controller.
+class EchoModel {
+  async ready() {}
+  async chat(messages) {
+    const sys = messages.find((m) => m.role === "system")?.content || "";
+    const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content?.trim() || "";
+    const field = this._field(sys);
+    const focus = this._focus(sys);
+
+    if (/^\??$|help|what|why|explain|mean|unsure|don't know|dont know/i.test(lastUser) && lastUser.length < 40) {
+      if (focus?.includes("confirming")) {
+        return JSON.stringify({
+          reply: "Does that look right? You can say yes to confirm, or no to change it.",
+          support: true, ready: false, extracted: null,
+        });
+      }
+      return JSON.stringify({
+        reply: this._reference(sys) || field?.help || "Take your time — answer in whatever words feel natural and I'll tidy it up.",
+        support: true, ready: false, extracted: null,
+      });
+    }
+
+    if (focus?.includes("confirming")) {
+      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good)/i.test(lastUser)) {
+        return JSON.stringify({ reply: "Got it — I'll save that.", support: false, ready: true, extracted: lastUser });
+      }
+      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(lastUser)) {
+        return JSON.stringify({ reply: "No problem — tell me the right version.", support: true, ready: false, extracted: null });
+      }
+      return JSON.stringify({ reply: "Is this the answer you want to save? Say yes to confirm or no to edit.", support: true, ready: false, extracted: null });
+    }
+
+    const value = lastUser;
+    const err = field ? validate(field, value) : null;
+    if (err) return JSON.stringify({ reply: err, support: true, ready: false, extracted: null });
+    return JSON.stringify({
+      reply: `Got it — I'll record "${value}". Does that look right?`,
+      support: false, ready: true, extracted: value,
+    });
+  }
+  stream(messages, onToken) { return this.chat(messages).then((s) => { onToken?.(s); return s; }); }
+
+  _field(sys) {
+    const m = sys.match(/CURRENT FIELD:\s*({[\s\S]*?})\s*(?:\n\n|$)/);
+    if (!m) return null;
+    try { return JSON.parse(m[1]); } catch { return null; }
+  }
+
+  // Pull the first line of the folded REFERENCE block (the field's own help is
+  // seeded first), stripped of its "• Topic: " prefix — Echo's stand-in for the
+  // reasoning a real model would do over the retrieved reference.
+  _reference(sys) {
+    const m = sys.match(/REFERENCE \(folded for this field\):\n([\s\S]*?)(?:\n\n|$)/);
+    if (!m) return "";
+    return (m[1].split("\n")[0] || "").replace(/^•\s*[^:]*:\s*/, "").trim();
+  }
+
+  _focus(sys) {
+    const m = sys.match(/FOCUS:\s*([^\n]+)/);
+    return m ? m[1].trim() : null;
+  }
+}
+
+// Shared lightweight validation, used by Echo and re-exported for the controller.
+function validate(field, value) {
+  const v = (value ?? "").toString().trim();
+  if (field.required && !v) return "This one's required — even a rough answer is fine to start.";
+  if (field.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "That doesn't look like an email address — mind checking it?";
+  if (field.type === "date" && v && isNaN(Date.parse(v))) return "I couldn't read that as a date. A format like 1990-04-23 works well.";
+  if (field.type === "number" && v && isNaN(Number(v))) return "That should be a number.";
+  if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase()))
+    return `Please pick one of: ${field.enum.join(", ")}.`;
+  return null;
+}
+
+function makeModel(kind, opts = {}) {
+  if (kind === "webllm") return new WebLLMModel(opts.model);
+  if (kind === "ollama") return new OllamaModel(opts.model, opts.host);
+  return new EchoModel();
+}
+
+
+// media.js — the media store: where encrypted file bytes actually live.
+//
+// The event log (store.js) only ever carries metadata + decryption keys for
+// a document; this is the content-addressed blob store those keys point at.
+// Two backends behind one interface, same pattern as store.js's DemoStore /
+// MatrixStore:
+//
+//   DemoMedia   — IndexedDB on this device, standing in for a homeserver's
+//                 content repository when there's no server to talk to.
+//   MatrixMedia — the real Matrix content repository, via uploadContent().
+//
+// Both only ever handle ciphertext: encryption happens in crypto.js before
+// put(), decryption happens after get(). Neither backend is told what it's
+// storing.
+
+const DB_NAME = "intake-media";
+const STORE = "blobs";
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+class DemoMedia {
+  async put(id, ciphertext) {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).put(ciphertext, id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    return "mxc://demo/" + id;
+  }
+  async get(url) {
+    const id = url.replace("mxc://demo/", "");
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(id);
+      req.onsuccess = () => (req.result ? resolve(req.result) : reject(new Error("blob not found on this device")));
+      req.onerror = () => reject(req.error);
+    });
+  }
+}
+
+class MatrixMedia {
+  constructor(client) { this.client = client; }
+  async put(_id, ciphertext) {
+    const res = await this.client.uploadContent(new Blob([ciphertext]), {
+      rawResponse: false,
+      onlyContentUri: true,
+      type: "application/octet-stream", // the real mimetype is never sent — only the encrypted bytes are
+    });
+    return typeof res === "string" ? res : res.content_uri;
+  }
+  async get(url) {
+    const httpUrl = this.client.mxcUrlToHttp(url);
+    const res = await fetch(httpUrl);
+    if (!res.ok) throw new Error("download failed: " + res.status);
+    return res.arrayBuffer();
+  }
+}
+
+
+// docview.js — shared "decrypt and show" modal for document records.
+//
+// Used by both the applicant's own upload list (app.js) and the admin
+// dashboard (admin.js): same event shape, same decrypt path, just a
+// different set of documents in scope. The file is only ever plaintext in
+// memory, as a blob: URL scoped to this tab — it's never written back
+// anywhere decrypted.
+
+
+let modalEl = null;
+let lastObjectUrl = null;
+
+function ensureModal() {
+  if (modalEl) return modalEl;
+  const scrim = document.createElement("div");
+  scrim.className = "docscrim";
+  scrim.innerHTML = `
+    <div class="docmodal">
+      <button class="docclose" type="button" aria-label="Close">&times;</button>
+      <div class="dochead"></div>
+      <div class="docbody"></div>
+    </div>`;
+  document.body.appendChild(scrim);
+  scrim.addEventListener("click", (e) => { if (e.target === scrim) closeDoc(); });
+  scrim.querySelector(".docclose").onclick = closeDoc;
+  modalEl = scrim;
+  return scrim;
+}
+
+function closeDoc() {
+  if (!modalEl) return;
+  modalEl.classList.remove("on");
+  if (lastObjectUrl) { URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDoc(); });
+
+async function previewDocument(doc, media) {
+  const scrim = ensureModal();
+  const head = scrim.querySelector(".dochead");
+  const body = scrim.querySelector(".docbody");
+  head.textContent = doc.filename || "Document";
+  body.innerHTML = `<p class="docstatus">Fetching encrypted file and decrypting in your browser…</p>`;
+  scrim.classList.add("on");
+
+  try {
+    const ciphertext = await media.get(doc.url);
+    const plainBuf = await decryptBytes(ciphertext, doc.key, doc.iv, doc.hash);
+    const blob = new Blob([plainBuf], { type: doc.mimetype || "application/octet-stream" });
+    if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+    const objUrl = URL.createObjectURL(blob);
+    lastObjectUrl = objUrl;
+
+    body.innerHTML = "";
+    if ((doc.mimetype || "").startsWith("image/")) {
+      const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
+      body.appendChild(img);
+    } else if (doc.mimetype === "application/pdf") {
+      const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
+      body.appendChild(frame);
+    } else {
+      const p = document.createElement("p"); p.className = "docstatus"; p.textContent = "No inline preview for this file type — download it below.";
+      body.appendChild(p);
+    }
+    const dl = document.createElement("a");
+    dl.className = "docdownload"; dl.href = objUrl; dl.download = doc.filename || "document";
+    dl.textContent = "Download decrypted file";
+    body.appendChild(dl);
+  } catch (e) {
+    body.innerHTML = `<p class="docstatus error">Couldn't decrypt this file: ${e.message}</p>`;
+  }
+}
+
+
+// questions.js — the shared question-configuration room.
+//
+// The questions the assistant asks, their order, and the material used to help
+// the user (system prompt + memory) are not hard-coded — they live as events in
+// a Matrix room that EVERY user can read. The question-authoring surface
+// (questions.html) writes to this room; each user's app folds it to learn the
+// current document.
+//
+// (Distinct from config.js, which just holds the ADMIN_USER_ID constant used by
+// the document-review dashboard. This module is the shared *question set*.)
+//
+// This is the same amino move the rest of the app makes: a room is a table,
+// events are rows, `foldConfig(timeline)` is the query. State is never stored —
+// the live schema is always recomputed from the log, so an edit by the admin is
+// visible to every user the next time they fold, with full provenance.
+//
+// Two rooms, two purposes:
+//   CONFIG_ROOM              shared — questions/order/help. All users read it.
+//   answerRoomFor(user)      private — one per user. Their answers, uploaded
+//                            documents, and message content live here, never
+//                            mixed with anyone else's timeline.
+//
+// Config event shapes (reusing store.js's OP algebra):
+//   INS entity="field"      { id:<path>, attrs:{ label,type,required,prompt,help,enum } }
+//                           attrs:{ deleted:true } tombstones a field.
+//   INS entity="knowledge"  { id, attrs:{ topic,text,tags,scope } }  (+ deleted tombstone)
+//   DEF anchor="qconfig"    path "field_order" -> [id,...]   (ordering, last write wins)
+//                           path "systemPrompt"/"title"/"blurb"/"id"/"seeded"
+//
+// Ordering is a single DEF holding the id list, so reordering rewrites one event
+// rather than touching every field. Fold applies it last-write-wins.
+
+
+const CONFIG_ANCHOR = "qconfig";
+const ENTITY = Object.freeze({ FIELD: "field", KNOWLEDGE: "knowledge" });
+
+// The shared room every user reads for the questions. In a live deployment this
+// is a real Matrix room id whose membership is "all intake users, read".
+const CONFIG_ROOM = "!intake-config:local";
+
+// Each user gets their own answers room. Derived here for the demo; in a live
+// deployment it is a real per-user room id (created/invited out of band) so one
+// person's message content is never visible in another's timeline. This is also
+// the room the document-review dashboard (admin.js) reads for uploaded files.
+function answerRoomFor(userId = "@demo:local") {
+  const safe = String(userId).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "user";
+  return "!intake-answers-" + safe + ":local";
+}
+
+// foldConfig(timeline) -> { meta, schema:{ id,title,blurb,fields:[...] }, systemPrompt, knowledge:[...] }
+// The ONLY place the live document is computed from the config log.
+function foldConfig(events) {
+  const meta = {};
+  const fields = new Map();
+  const know = new Map();
+  const fieldSeen = [];
+  const knowSeen = [];
+  let systemPrompt = null;
+  let order = null;
+
+  for (const e of events) {
+    if (e.op === OP.DEF && e.payload.anchor === CONFIG_ANCHOR) {
+      const { path, value } = e.payload;
+      if (path === "systemPrompt") systemPrompt = value;
+      else if (path === "field_order") order = Array.isArray(value) ? value : null;
+      else meta[path] = value;
+    } else if (e.op === OP.INS && e.payload.entity === ENTITY.FIELD) {
+      const { id, attrs = {} } = e.payload;
+      if (attrs.deleted) { fields.delete(id); continue; }
+      if (!fields.has(id)) fieldSeen.push(id);
+      fields.set(id, { ...(fields.get(id) || {}), ...attrs, path: id });
+    } else if (e.op === OP.INS && e.payload.entity === ENTITY.KNOWLEDGE) {
+      const { id, attrs = {} } = e.payload;
+      if (attrs.deleted) { know.delete(id); continue; }
+      if (!know.has(id)) knowSeen.push(id);
+      know.set(id, { ...(know.get(id) || {}), ...attrs, id });
+    }
+  }
+
+  // Resolve field order: the explicit list first (skipping tombstoned/unknown
+  // ids), then any fields not named in the list, in first-seen order.
+  const ordered = [];
+  const used = new Set();
+  if (order) for (const id of order) if (fields.has(id) && !used.has(id)) { ordered.push(fields.get(id)); used.add(id); }
+  for (const id of fieldSeen) if (fields.has(id) && !used.has(id)) { ordered.push(fields.get(id)); used.add(id); }
+
+  const knowledge = knowSeen.filter((id) => know.has(id)).map((id) => know.get(id));
+
+  return {
+    meta,
+    schema: { id: meta.id || "custom", title: meta.title || "eoAI", blurb: meta.blurb || "", fields: ordered },
+    systemPrompt,
+    knowledge,
+  };
+}
+
+// ---- emit helpers: every admin action is one event on the config room -------
+
+function putField(store, field) {
+  const { path, ...attrs } = field;
+  // Drop empty enum so a non-enum field doesn't carry a stray array.
+  if (!attrs.enum || !attrs.enum.length) delete attrs.enum;
+  return store.emit(OP.INS, { entity: ENTITY.FIELD, id: path, attrs });
+}
+function deleteField(store, path) {
+  return store.emit(OP.INS, { entity: ENTITY.FIELD, id: path, attrs: { deleted: true } });
+}
+function setFieldOrder(store, ids) {
+  return store.emit(OP.DEF, { anchor: CONFIG_ANCHOR, path: "field_order", value: ids });
+}
+function setSystemPrompt(store, text) {
+  return store.emit(OP.DEF, { anchor: CONFIG_ANCHOR, path: "systemPrompt", value: text });
+}
+function setMeta(store, key, value) {
+  return store.emit(OP.DEF, { anchor: CONFIG_ANCHOR, path: key, value });
+}
+function putKnowledge(store, item) {
+  const { id, ...attrs } = item;
+  return store.emit(OP.INS, { entity: ENTITY.KNOWLEDGE, id, attrs });
+}
+function deleteKnowledge(store, id) {
+  return store.emit(OP.INS, { entity: ENTITY.KNOWLEDGE, id, attrs: { deleted: true } });
+}
+
+// ---- defaults + seeding ----------------------------------------------------
+// The starting document is the example schema shipped in the repo, so a fresh
+// config room opens onto a working intake with zero setup — same ethos as the
+// demo store. Everything below is editable from the admin surface afterward.
+const DEFAULT_CONFIG = {
+  meta: { id: SCHEMA.id, title: SCHEMA.title, blurb: SCHEMA.blurb },
+  fields: SCHEMA.fields,
+  systemPrompt: MINIMAL_SYSTEM,
+  knowledge: DEMO_KNOWLEDGE.toJSON(),
+};
+
+function seedConfig(store, cfg = DEFAULT_CONFIG) {
+  setMeta(store, "id", cfg.meta.id);
+  setMeta(store, "title", cfg.meta.title);
+  setMeta(store, "blurb", cfg.meta.blurb);
+  setSystemPrompt(store, cfg.systemPrompt);
+  for (const f of cfg.fields) putField(store, f);
+  setFieldOrder(store, cfg.fields.map((f) => f.path));
+  for (const k of cfg.knowledge) putKnowledge(store, k);
+  setMeta(store, "seeded", true);
+}
+
+// Idempotent: seed once, guarded by a `seeded` marker so opening the shared room
+// from several places never double-writes the starting document.
+function ensureSeeded(store, cfg = DEFAULT_CONFIG) {
+  let folded = foldConfig(store.timeline());
+  if (!folded.meta.seeded) { seedConfig(store, cfg); folded = foldConfig(store.timeline()); }
+  return folded;
+}
+
+
+// intake.js — the conversation fold.
+//
+// This is the turn loop (eoreader4.2's turn/converse, cut down). It owns no UI
+// and no storage of its own: it reads `fold(store)` to know what's answered,
+// asks the model for the next move, and on a confirmed answer emits ONE
+// operator into the store. Progress is the room timeline, so the flow is
+// resumable for free — reopen the room and fold tells you where you stopped.
+//
+// The model contract is a small JSON envelope, so even a 1B local model stays
+// on the rails:
+//   { reply, support?: bool, ready?: bool, extracted?: string|null }
+//     reply     — what to say to the person (always)
+//     support   — true when this turn is help/clarification, not an answer
+//     ready      — true when `extracted` is a clean value awaiting confirmation
+//     extracted — the normalized value to store on confirm
+
+
+class Intake {
+  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM }) {
+    this.schema = schema; this.store = store; this.model = model;
+    this.knowledge = knowledge; this.anchor = anchor;
+    this.systemPrompt = systemPrompt; // editable base instructions; folded in each turn
+    this.history = [];          // chat transcript for the UI
+    this.pending = null;        // { field, value } awaiting confirmation
+    this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
+    this._listeners = new Set();
+  }
+
+  on(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
+  _emit(kind, data) { for (const fn of this._listeners) fn(kind, data); }
+
+  // Live-edit the base instructions. Takes effect on the next fold; we re-emit
+  // context so an open inspector reflects the change immediately.
+  setSystemPrompt(text) { this.systemPrompt = text ?? ""; this._emitContext(); return this.systemPrompt; }
+
+  // Assemble the prompt for the current field WITHOUT sending anything — lets
+  // the UI show exactly what will be folded in on the next turn.
+  previewContext() {
+    const f = this.nextField() || this.schema.fields[this.schema.fields.length - 1];
+    return { field: f, ...this._assemble(f) };
+  }
+
+  _emitContext() { if (this.nextField() || this.history.length) this._emit("context", this.previewContext()); }
+
+  answers() { return answersOf(this.store.fold(), this.anchor); }
+
+  // Ordered progress view for the UI's checklist.
+  progress() {
+    const a = this.answers();
+    return this.schema.fields.map((f) => ({ ...f, value: a[f.path], done: a[f.path] != null && a[f.path] !== "" }));
+  }
+
+  // Next unanswered field in document order. Requiredness governs whether you
+  // can *finish* (isComplete), not the order questions are asked — a form that
+  // jumps its optional fields to the end feels disorienting.
+  nextField() {
+    const a = this.answers();
+    return this.schema.fields.find((f) => a[f.path] == null || a[f.path] === "");
+  }
+
+  isComplete() { return this.schema.fields.every((f) => !f.required || this.answers()[f.path]); }
+
+  _say(role, text, meta = {}) {
+    // Stamp the epoch so context.assemble can keep only the LIVE exchange (the
+    // turns said since the last store) verbatim, and fold the rest to a digest.
+    const msg = { role, text, at: Date.now(), epoch: this.epoch, ...meta };
+    this.history.push(msg);
+    this._emit("message", msg);
+    return msg;
+  }
+
+  // Kick off / resume. Greets, then asks the first unanswered question.
+  async begin() {
+    if (this.history.length === 0) {
+      const done = this.progress().filter((p) => p.done).length;
+      this._say("assistant",
+        done > 0
+          ? `Welcome back. You've got ${done} of ${this.schema.fields.length} answered — let's pick up where you left off.`
+          : this.schema.blurb);
+    }
+    await this._askNext();
+  }
+
+  async _askNext() {
+    this.pending = null;
+    const f = this.nextField();
+    if (!f) { this._say("assistant", "That's everything I need. Your answers are all saved — you can review or edit any of them from the checklist."); this._emit("complete", this.answers()); return; }
+    this._emit("field", f);
+    this._emitContext();  // the fold changed with the field — refresh any open inspector
+    this._say("assistant", f.prompt, { field: f.path });
+  }
+
+  // The person sent a message. Route it through the model, then act.
+  async submit(text) {
+    this._say("user", text);
+    const f = this.nextField();
+    if (!f) return;
+
+    // If we're awaiting confirmation, interpret yes/no locally (cheap + reliable).
+    if (this.pending) {
+      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good|👍)/i.test(text.trim())) {
+        return this._confirm();
+      }
+      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(text.trim())) {
+        this.pending = null;
+        this._say("assistant", "No problem — go ahead and tell me the right version.");
+        return;
+      }
+      // Anything else: treat as a fresh answer to the same field (fall through).
+      this.pending = null;
+    }
+
+    // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
+    // so the empty node never lands inside the live window.
+    const assembled = this._assemble(f);
+    const { messages } = assembled;
+    this._emit("context", { field: f, ...assembled });
+    const thinking = this._say("assistant", "", { streaming: true, field: f.path });
+
+    let raw = "";
+    try { raw = await this.model.chat(messages); }
+    catch (e) { thinking.text = "The model isn't responding — you can keep typing and I'll store your answers directly."; thinking.streaming = false; this._emit("message", thinking); return; }
+
+    const parsed = this._parse(raw, f, text);
+    thinking.text = parsed.reply; thinking.streaming = false; thinking.support = parsed.support; this._emit("message", thinking);
+
+    if (parsed.ready && parsed.extracted != null) {
+      const err = validate(f, parsed.extracted);
+      if (err) { this._say("assistant", err); return; }
+      this.pending = { field: f, value: parsed.extracted };
+      this._emit("pending", this.pending);
+    }
+  }
+
+  // Store the confirmed answer as one DEF operator, then advance. Bumping the
+  // epoch closes the live window: the turns that produced this answer are now
+  // redundant with fold(timeline) and fold away into the digest next turn.
+  _confirm() {
+    const { field, value } = this.pending;
+    const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path: field.path, value });
+    this.pending = null;
+    this.epoch++;
+    this._emit("stored", { field, value, event: ev });
+    return this._askNext();
+  }
+
+  // Direct edit from the checklist (bypasses chat): also just a DEF.
+  editField(path, value) {
+    const field = this.schema.fields.find((f) => f.path === path);
+    const err = validate(field, value);
+    if (err) return { ok: false, error: err };
+    const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value });
+    this.epoch++;
+    this._emit("stored", { field, value, event: ev });
+    return { ok: true, event: ev };
+  }
+
+  // The prompt is a projection of the log (see context.js): reference material
+  // folded to this field's slice + the discourse folded so only the live
+  // exchange rides verbatim and resolved turns become a compact answer digest.
+  _assemble(field) {
+    return assemble({
+      field,
+      discourse: this.history,
+      timeline: this.store.timeline(),
+      knowledge: this.knowledge,
+      schema: this.schema,
+      anchor: this.anchor,
+      system: this.systemPrompt,
+      pending: this.pending,
+    });
+  }
+
+  _parse(raw, field, userText) {
+    // Pull the first {...} block; tolerate models that wrap it in prose/fences.
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) { try {
+      const j = JSON.parse(m[0]);
+      return { reply: j.reply || "Okay.", support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null };
+    } catch {} }
+    // No parseable envelope: treat the reply as support, and if the user's raw
+    // text validates, offer it as the answer so the flow never dead-ends.
+    const err = validate(field, userText);
+    if (!err && userText.trim()) return { reply: `I'll record "${userText.trim()}" — does that look right?`, support: false, ready: true, extracted: userText.trim() };
+    return { reply: raw.trim() || "Tell me a little more?", support: true, ready: false, extracted: null };
+  }
+}
+
+
+
+{ ADMIN_USER_ID };
+const isAdmin = (userId) => userId === ADMIN_USER_ID;
+
+const STATUSES = [
+  { key: "new", label: "New" },
+  { key: "in_review", label: "In review" },
+  { key: "verified", label: "Verified" },
+  { key: "flagged", label: "Flagged" },
+];
+
+function collectSubmissions({ storeKind, client }) {
+  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const submissions = [];
+  for (const roomId of roomIds) {
+    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    if (!events.length) continue;
+    const folded = fold(events);
+    const applicantName = folded.anchors?.applicant?.full_legal_name?.value;
+    const docs = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "document")
+      .map(([id, r]) => ({
+        id, roomId, ...r.attrs,
+        status: folded.anchors?.[id]?.status?.value || r.attrs.status || "new",
+        uploadedAt: r.at,
+      }));
+    if (!docs.length) continue;
+    submissions.push({ roomId, applicantName: applicantName || roomId, docs });
+  }
+  return submissions;
+}
+
+function collectAllAnswers({ storeKind, client }) {
+  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const answers = [];
+  for (const roomId of roomIds) {
+    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    if (!events.length) continue;
+    const defs = events.filter((e) => e.op === OP.DEF && e.payload.anchor !== "qconfig");
+    if (!defs.length) continue;
+    const applicantName = fold(events).anchors?.applicant?.full_legal_name?.value || roomId;
+    for (const ev of defs) {
+      answers.push({
+        roomId, applicantName, anchor: ev.payload.anchor, path: ev.payload.path,
+        value: ev.payload.value, at: ev.at, by: ev.by, eventId: ev.id,
+      });
+    }
+  }
+  return answers.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+}
+
+function collectAllDocuments({ storeKind, client }) {
+  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const docs = [];
+  for (const roomId of roomIds) {
+    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    if (!events.length) continue;
+    const folded = fold(events);
+    const applicantName = folded.anchors?.applicant?.full_legal_name?.value || roomId;
+    const roomDocs = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "document")
+      .map(([id, r]) => ({
+        id, roomId, ...r.attrs,
+        status: folded.anchors?.[id]?.status?.value || r.attrs.status || "new",
+        uploadedAt: r.at, applicantName,
+      }));
+    docs.push(...roomDocs);
+  }
+  return docs.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
+}
+
+function setStatus(ctx, doc, status) {
+  const payload = { anchor: doc.id, path: "status", value: status };
+  if (ctx.storeKind === "matrix") ctx.client.sendEvent(doc.roomId, EVENT_TYPE, { op: OP.DEF, payload });
+  else DemoStore.appendEvent(doc.roomId, OP.DEF, payload, ctx.currentUserId);
+}
+
+function mediaFor(ctx) { return ctx.storeKind === "matrix" ? new MatrixMedia(ctx.client) : new DemoMedia(); }
+
+function fmtBytes(n) {
+  if (n == null) return "";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + " " + u[i];
+}
+function fmtDate(iso) { try { return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); } catch { return iso || ""; } }
+
+const $e = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+function initAdminView({ onClose }) {
+  const root = document.getElementById("adminView");
+  const body = document.getElementById("adminBody");
+  const who = document.getElementById("adminWho");
+  const tabs = Array.from(root.querySelectorAll(".atab"));
+  let active = "table";
+  let ctx = null;
+  let searchQuery = "";
+  let searchTimer = null;
+
+  tabs.forEach((btn) => {
+    btn.onclick = () => {
+      active = btn.dataset.view;
+      tabs.forEach((b) => b.classList.toggle("on", b === btn));
+      renderActive();
+    };
+  });
+  document.getElementById("adminClose").onclick = onClose;
+
+  function matchesQuery(text, q) {
+    if (!q) return true;
+    const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const lower = (text || "").toLowerCase();
+    return terms.every((t) => lower.includes(t));
+  }
+
+  function renderActive() {
+    if (!ctx) return;
+    const q = searchQuery;
+    const submissions = collectSubmissions(ctx);
+    const docs = submissions.flatMap((s) => s.docs.map((d) => ({ ...d, applicantName: s.applicantName })));
+    body.innerHTML = "";
+
+    const searchBar = document.createElement("div");
+    searchBar.style.cssText = "margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+    const searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.placeholder = "Search across all data…";
+    searchInput.value = searchQuery;
+    searchInput.style.cssText = "flex:1;min-width:200px;border:1px solid var(--line);border-radius:9px;padding:9px 13px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink)";
+    searchInput.oninput = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { searchQuery = searchInput.value; renderActive(); }, 200);
+    };
+    searchBar.appendChild(searchInput);
+    body.appendChild(searchBar);
+
+    if (active === "table") {
+      const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
+      body.appendChild(renderTable(filtered));
+    } else if (active === "answers") {
+      const allAnswers = collectAllAnswers(ctx);
+      const filtered = allAnswers.filter((a) => matchesQuery(`${a.applicantName} ${a.path} ${a.value}`, q));
+      body.appendChild(renderAnswersTable(filtered));
+    } else if (active === "kanban") {
+      const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
+      body.appendChild(renderKanban(filtered));
+    }
+  }
+
+  function viewBtn(d) {
+    const btn = $e("button", "aview", "View");
+    btn.onclick = () => previewDocument(d, mediaFor(ctx));
+    return btn;
+  }
+
+  function statusSelect(d) {
+    const sel = document.createElement("select");
+    sel.className = "astatus-sel status-" + d.status;
+    for (const s of STATUSES) { const o = new Option(s.label, s.key, false, s.key === d.status); sel.appendChild(o); }
+    sel.onchange = () => { setStatus(ctx, d, sel.value); renderActive(); };
+    return sel;
+  }
+
+  function renderTable(docs) {
+    if (!docs.length) return $e("div", "aempty", docs.length === 0 && !searchQuery ? "No documents uploaded yet." : "No documents match your search.");
+    const wrap = $e("div", "atable-wrap");
+    const table = document.createElement("table"); table.className = "atable";
+    table.innerHTML = "<thead><tr><th>Applicant</th><th>Document</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Status</th><th></th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const d of docs) {
+      const tr = document.createElement("tr");
+      tr.appendChild($e("td", "acell-name", d.applicantName));
+      tr.appendChild($e("td", "acell-doc", d.filename));
+      tr.appendChild($e("td", "acell-mime mono", d.mimetype));
+      tr.appendChild($e("td", "acell-size mono", fmtBytes(d.size)));
+      tr.appendChild($e("td", "acell-date mono", fmtDate(d.uploadedAt)));
+      const statusTd = document.createElement("td"); statusTd.appendChild(statusSelect(d)); tr.appendChild(statusTd);
+      const actionTd = document.createElement("td"); actionTd.appendChild(viewBtn(d)); tr.appendChild(actionTd);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody); wrap.appendChild(table);
+    return wrap;
+  }
+
+  function renderAnswersTable(answers) {
+    if (!answers.length) return $e("div", "aempty", answers.length === 0 && !searchQuery ? "No answers recorded yet." : "No answers match your search.");
+    const wrap = $e("div", "atable-wrap");
+    const table = document.createElement("table"); table.className = "atable";
+    table.innerHTML = "<thead><tr><th>Applicant</th><th>Field</th><th>Value</th><th>Updated</th><th>By</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const a of answers) {
+      const tr = document.createElement("tr");
+      tr.appendChild($e("td", "acell-name", a.applicantName));
+      tr.appendChild($e("td", "acell-field", a.path));
+      tr.appendChild($e("td", "acell-val", String(a.value).slice(0, 200)));
+      tr.appendChild($e("td", "acell-date mono", fmtDate(a.at)));
+      tr.appendChild($e("td", "acell-by mono", a.by));
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody); wrap.appendChild(table);
+    return wrap;
+  }
+
+  function renderKanban(docs) {
+    if (!docs.length) return $e("div", "aempty", docs.length === 0 && !searchQuery ? "No documents uploaded yet." : "No documents match your search.");
+    const board = $e("div", "kanban");
+    for (const s of STATUSES) {
+      const col = $e("div", "kcol");
+      const head = $e("div", "khead");
+      head.appendChild($e("span", null, s.label));
+      head.appendChild($e("span", "kcount", String(docs.filter((d) => d.status === s.key).length)));
+      col.appendChild(head);
+      const list = $e("div", "klist");
+      list.dataset.status = s.key;
+      list.addEventListener("dragover", (e) => { e.preventDefault(); list.classList.add("over"); });
+      list.addEventListener("dragleave", () => list.classList.remove("over"));
+      list.addEventListener("drop", (e) => {
+        e.preventDefault(); list.classList.remove("over");
+        const [roomId, id] = (e.dataTransfer.getData("text/plain") || "").split("::");
+        const d = docs.find((x) => x.roomId === roomId && x.id === id);
+        if (d && d.status !== s.key) { setStatus(ctx, d, s.key); renderActive(); }
+      });
+      for (const d of docs.filter((x) => x.status === s.key)) list.appendChild(kanbanCard(d));
+      col.appendChild(list);
+      board.appendChild(col);
+    }
+    return board;
+  }
+
+  function kanbanCard(d) {
+    const card = $e("div", "kcard");
+    card.draggable = true;
+    card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", `${d.roomId}::${d.id}`));
+    card.appendChild($e("div", "kname", d.filename));
+    card.appendChild($e("div", "kapp", d.applicantName));
+    const meta = $e("div", "kmeta"); meta.textContent = `${fmtBytes(d.size)} · ${fmtDate(d.uploadedAt)}`;
+    card.appendChild(meta);
+    card.appendChild(viewBtn(d));
+    return card;
+  }
+
+  return {
+    show(newCtx) {
+      ctx = newCtx;
+      searchQuery = "";
+      who.textContent = ctx.storeKind === "matrix" ? ctx.currentUserId : "Demo · this device (every room opened here)";
+      renderActive();
+    },
+  };
+}
+
+
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const MAX_DOC_BYTES = 25 * 1024 * 1024;
+
+let intake, store, configStore, knowledge, currentStoreKind = "demo";
+let firstBoot = !localStorage.getItem("intake:welcomeDismissed");
+
+// ── Toast notifications ──
+function toast(msg, kind = "success") {
+  const c = $("toastContainer");
+  const t = document.createElement("div");
+  t.className = "toast " + kind;
+  const icon = { success: "✓", error: "✗", warn: "!" };
+  t.innerHTML = `<span class="toast-icon">${icon[kind] || "i"}</span>${msg}`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.animation = "toastOut .25s ease forwards"; setTimeout(() => t.remove(), 300); }, 2500);
+}
+
+// ── Welcome overlay ──
+function showWelcome() {
+  if (!firstBoot) return;
+  const overlay = $("welcomeOverlay");
+  if (overlay) overlay.classList.add("on");
+}
+{
+  const startBtn = $("welcomeStart");
+  if (startBtn) startBtn.onclick = () => {
+    const overlay = $("welcomeOverlay");
+    if (overlay) overlay.classList.remove("on");
+    firstBoot = false;
+    try { localStorage.setItem("intake:welcomeDismissed", "1"); } catch {}
+  };
+}
+
+// ── Completion celebration ──
+function celebrate() {
+  const c = document.createElement("div"); c.className = "celebration"; c.id = "celebration";
+  document.body.appendChild(c);
+  const colors = ["#2E6F5E", "#B67A2E", "#5C6B72", "#16242B", "#B0402F"];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement("div"); p.className = "confetti";
+    p.style.left = Math.random() * 100 + "%";
+    p.style.background = colors[Math.floor(Math.random() * colors.length)];
+    p.style.width = (4 + Math.random() * 6) + "px";
+    p.style.height = (4 + Math.random() * 6) + "px";
+    p.style.animationDuration = (2 + Math.random() * 3) + "s";
+    p.style.animationDelay = (Math.random() * 2) + "s";
+    p.style.borderRadius = Math.random() > 0.5 ? "50%" : "2px";
+    c.appendChild(p);
+  }
+  setTimeout(() => { const e = document.getElementById("celebration"); if (e) e.remove(); }, 5000);
+}
+
+// ── Inline editor ──
+let ieResolve = null;
+function openInlineEditor(field, currentValue) {
+  return new Promise((resolve) => {
+    ieResolve = resolve;
+    $("ieTitle").textContent = field.label;
+    $("iePath").textContent = field.path;
+    const body = $("ieBody"); body.innerHTML = "";
+    if (field.type === "enum" && field.enum?.length) {
+      const wrap = el("div", "field-enum");
+      for (const opt of field.enum) {
+        const label = document.createElement("label");
+        const radio = document.createElement("input");
+        radio.type = "radio"; radio.name = "ieEnum"; radio.value = opt;
+        if (opt === currentValue) radio.checked = true;
+        label.appendChild(radio);
+        label.appendChild(document.createTextNode(opt));
+        wrap.appendChild(label);
+      }
+      body.appendChild(wrap);
+    } else if (field.type === "date") {
+      const inp = document.createElement("input");
+      inp.type = "date"; inp.className = "field-input";
+      if (currentValue) {
+        try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {}
+      }
+      body.appendChild(inp);
+    } else {
+      const inp = document.createElement(field.type === "text" && (currentValue || "").length > 60 ? "textarea" : "input");
+      if (inp.tagName === "TEXTAREA") { inp.rows = 3; inp.className = "field-input"; }
+      else { inp.type = "text"; inp.className = "field-input"; }
+      inp.value = currentValue || "";
+      body.appendChild(inp);
+    }
+    $("inlineEditor").classList.add("on");
+    const firstInput = body.querySelector("input, textarea");
+    if (firstInput) setTimeout(() => firstInput.focus(), 100);
+  });
+}
+$("ieCancel").onclick = () => { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null); };
+$("ieSave").onclick = () => {
+  const body = $("ieBody");
+  const radio = body.querySelector("input[type=radio]:checked");
+  if (radio) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(radio.value); return; }
+  const inp = body.querySelector("input:not([type=radio]), textarea");
+  if (inp) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(inp.value); return; }
+  $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve("");
+};
+$("inlineEditor").addEventListener("click", (e) => { if (e.target === $("inlineEditor")) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null); } });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("inlineEditor").classList.contains("on")) {
+    $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null);
+  }
+});
+
+// ── Status ──
+function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
+
+// ── Model loading overlay ──
+function showLoader() {
+  const l = $("loader"); if (!l) return;
+  $("loadBar").classList.add("indet"); $("loadBar").style.width = "";
+  $("loadPct").textContent = "0%";
+  $("loadName").textContent = "Preparing Llama 3.2 (1B)…";
+  $("loadStage").textContent = "Starting the in-browser engine";
+  l.classList.add("on"); setStatus("loading model…", "warn");
+}
+function updateLoader(text, p) {
+  const pct = Math.max(0, Math.min(100, Math.round((Number(p) || 0) * 100)));
+  const bar = $("loadBar");
+  if (p > 0) { bar.classList.remove("indet"); bar.style.width = pct + "%"; $("loadPct").textContent = pct + "%"; }
+  $("loadName").textContent = pct >= 100 ? "Almost ready — finishing up…" : "Downloading Llama 3.2 (1B)";
+  if (text) $("loadStage").textContent = text;
+  setStatus(`model ${pct}%`, "warn");
+}
+function hideLoader() {
+  const l = $("loader"); if (!l) return;
+  l.classList.remove("on"); $("loadBar").classList.remove("indet");
+}
+
+// ── Boot ──
+async function boot() {
+  hideLoader();
+  const modelKind = $("modelSel").value;
+  const storeSel = $("storeSel");
+  const storeKind = storeSel ? storeSel.value : "demo";
+  currentStoreKind = storeKind;
+
+  if (storeKind === "matrix") {
+    const homeserver = prompt("Homeserver URL", "https://matrix.org");
+    const userId = prompt("Matrix user ID", "@you:matrix.org");
+    const password = prompt("Password");
+    if (!homeserver || !userId || !password) { if (storeSel) storeSel.value = "demo"; return boot(); }
+    const configRoom = prompt("Shared config room id", CONFIG_ROOM) || CONFIG_ROOM;
+    const answersRoom = prompt("Your private answers room id", answerRoomFor(userId)) || answerRoomFor(userId);
+    setStatus("signing in…", "warn");
+    try {
+      const base = await MatrixStore.login({ homeserver, userId, password });
+      configStore = await new MatrixStore(base.client).open(configRoom);
+      store = await new MatrixStore(base.client).open(answersRoom);
+      setStatus("live · " + userId, "live");
+    } catch (e) { toast("Login failed — falling back to demo.", "error"); if (storeSel) storeSel.value = "demo"; return boot(); }
+  } else {
+    configStore = await new DemoStore("@admin:local").open(CONFIG_ROOM);
+    store = await new DemoStore("@demo:local").open(answerRoomFor("@demo:local"));
+    setStatus("demo");
+  }
+
+  const model = makeModel(modelKind, { model: modelKind === "ollama" ? "llama3.2" : undefined });
+  if (modelKind === "webllm") {
+    if (!navigator.gpu) { setStatus("no WebGPU", "warn"); $("modelSel").value = "echo"; return boot(); }
+    showLoader();
+    try {
+      await model.ready((text, p) => updateLoader(text, p));
+      hideLoader(); setStatus("Llama 3.2 1B · ready", "live");
+    } catch (e) { hideLoader(); setStatus("demo", "warn"); $("modelSel").value = "echo"; return boot(); }
+  } else if (modelKind === "ollama") {
+    try { await model.ready(); setStatus("ollama ready", "live"); }
+    catch (e) { toast("Ollama not reachable — starting in demo mode.", "warn"); $("modelSel").value = "echo"; return boot(); }
+  }
+
+  const cfg = ensureSeeded(configStore);
+  const schema = {
+    id: cfg.schema.id, title: cfg.schema.title,
+    blurb: cfg.schema.blurb || DEFAULT_CONFIG.meta.blurb,
+    fields: cfg.schema.fields.length ? cfg.schema.fields : DEFAULT_CONFIG.fields,
+  };
+  const systemPrompt = cfg.systemPrompt || MINIMAL_SYSTEM;
+  knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
+
+  intake = new Intake({ schema, store, model, knowledge, systemPrompt });
+  $("docTitle").textContent = schema.title;
+  $("stream").innerHTML = ""; $("ledger").innerHTML = "";
+
+  intake.on(onIntake);
+  store.subscribe(renderSide);
+  store.subscribe(renderDocs);
+  configStore.subscribe(onConfigChange);
+  renderLedgerFromTimeline();
+  renderSide(); renderDocs();
+  await intake.begin();
+  showWelcome();
+}
+
+let configDirty = false;
+function onConfigChange() {
+  if (configDirty) return;
+  configDirty = true;
+  setStatus("questions updated — reload to apply", "warn");
+  toast("Questions have been updated by the admin. Reload to apply.", "warn");
+}
+
+// ── Controller events → DOM ──
+let streamingNode = null;
+function onIntake(kind, data) {
+  if (kind === "message") {
+    if (data.streaming && !data.text) { streamingNode = renderTyping(data); return; }
+    if (streamingNode && data.streaming === false) { streamingNode.remove(); streamingNode = null; }
+    renderMessage(data);
+  } else if (kind === "stored") {
+    flashLedger(data.event); toast("Answer saved");
+  } else if (kind === "field") {
+    renderSide();
+  } else if (kind === "context") {
+    renderFold(data);
+  } else if (kind === "complete") {
+    renderSide(); celebrate(); toast("All questions answered!", "success");
+  }
+}
+
+function renderMessage(m) {
+  const isUser = m.role === "user";
+  const group = el("div", "msg-group " + (isUser ? "end" : "start"));
+  const avatar = el("span", "avatar " + (isUser ? "user" : "ai"));
+  avatar.textContent = isUser ? "U" : "◈";
+  if (!isUser) group.appendChild(avatar);
+  const body = el("div", "msg-body");
+  const meta = el("div", "msg-meta");
+  meta.appendChild(el("span", "msg-name", isUser ? "You" : "Assistant"));
+  const time = el("span", "msg-time");
+  time.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  meta.appendChild(time);
+  body.appendChild(meta);
+  const bubble = el("div", "msg-bubble" + (m.support ? " support" : ""));
+  if (m.support) { const tag = el("span", "tag help"); tag.textContent = "helping"; bubble.appendChild(tag); }
+  const txt = document.createTextNode(m.text);
+  bubble.appendChild(txt);
+  if (m.value) { const val = el("span", "value"); val.textContent = "→ " + m.value; bubble.appendChild(val); }
+  body.appendChild(bubble);
+  group.appendChild(body);
+  if (isUser) group.appendChild(avatar);
+  $("stream").appendChild(group);
+  scrollChat();
+}
+
+function renderTyping() {
+  const group = el("div", "msg-group start");
+  const avatar = el("span", "avatar ai"); avatar.textContent = "◈";
+  group.appendChild(avatar);
+  const body = el("div", "msg-body");
+  const meta = el("div", "msg-meta");
+  meta.appendChild(el("span", "msg-name", "Assistant"));
+  body.appendChild(meta);
+  const t = el("span", "typing"); t.innerHTML = "<i></i><i></i><i></i>";
+  body.appendChild(t);
+  group.appendChild(body);
+  $("stream").appendChild(group); scrollChat(); return group;
+}
+
+function scrollChat() { const s = $("stream"); s.scrollTop = s.scrollHeight; }
+
+// ── Right rail ──
+function renderSide() {
+  if (!intake) return;
+  const prog = intake.progress();
+  const done = prog.filter((p) => p.done).length;
+  const total = prog.length;
+  const active = intake.nextField()?.path;
+  const complete = done === total;
+
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  $("ring").style.setProperty("--p", pct);
+  $("ringN").textContent = `${done}/${total}`;
+  $("progTxt").textContent = complete ? "All done — review anytime" : `${total - done} remaining`;
+  $("progressBar").classList.toggle("complete", complete);
+  $("phaseBadge").textContent = complete ? "Complete" : `${pct}%`;
+
+  const list = $("check"); list.innerHTML = "";
+  $("checkCount").textContent = `${done}/${total}`;
+  for (const f of prog) {
+    const li = el("li", (f.done ? "done " : "") + (f.path === active ? "active" : ""));
+    li.appendChild(el("span", "box", f.done ? "✓" : ""));
+    const wrap = el("div");
+    wrap.appendChild(el("span", "lab", f.label + (f.required ? "" : " (optional)")));
+    if (f.done) wrap.appendChild(el("span", "val", String(f.value)));
+    li.appendChild(wrap);
+    li.onclick = () => editFromChecklist(f);
+    list.appendChild(li);
+  }
+}
+
+async function editFromChecklist(f) {
+  const cur = intake.answers()[f.path] ?? "";
+  const next = await openInlineEditor(f, cur);
+  if (next == null) return;
+  const r = intake.editField(f.path, next);
+  if (!r.ok) toast(r.error, "error");
+  else toast("Updated " + f.label);
+}
+
+// ── Documents ──
+function mediaBackend() { return currentStoreKind === "matrix" ? new MatrixMedia(store.client) : new DemoMedia(); }
+function fmtBytes(n) {
+  if (n == null) return "";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + " " + u[i];
+}
+const DOC_STATUS_LABEL = { new: "New", in_review: "In review", verified: "Verified", flagged: "Flagged" };
+
+function wireDocs() {
+  const drop = $("docsDrop"), input = $("docsInput");
+  $("docsBrowse").onclick = () => input.click();
+  $("attachBtn").onclick = () => input.click();
+  input.onchange = () => { handleFiles(input.files); input.value = ""; };
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
+}
+
+async function handleFiles(fileList) {
+  if (!store) return;
+  for (const file of Array.from(fileList)) {
+    if (file.size > MAX_DOC_BYTES) { toast(`"${file.name}" is over 25 MB.`, "error"); continue; }
+    const row = el("li", "doc pending");
+    row.appendChild(el("div", "drow1", file.name));
+    const status = el("div", "docs-status", "Encrypting & uploading…");
+    row.appendChild(status);
+    $("docsList").prepend(row);
+    try {
+      const buf = await file.arrayBuffer();
+      const { ciphertext, key, iv, hash } = await encryptBytes(buf);
+      const id = newId("doc");
+      const url = await mediaBackend().put(id, ciphertext);
+      store.emit(OP.INS, {
+        entity: "document", id,
+        attrs: { filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, url, key, iv, hash, status: "new" },
+      });
+      row.remove(); toast("Uploaded " + file.name);
+    } catch (e) { status.textContent = "Failed: " + e.message; row.classList.add("error"); }
+  }
+}
+
+function renderDocs() {
+  if (!store) return;
+  const folded = store.fold();
+  const docs = Object.entries(folded.records)
+    .filter(([, r]) => r.entity === "document")
+    .map(([id, r]) => ({ id, ...r.attrs, uploadedAt: r.at }));
+  const list = $("docsList");
+  list.querySelectorAll(".doc:not(.pending)").forEach((n) => n.remove());
+  $("docsCount").textContent = docs.length ? String(docs.length) : "";
+  for (const d of docs.reverse()) list.appendChild(docRow(d));
+}
+
+function docRow(d) {
+  const li = el("li", "doc status-" + d.status);
+  const top = el("div", "drow1");
+  top.appendChild(el("span", "dname", d.filename));
+  top.appendChild(el("span", "dsize", fmtBytes(d.size)));
+  li.appendChild(top);
+  const bottom = el("div", "drow2");
+  const view = el("button", "dview", "View"); view.onclick = () => previewDocument(d, mediaBackend());
+  bottom.appendChild(view);
+  bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
+  li.appendChild(bottom);
+  return li;
+}
+
+// ── Admin dashboard ──
+const adminCtl = initAdminView({
+  onClose: () => { $("adminView").classList.add("hidden"); document.querySelector(".shell").classList.remove("hidden"); document.querySelector("nav").classList.remove("hidden"); },
+});
+$("adminBtn").onclick = () => {
+  if (!store) return;
+  if (currentStoreKind === "matrix" && store.user !== ADMIN_USER_ID) {
+    toast(`Sign in as ${ADMIN_USER_ID} to view submissions.`, "warn");
+    return;
+  }
+  document.querySelector(".shell").classList.add("hidden");
+  document.querySelector("nav").classList.add("hidden");
+  $("adminView").classList.remove("hidden");
+  adminCtl.show({ storeKind: currentStoreKind, client: store.client, currentUserId: store.user });
+};
+
+// ── Ledger ──
+function renderLedgerFromTimeline() {
+  const tl = store.timeline();
+  const ul = $("ledger"); ul.innerHTML = "";
+  if (!tl.length) { ul.appendChild(el("li", "empty", "Nothing stored yet. Each confirmed answer is one event.")); }
+  else tl.forEach((ev) => ul.appendChild(ledgerRow(ev, false)));
+  updateLedgerCount();
+}
+function ledgerRow(ev, animate = true) {
+  const li = el("li", ev.op.toLowerCase());
+  if (!animate) li.style.animation = "none";
+  const r1 = el("div", "row1");
+  r1.appendChild(el("span", "op", ev.op));
+  r1.appendChild(el("span", "path", ev.payload.path || ev.payload.entity || ev.payload.kind || ""));
+  r1.appendChild(el("span", "time", new Date(ev.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+  li.appendChild(r1);
+  if (ev.payload.value != null) { const v = el("div", "val"); v.textContent = ev.payload.value; li.appendChild(v); }
+  li.appendChild(el("div", "eid", ev.id));
+  return li;
+}
+function flashLedger(ev) {
+  const ul = $("ledger");
+  const empty = ul.querySelector(".empty"); if (empty) empty.remove();
+  ul.insertBefore(ledgerRow(ev, true), ul.firstChild);
+  updateLedgerCount();
+}
+function updateLedgerCount() {
+  const n = store.timeline().length;
+  $("ledgerCount").textContent = n + " event" + (n === 1 ? "" : "s");
+}
+
+// ── Compose ──
+function wireCompose() {
+  const input = $("input");
+  const send = () => {
+    const v = input.value.trim(); if (!v || !intake) return;
+    input.value = ""; input.style.height = "auto";
+    intake.submit(v);
+  };
+  $("send").onclick = send;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+  input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px"; });
+}
+
+// ── Context inspector ──
+function renderFold(data) {
+  if (!data) return;
+  const { parts = [], messages = [], stats = {}, focus } = data;
+
+  const focusBar = $("foldFocus");
+  const focusText = $("foldFocusText");
+  if (focus && focusText) {
+    focusText.textContent = focus.label;
+    focusBar.classList.remove("hidden");
+  } else if (focusBar) focusBar.classList.add("hidden");
+
+  const chips = $("foldStats"); chips.innerHTML = "";
+  const chip = (label, val) => { const c = el("span", "chip"); c.innerHTML = `${label} <b>${val}</b>`; chips.appendChild(c); };
+  chip("memory", stats.knowledgeItems ?? 0);
+  chip("live", stats.liveTurns ?? 0);
+  chip("dropped", stats.droppedTurns ?? 0);
+  chip("digest", stats.digestedAnswers ?? 0);
+  chip("prompt", stats.promptChars ?? 0);
+
+  const box = $("foldParts"); box.innerHTML = "";
+  for (const p of parts) {
+    const wrap = el("div", "part " + (p.kind || ""));
+    const lab = el("div", "plab"); lab.appendChild(el("span", "k", p.kind || "part"));
+    lab.appendChild(document.createTextNode(p.label)); wrap.appendChild(lab);
+    const pre = el("pre"); pre.textContent = p.text; wrap.appendChild(pre);
+    box.appendChild(wrap);
+  }
+
+  const turns = $("foldTurns"); turns.innerHTML = "";
+  const live = messages.filter((m) => m.role !== "system");
+  if (!live.length) { turns.appendChild(el("div", "empty-turns", "No live turns yet.")); }
+  else for (const m of live) {
+    const t = el("div", "turn " + m.role);
+    t.appendChild(el("span", "r", m.role));
+    t.appendChild(document.createTextNode(m.content));
+    turns.appendChild(t);
+  }
+}
+
+function openCtx() {
+  $("ctxScrim").classList.add("on"); $("ctxDrawer").classList.add("on");
+  $("ctxDrawer").setAttribute("aria-hidden", "false");
+  if (intake) renderFold(intake.previewContext());
+}
+function closeCtx() {
+  $("ctxScrim").classList.remove("on"); $("ctxDrawer").classList.remove("on");
+  $("ctxDrawer").setAttribute("aria-hidden", "true");
+}
+$("ctxBtn").onclick = openCtx;
+$("ctxClose").onclick = closeCtx;
+$("ctxScrim").onclick = closeCtx;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx(); });
+
+// ── Controls ──
+$("modelSel").onchange = boot;
+{
+  const storeSel = $("storeSel");
+  if (storeSel) storeSel.onchange = boot;
+}
+$("resetBtn")?.addEventListener("click", async () => {
+  if (!confirm("Clear all stored answers?")) return;
+  if (store.reset) await store.reset();
+  boot();
+});
+
+wireCompose();
+wireDocs();
+boot();
+
+
+
+// ── Login state ──
+let loginState = null;
+
+// ── Chat system (E2EE via Matrix) ──
+let chatMessages = [];
+function renderChat() {
+  const list = document.getElementById("chatMsgList");
+  if (!list) return;
+  list.innerHTML = "";
+  for (const m of chatMessages) {
+    const div = document.createElement("div");
+    const isUser = m.sender === (loginState?.userId || "you");
+    div.style.cssText = `display:flex;flex-direction:column;align-items:${isUser?"flex-end":"flex-start"};margin-bottom:6px`;
+    const bubble = document.createElement("div");
+    bubble.style.cssText = `padding:6px 10px;border-radius:9px;max-width:88%;font-size:12.5px;white-space:pre-wrap;word-break:break-word;background:${isUser?"var(--ink)":"#F2F5F7"};color:${isUser?"#fff":"var(--ink)"};${isUser?"":"border:1px solid var(--line)"}`;
+    bubble.textContent = m.content;
+    const time = document.createElement("div");
+    time.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:1px";
+    time.textContent = m.ts ? new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : "";
+    div.appendChild(bubble); div.appendChild(time);
+    list.appendChild(div);
+  }
+  list.scrollTop = list.scrollHeight;
+}
+
+function wireChat() {
+  const sendBtn = document.getElementById("chatSend");
+  const input = document.getElementById("chatInput");
+  if (!sendBtn || !input) return;
+  const doSend = () => {
+    const text = input.value.trim();
+    if (!text || !store) return;
+    input.value = "";
+    if (loginState?.kind === "matrix" && store?.client) {
+      store.client.sendText(store.roomId, text).catch(() => {});
+    }
+    chatMessages.push({ sender: loginState?.userId || "you", content: text, ts: Date.now() });
+    renderChat();
+    document.getElementById("chatCount").textContent = chatMessages.length;
+  };
+  sendBtn.onclick = doSend;
+  input.onkeydown = (e) => { if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); doSend(); } };
+}
+
+function listenForChatMessages(client, roomId) {
+  if (!client) return;
+  client.on("Room.timeline", (event, room) => {
+    if (room.roomId !== roomId) return;
+    if (event.getType() === "m.room.message" && event.getContent()?.msgtype === "m.text") {
+      const sender = event.getSender();
+      const content = event.getContent().body;
+      if (content && !chatMessages.some(m => m.eventId === event.getId())) {
+        chatMessages.push({ sender, content, ts: event.getTs(), eventId: event.getId() });
+        renderChat();
+        document.getElementById("chatCount").textContent = chatMessages.length;
+      }
+    }
+  });
+}
+
+// ── Submission view ──
+function renderSubmission() {
+  const pane = document.getElementById("submissionPane");
+  if (!pane || !intake) return;
+  const answers = intake.answers();
+  const schema = intake.schema;
+  pane.innerHTML = `
+    <div style="max-width:720px;margin:0 auto;padding:20px 24px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <button onclick="document.getElementById('submissionPane').classList.add('hidden');document.getElementById('appShell').classList.remove('hidden');document.getElementById('topNav').classList.remove('hidden')" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">← Back</button>
+        <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">Your submission</h2>
+        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).length} fields completed</span>
+      </div>
+      ${schema.fields.map(f => {
+        const val = answers[f.path];
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
+          <div style="font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:2px">${f.label}</div>
+          <div style="font-size:13.5px">${val != null && val !== "" ? val : '<span style="color:var(--muted);font-style:italic">Not provided</span>'}</div>
+        </div>`;
+      }).join("")}
+      ${(store?.timeline?.() || []).filter(e => e.op==="INS" && e.payload?.entity==="document").length > 0 ? `
+        <h3 style="font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:16px 0 8px">Uploaded documents</h3>
+        ${store.timeline().filter(e => e.op==="INS" && e.payload?.entity==="document").map(e => `
+          <div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">${e.payload.attrs.filename} (${(e.payload.attrs.size/1024).toFixed(1)} KB)</div>
+        `).join("")}` : ""}
+    </div>`;
+}
+
+// ── Login flow ──
+function showLogin() { document.getElementById("loginScreen").classList.remove("closing","closed"); }
+function hideLogin() {
+  document.getElementById("loginScreen").classList.add("closing");
+  setTimeout(() => document.getElementById("loginScreen").classList.add("closed"), 400);
+}
+
+async function doMatrixLogin(homeserver, userId, password) {
+  const err = document.getElementById("loginError");
+  try {
+    const sdk = window.matrixcs;
+    if (!sdk) throw new Error("Matrix SDK not loaded");
+    const tmp = sdk.createClient({ baseUrl: homeserver });
+    const res = await tmp.loginWithPassword(userId, password);
+    const client = sdk.createClient({
+      baseUrl: homeserver, accessToken: res.access_token,
+      userId: res.user_id, deviceId: res.device_id
+    });
+    try { if (client.initCrypto) await client.initCrypto(); } catch (e) { console.warn("E2EE:", e.message); }
+    client.startClient({ initialSyncLimit: 50 });
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
+      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
+    });
+    loginState = { kind: "matrix", client, userId };
+    hideLogin();
+    boot();
+  } catch (e) {
+    err.textContent = "Login failed: " + e.message;
+    err.classList.add("show");
+    document.getElementById("loginMatrix").disabled = false;
+  }
+}
+
+function doDemoLogin() {
+  loginState = { kind: "demo", userId: "@demo:local" };
+  hideLogin();
+  boot();
+}
+
+function wireLogin() {
+  document.getElementById("loginDemo").onclick = doDemoLogin;
+  document.getElementById("loginShowMatrix").onclick = () => {
+    document.getElementById("matrixFields").classList.toggle("open");
+  };
+  document.getElementById("loginMatrix").onclick = () => {
+    document.getElementById("loginMatrix").disabled = true;
+    document.getElementById("loginError").classList.remove("show");
+    doMatrixLogin(
+      document.getElementById("loginHomeserver").value.trim(),
+      document.getElementById("loginUserId").value.trim(),
+      document.getElementById("loginPassword").value
+    );
+  };
+  document.getElementById("loginPassword").onkeydown = (e) => {
+    if (e.key === "Enter") document.getElementById("loginMatrix").click();
+  };
+  document.getElementById("logoutBtn").onclick = () => {
+    if (confirm("Switch accounts?")) {
+      loginState = null;
+      if (store?.client) try { store.client.stopClient(); } catch {}
+      location.reload();
+    }
+  };
+}
+
+// ── Override boot for login flow ──
+const _origBoot = boot;
+boot = async function boot() {
+  if (!loginState) { showLogin(); return; }
+  
+  document.getElementById("submissionBtn").style.display = "none";
+  
+  if (loginState.kind === "matrix") {
+    const { client, userId } = loginState;
+    const safe = userId.replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"").toLowerCase();
+    const answersRoom = "!intake-answers-" + safe + ":local";
+    try {
+      configStore = await new MatrixStore(client).open("!intake-config:local");
+      store = await new MatrixStore(client).open(answersRoom);
+      listenForChatMessages(client, answersRoom);
+    } catch (e) { console.error(e); doDemoLogin(); return; }
+  } else {
+    configStore = await new DemoStore("@admin:local").open("!intake-config:local");
+    store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
+  }
+  
+  await _bootAfterStore();
+};
+
+async function _bootAfterStore() {
+  const modelKind = document.getElementById("modelSel").value;
+  const model = makeModel(modelKind, { model: modelKind === "ollama" ? "llama3.2" : undefined });
+  
+  if (modelKind === "webllm") {
+    if (!navigator.gpu) { document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
+    showLoader();
+    try {
+      await model.ready((text, p) => updateLoader(text, p));
+      hideLoader(); setStatus("ready","live");
+    } catch(e) { hideLoader(); document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
+  } else if (modelKind === "ollama") {
+    try { await model.ready(); setStatus("ollama","live"); }
+    catch(e) { toast("Ollama not reachable","warn"); document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
+  }
+  
+  const cfg = ensureSeeded(configStore);
+  const schema = { id:cfg.schema.id, title:cfg.schema.title, blurb:cfg.schema.blurb||"", fields:cfg.schema.fields.length?cfg.schema.fields:[] };
+  knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
+  
+  intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM });
+  document.getElementById("docTitle").textContent = schema.title;
+  document.getElementById("stream").innerHTML = ""; document.getElementById("ledger").innerHTML = "";
+  
+  intake.on(onIntake);
+  store.subscribe(renderSide);
+  store.subscribe(renderDocs);
+  configStore.subscribe(onConfigChange);
+  renderLedgerFromTimeline();
+  renderSide(); renderDocs();
+  await intake.begin();
+  
+  if (intake.isComplete()) { document.getElementById("submissionBtn").style.display = ""; renderSubmission(); }
+}
+
+// ── Override onIntake completion handler ──
+const _origOnIntake = onIntake;
+onIntake = function(kind, data) {
+  if (kind === "complete") {
+    document.getElementById("submissionBtn").style.display = "";
+    renderSubmission();
+  }
+  if (_origOnIntake) _origOnIntake(kind, data);
+};
+
+// ── Nav button wiring for new features ──
+function wireNewNav() {
+  document.getElementById("brandBtn").onclick = () => {
+    document.querySelectorAll(".pane").forEach(p => p.classList.add("hidden"));
+    document.getElementById("appShell").classList.remove("hidden");
+    document.getElementById("topNav").classList.remove("hidden");
+  };
+  
+  document.getElementById("questionsBtn").onclick = () => showQuestionsPanel();
+  document.getElementById("qBack").onclick = () => {
+    document.getElementById("questionsPanel").classList.add("hidden");
+    document.getElementById("appShell").classList.remove("hidden");
+    document.getElementById("topNav").classList.remove("hidden");
+    boot();
+  };
+  
+  document.getElementById("submissionBtn").onclick = () => {
+    document.getElementById("appShell").classList.add("hidden");
+    document.getElementById("topNav").classList.add("hidden");
+    document.getElementById("submissionPane").classList.remove("hidden");
+    renderSubmission();
+  };
+  
+  document.getElementById("adminBtn").onclick = () => {
+    if (!store) return;
+    if (loginState?.kind === "matrix" && store.user !== ADMIN_USER_ID) {
+      toast("Sign in as admin","warn"); return;
+    }
+    document.getElementById("appShell").classList.add("hidden");
+    document.getElementById("topNav").classList.add("hidden");
+    document.getElementById("adminView").classList.remove("hidden");
+    adminCtl.show({ storeKind: loginState?.kind==="matrix"?"matrix":"demo", client: store?.client, currentUserId: store?.user });
+  };
+  
+  document.getElementById("adminClose").onclick = () => {
+    document.getElementById("adminView").classList.add("hidden");
+    document.getElementById("appShell").classList.remove("hidden");
+    document.getElementById("topNav").classList.remove("hidden");
+  };
+}
+
+// ── Question authoring panel ──
+function showQuestionsPanel() {
+  document.getElementById("appShell").classList.add("hidden");
+  document.getElementById("adminView").classList.add("hidden");
+  document.getElementById("submissionPane").classList.add("hidden");
+  document.getElementById("questionsPanel").classList.remove("hidden");
+  renderQPanel();
+}
+
+function renderQPanel() {
+  const body = document.getElementById("qPanelBody");
+  if (!body || !configStore) { body.innerHTML = "<p>No config store.</p>"; return; }
+  const cfg = foldConfig(configStore.timeline());
+  const fields = cfg.schema.fields;
+  body.innerHTML = `
+    <div class="banner">You're editing the <strong>shared config room</strong> — questions, order, and memory every user reads.</div>
+    <div class="q-grid">
+      <div class="q-col">
+        <div class="q-card"><div class="qh">Questions <span class="count">${fields.length}</span></div>
+          <div class="body"><p class="note">Each question asked in order. Reorder with ▲▼.</p>
+            <div class="qlist" id="qAdminList"></div>
+            <div class="btns" style="margin-top:10px"><button class="primary" id="qAddBtn">+ Add question</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="q-col">
+        <div class="q-card"><div class="qh">Event log <span class="count">${configStore.timeline().length}</span></div>
+          <div class="body"><div id="qLedgerWrap" style="max-height:400px;overflow-y:auto"></div></div>
+        </div>
+      </div>
+    </div>`;
+  
+  const list = document.getElementById("qAdminList");
+  if (!list) return;
+  fields.forEach((f, i) => {
+    const card = document.createElement("div"); card.className = "q";
+    const head = document.createElement("div"); head.className = "qhead";
+    head.innerHTML = `<span class="qnum">${i+1}</span><span class="qlbl">${f.label}</span><span class="qtype">${f.type}</span>${f.required?'<span class="req">required</span>':''}<span class="qspacer"></span>`;
+    const mv = document.createElement("div"); mv.style.cssText = "display:flex;gap:4px";
+    if (i > 0) { const u = document.createElement("button"); u.className="iconbtn"; u.textContent="▲"; u.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i-1);}; mv.appendChild(u); }
+    if (i < fields.length-1) { const d = document.createElement("button"); d.className="iconbtn"; d.textContent="▼"; d.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i+1);}; mv.appendChild(d); }
+    head.appendChild(mv);
+    card.appendChild(head);
+    const b = document.createElement("div"); b.className = "qbody";
+    b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${f.label}"></div>
+      <div class="fieldgrp"><label class="lab">Prompt</label><textarea class="f" id="qp_${f.path}" rows="2">${(f.prompt||"").replace(/"/g,"&quot;")}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help</label><textarea class="f" id="qh_${f.path}" rows="2">${(f.help||"").replace(/"/g,"&quot;")}</textarea></div>
+      <div class="btns"><button class="primary" data-path="${f.path}" onclick="saveFieldQ(this)">Save</button><button class="danger" data-path="${f.path}" onclick="deleteFieldQ(this)">Delete</button></div>`;
+    card.appendChild(b);
+    head.onclick = () => { const d=b.style.display; b.style.display=d==="none"?"block":"none"; };
+    b.style.display = "none";
+    list.appendChild(card);
+  });
+  
+  const addBtn = document.getElementById("qAddBtn");
+  if (addBtn) addBtn.onclick = () => {
+    const label = prompt("Question label:");
+    if (!label) return;
+    const path = label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"") || "field";
+    putField(configStore, { path, label, type:"text", required:false, prompt:label+"?", help:"" });
+    setFieldOrder(configStore, [...fields.map(f=>f.path), path]);
+    renderQPanel();
+    toast("Question added");
+  };
+  
+  const lw = document.getElementById("qLedgerWrap");
+  if (lw) {
+    const ul = document.createElement("ul"); ul.className = "ledger";
+    const tl = configStore.timeline();
+    if (!tl.length) { ul.innerHTML = '<li class="empty">No events.</li>'; }
+    else { tl.slice().reverse().forEach(ev => {
+      const li = document.createElement("li"); li.className = ev.op.toLowerCase();
+      const t = new Date(ev.at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+      li.innerHTML = `<div class="row1"><span class="op">${ev.op}</span><span class="path">${ev.payload.path||ev.payload.entity||""}</span><span class="time">${t}</span></div>` + (ev.payload.value != null ? `<div class="val">${String(ev.payload.value).slice(0,80)}</div>` : "");
+      ul.appendChild(li);
+    }); }
+    lw.appendChild(ul);
+  }
+}
+
+function saveFieldQ(btn) {
+  const path = btn.dataset.path;
+  putField(configStore, { path, label: (document.getElementById("ql_"+path)?.value||path).trim(), type:"text", required:false, prompt: (document.getElementById("qp_"+path)?.value||"").trim(), help: (document.getElementById("qh_"+path)?.value||"").trim() });
+  toast("Saved");
+}
+
+function deleteFieldQ(btn) {
+  const path = btn.dataset.path;
+  if (!confirm("Delete this question?")) return;
+  deleteField(configStore, path);
+  const cur = foldConfig(configStore.timeline()).schema.fields.map(f=>f.path).filter(p=>p!==path);
+  setFieldOrder(configStore, cur);
+  renderQPanel();
+  toast("Deleted");
+}
+
+function moveFieldQ(path, from, to) {
+  const ids = foldConfig(configStore.timeline()).schema.fields.map(f=>f.path);
+  if (to<0||to>=ids.length) return;
+  const [id] = ids.splice(from,1); ids.splice(to,0,id);
+  setFieldOrder(configStore, ids);
+  renderQPanel();
+}
+
+// ── Init ──
+document.addEventListener("DOMContentLoaded", () => {
+  wireLogin();
+  wireCompose();
+  wireDocs();
+  wireChat();
+  wireNewNav();
+  showLogin();
+});
+
+</script></body></html>
