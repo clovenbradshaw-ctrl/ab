@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/matrix-js-sdk@34.3.1/dist/browser-matrix.min.js"></script>
+<script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -80,6 +81,85 @@ body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui
 .demo-bar button{font:600 12.5px Inter;padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
 .demo-bar button.go{background:var(--seal);border-color:var(--seal);color:#fff}
 .demo-bar button.x{border:none;background:transparent;color:var(--muted);font-size:16px;padding:2px 4px;line-height:1}
+
+/* In-app matrix.org sign-up wizard.
+   matrix.org is a stock Synapse with reCAPTCHA + terms on registration, so the
+   wizard has one more step than a self-hosted server would need. Everything
+   still happens here — no hand-off to another client. */
+.su{display:none}
+.su.on{display:block}
+.su-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.su-head h2{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0;letter-spacing:-.01em}
+.su-head .su-sub{font-size:12px;color:var(--muted);margin:2px 0 0}
+.su-back{flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;margin-top:2px}
+.su-back:hover{background:#F2F5F7;color:var(--ink)}
+.su-steps{display:flex;gap:4px;margin:0 0 16px}
+.su-steps i{flex:1;height:3px;border-radius:99px;background:var(--line);transition:background .3s ease}
+.su-steps i.at{background:var(--seal)}
+.su-step{display:none}
+.su-step.on{display:block;animation:suIn .25s var(--ease-out)}
+@keyframes suIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.su-note{border:1px solid var(--line);border-radius:10px;background:var(--seal-soft);padding:10px 12px;font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+.su-note b{color:var(--ink);font-weight:600}
+.su-preview{border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center;margin-bottom:12px;background:var(--surface)}
+.su-preview .lbl{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.su-preview .mxid{font-family:"IBM Plex Mono",monospace;font-size:15px;word-break:break-all}
+.su-preview .mxid em{font-style:normal;color:var(--muted)}
+.su-avail{font-size:12px;margin:6px 0 0;min-height:17px}
+.su-avail.ok{color:var(--seal)}
+.su-avail.bad{color:var(--red)}
+.su-avail.wait{color:var(--muted)}
+.su-or{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+.su-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.su-chip{border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer;overflow:hidden;transition:border-color .15s ease,background .15s ease;position:relative}
+.su-chip:hover{border-color:var(--seal)}
+.su-chip.sel{border-color:var(--seal);background:var(--seal-soft)}
+.su-chip.taken{opacity:.45;cursor:default}
+.su-chip .mx{display:block;font:400 10.5px "IBM Plex Mono",monospace;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.su-chip .avmark{position:absolute;top:6px;right:8px;font-size:10px}
+.su-regen{width:100%;margin-top:7px;padding:7px;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--muted);font:500 12.5px Inter;cursor:pointer}
+.su-regen:hover{color:var(--ink);border-style:solid}
+.su-custom{margin-top:14px}
+.su-toggle{display:flex;gap:7px;margin-bottom:10px}
+.su-toggle button{flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font:600 12.5px Inter;cursor:pointer}
+.su-toggle button.on{border-color:var(--seal);background:var(--seal-soft);color:var(--seal)}
+.su-pw{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface)}
+.su-pw .val{flex:1;font-family:"IBM Plex Mono",monospace;font-size:14px;word-break:break-all;letter-spacing:.01em}
+.su-pw button{flex:none;font:600 11.5px Inter;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.su-pw button:hover{background:#F2F5F7}
+.su-strength{font-size:12px;margin-top:6px;min-height:17px}
+.su-strength.ok{color:var(--seal)}
+.su-strength.mid{color:var(--turn)}
+.su-strength.bad{color:var(--red)}
+.su-warn{border:1px solid var(--line);border-left:3px solid var(--turn);border-radius:10px;background:var(--turn-soft);padding:11px 13px;margin:14px 0;font-size:12.5px;line-height:1.5}
+.su-warn b{display:block;font-weight:600;margin-bottom:3px}
+.su-opt{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+.su-opt .cap{display:flex;align-items:center;gap:7px;font:600 12.5px Inter;margin-bottom:4px}
+.su-opt .tag{font:600 9.5px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 7px}
+.su-opt p{font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.5}
+.su-check{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5;cursor:pointer;margin:12px 0}
+.su-check input{width:auto;flex:none;margin-top:2px;accent-color:var(--seal)}
+.su-check a{color:var(--seal)}
+.su-captcha{min-height:78px;display:flex;justify-content:center;margin:12px 0}
+.su-err{font-size:12.5px;color:var(--red);background:var(--red-soft);border:1px solid var(--line);border-left:3px solid var(--red);border-radius:9px;padding:9px 11px;margin-bottom:12px;line-height:1.5;display:none}
+.su-err.show{display:block}
+.su-work{text-align:center;padding:18px 0}
+.su-work .spin{width:34px;height:34px;margin:0 auto 12px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--seal);animation:spin 1s linear infinite}
+.su-work .what{font-size:13.5px;font-weight:600}
+.su-work .why{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
+.su-cred{border:1px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;margin-bottom:12px}
+.su-cred .row{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.su-cred .row:last-child{border-bottom:none}
+.su-cred .k{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);width:74px;flex:none}
+.su-cred .v{flex:1;font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
+.su-cred .cp{flex:none;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer}
+.su-cred .cp:hover{background:#F2F5F7}
+.su-cred .cp.done{color:var(--seal);border-color:var(--seal)}
+.su-dl{display:block;width:100%;padding:11px;border:none;border-radius:9px;font:600 14px Inter;cursor:pointer;background:var(--ink);color:#fff;margin-bottom:10px}
+.su-dl:hover{opacity:.88}
+.su-done-icon{width:44px;height:44px;border-radius:50%;background:var(--seal);color:#fff;display:grid;place-items:center;font-size:22px;margin:0 auto 12px}
+.su-fallback{font-size:11.5px;color:var(--muted);text-align:center;margin-top:12px;line-height:1.5}
+.su-fallback a{color:var(--seal);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 
 /* Nav */
 .wrap{max-width:var(--max-w);margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 16px}
@@ -393,6 +473,9 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <!-- Login screen -->
 <div class="login" id="loginScreen">
   <div class="login-card">
+
+  <!-- Sign-in / entry view -->
+  <div id="loginMainView">
     <div class="login-logo">◈</div>
     <h1>Feedback Platform</h1>
     <p class="sub">Document your experience with a government agency. Your responses are encrypted and stored privately.</p>
@@ -406,7 +489,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
         <li>Come back from any device and pick up where you left off</li>
       </ul>
       <button class="login-btn seal" id="loginSignup">Create an account →</button>
-      <p class="after">Opens in a new tab. Come back here and sign in when you're done.</p>
+      <p class="after">Takes under a minute, right here — <a class="plain" href="https://matrix.org/" target="_blank" rel="noopener noreferrer">what is matrix.org?</a></p>
     </div>
 
     <div class="divider">already have one?</div>
@@ -437,6 +520,96 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 
     <div class="divider">just looking?</div>
     <button class="login-btn quiet" id="loginDemo">Try a demo — nothing you write is saved</button>
+  </div>
+
+  <!-- In-app matrix.org sign-up wizard -->
+  <div class="su" id="suWizard">
+
+    <div class="su-steps"><i class="at" data-su-step="1"></i><i data-su-step="2"></i><i data-su-step="3"></i><i data-su-step="4"></i></div>
+    <div class="su-err" id="suErr"></div>
+
+    <!-- Step 1: username -->
+    <div class="su-step on" id="suStep1">
+      <div class="su-head">
+        <button class="su-back" id="suBack1" title="Cancel">←</button>
+        <div><h2>Pick a username</h2><p class="su-sub">Step 1 of 4 — this becomes your matrix.org ID</p></div>
+      </div>
+      <div class="su-preview">
+        <div class="lbl">Your account will be</div>
+        <div class="mxid"><em>@</em><span id="suHandlePreview">choose one below</span><em>:matrix.org</em></div>
+      </div>
+      <div class="su-grid" id="suUserGrid"></div>
+      <button class="su-regen" id="suRegen">🔄 Show different options</button>
+      <div class="su-custom">
+        <div class="su-or">or type your own</div>
+        <input id="suCustomUser" placeholder="yourname">
+        <div class="su-avail" id="suCustomAvail"></div>
+      </div>
+      <button class="login-btn primary" id="suToStep2" disabled style="margin-top:16px">Continue →</button>
+    </div>
+
+    <!-- Step 2: password -->
+    <div class="su-step" id="suStep2">
+      <div class="su-head">
+        <button class="su-back" id="suBack2" title="Back">←</button>
+        <div><h2>Create a password</h2><p class="su-sub">Step 2 of 4 — for <span id="suHandleP2"></span></p></div>
+      </div>
+      <div class="su-toggle">
+        <button class="on" id="suPwAutoBtn">✨ Generate for me</button>
+        <button id="suPwManualBtn">✏️ Write my own</button>
+      </div>
+      <div id="suPwAuto">
+        <div class="su-pw"><span class="val" id="suPwValue">—</span><button id="suPwCopy">Copy</button></div>
+        <button class="su-regen" id="suPwRegen">🔄 Generate new password</button>
+      </div>
+      <div id="suPwManual" class="hidden">
+        <input type="password" id="suPwInput" placeholder="At least 8 characters">
+        <div class="su-strength" id="suPwStrength"></div>
+      </div>
+      <div class="su-warn"><b>⚠️ Save this password now</b>matrix.org has no password reset yet — if you lose it, this account is gone for good. The next step gives you a one-click download.</div>
+      <button class="login-btn primary" id="suToStep3" disabled>Continue →</button>
+    </div>
+
+    <!-- Step 3: verify (matrix.org's own reCAPTCHA + terms) -->
+    <div class="su-step" id="suStep3">
+      <div class="su-head">
+        <button class="su-back" id="suBack3" title="Back">←</button>
+        <div><h2>Quick verification</h2><p class="su-sub">Step 3 of 4 — required by matrix.org, not by us</p></div>
+      </div>
+      <div class="su-note">matrix.org asks every new account to confirm it's a human and accept its terms. This happens right here — you won't leave this page.</div>
+      <div class="su-captcha" id="suCaptchaBox"></div>
+      <label class="su-check"><input type="checkbox" id="suTerms"> I agree to <a href="https://matrix.org/legal/terms-and-conditions/" target="_blank" rel="noopener noreferrer">matrix.org's terms</a> and <a href="https://matrix.org/legal/privacy-notice/" target="_blank" rel="noopener noreferrer">privacy notice</a></label>
+      <button class="login-btn primary" id="suCreateBtn" disabled>Create my account</button>
+      <p class="su-fallback">Verification not loading? <a id="suFallbackLink">Open matrix.org's sign-up page instead →</a></p>
+    </div>
+
+    <!-- Step 3b: working -->
+    <div class="su-step" id="suStepWork">
+      <div class="su-work">
+        <div class="spin"></div>
+        <div class="what" id="suWorkWhat">Creating your account…</div>
+        <div class="why" id="suWorkWhy">Talking to matrix.org — this takes a few seconds.</div>
+      </div>
+    </div>
+
+    <!-- Step 4: done -->
+    <div class="su-step" id="suStep4">
+      <div style="text-align:center;margin-bottom:14px">
+        <div class="su-done-icon">✓</div>
+        <h2 style="margin:0">Account created</h2>
+        <p class="su-sub" style="margin-top:4px">Step 4 of 4 — save these before you continue</p>
+      </div>
+      <div class="su-cred">
+        <div class="row"><span class="k">User ID</span><span class="v" id="suFinalUserId">—</span><button class="cp" data-copy="userid">Copy</button></div>
+        <div class="row"><span class="k">Password</span><span class="v" id="suFinalPassword">—</span><button class="cp" data-copy="password">Copy</button></div>
+        <div class="row"><span class="k">Server</span><span class="v">matrix.org</span><button class="cp" data-copy="homeserver">Copy</button></div>
+      </div>
+      <button class="su-dl" id="suDownloadBtn">⬇ Download credentials (.txt)</button>
+      <label class="su-check"><input type="checkbox" id="suSavedCheck"> I've saved my user ID and password somewhere safe</label>
+      <button class="login-btn primary" id="suContinueBtn" disabled>Continue to the app →</button>
+    </div>
+
+  </div>
   </div>
 </div>
 
@@ -2953,7 +3126,7 @@ function renderSubmission() {
         `).join("")}` : ""}
     </div>`;
   const subSignup = document.getElementById("subSignup");
-  if (subSignup) subSignup.onclick = openMatrixSignup;
+  if (subSignup) subSignup.onclick = openSignupWizard;
 }
 
 // ── Login flow ──
@@ -2965,9 +3138,9 @@ function hideLogin() {
 
 // ── matrix.org account steering ──
 // The app has no user directory of its own: an account on the public
-// matrix.org homeserver *is* the account. Registration happens in a Matrix
-// client, so "sign up" means handing the user off to Element's register flow
-// with matrix.org already selected as the homeserver.
+// matrix.org homeserver *is* the account. The wizard below creates one
+// in-app; openMatrixSignup() is kept only as a fallback for when the
+// embedded reCAPTCHA can't load (ad blockers, offline reCAPTCHA CDN, etc).
 const MATRIX_ORG_DOMAIN = "matrix.org";
 const MATRIX_ORG_HS = "https://matrix.org";
 const MATRIX_ORG_SIGNUP = "https://app.element.io/#/register";
@@ -2980,6 +3153,418 @@ function openMatrixSignup() {
 // server-side) — no reason to build our own when Element's does the job.
 function openMatrixPasswordReset() {
   window.open(MATRIX_ORG_RESET, "_blank", "noopener,noreferrer");
+}
+
+function openSignupWizard() {
+  showLogin();
+  document.getElementById("loginMainView").classList.add("hidden");
+  document.getElementById("suWizard").classList.add("on");
+  suGotoStep(1);
+  if (!suUserGridEl().children.length) suGenerateUsernames();
+}
+
+function closeSignupWizard() {
+  document.getElementById("suWizard").classList.remove("on");
+  document.getElementById("loginMainView").classList.remove("hidden");
+  // Opened from the demo bar or submission view while already inside the
+  // app (not from the cold login screen) — cancelling should return there.
+  if (loginState) hideLogin();
+}
+
+// ── Sign-up wizard state ──
+const SU_ADJ = ["clear","steady","open","plain","honest","careful","quiet","patient","fair","direct",
+  "civic","public","common","level","grounded","candid","measured","earnest","sound","trusted"];
+const SU_NOUN = ["record","account","voice","witness","ledger","notice","report","statement","case",
+  "inquiry","review","request","filing","matter","complaint","docket","memo","brief","note","entry"];
+
+let suSelectedUsername = null;
+let suPwMode = "auto";
+let suGeneratedPassword = null;
+let suCaptchaWidgetId = null;
+let suCaptchaResponse = null;
+let suCaptchaReady = false;
+let suRegSession = null;
+let suRegFlow = null;
+let suRegCompleted = [];
+let suRegisteredData = null;
+let suClientReadyPromise = null;
+
+function suUserGridEl() { return document.getElementById("suUserGrid"); }
+
+function suRandomUsername() {
+  const adj = SU_ADJ[Math.floor(Math.random() * SU_ADJ.length)];
+  const noun = SU_NOUN[Math.floor(Math.random() * SU_NOUN.length)];
+  const num = Math.floor(Math.random() * 900) + 100;
+  return `${adj}_${noun}${num}`;
+}
+
+async function suCheckAvailable(username) {
+  try {
+    const r = await fetch(`${MATRIX_ORG_HS}/_matrix/client/v3/register/available?username=${encodeURIComponent(username)}`);
+    if (r.ok) return true;
+    const data = await r.json().catch(() => ({}));
+    if (data.errcode === "M_USER_IN_USE") return false;
+    return true; // unknown error: don't block on our own guess, let registration surface it
+  } catch { return true; }
+}
+
+function suGenerateUsernames() {
+  const grid = suUserGridEl();
+  grid.innerHTML = "";
+  suSelectedUsername = null;
+  document.getElementById("suHandlePreview").textContent = "choose one below";
+  suUpdateStep1Button();
+  const names = new Set();
+  while (names.size < 4) names.add(suRandomUsername());
+  [...names].forEach((name) => {
+    const chip = document.createElement("button");
+    chip.className = "su-chip";
+    chip.type = "button";
+    chip.innerHTML = `${name}<span class="mx">@${name}:matrix.org</span><span class="avmark"></span>`;
+    chip.onclick = () => {
+      document.querySelectorAll(".su-chip").forEach((c) => c.classList.remove("sel"));
+      chip.classList.add("sel");
+      document.getElementById("suCustomUser").value = "";
+      document.getElementById("suCustomAvail").textContent = "";
+      suSelectedUsername = name;
+      document.getElementById("suHandlePreview").textContent = name;
+      suUpdateStep1Button();
+    };
+    grid.appendChild(chip);
+    suCheckAvailable(name).then((ok) => {
+      const mark = chip.querySelector(".avmark");
+      if (!ok) {
+        mark.textContent = "✕ taken";
+        chip.classList.add("taken");
+        chip.onclick = null;
+      }
+    });
+  });
+}
+
+function suUpdateStep1Button() {
+  document.getElementById("suToStep2").disabled = !suSelectedUsername;
+}
+
+let suCustomCheckTimer = null;
+function suWireCustomUsername() {
+  const input = document.getElementById("suCustomUser");
+  const avail = document.getElementById("suCustomAvail");
+  input.addEventListener("input", () => {
+    document.querySelectorAll(".su-chip").forEach((c) => c.classList.remove("sel"));
+    const v = input.value.trim().toLowerCase();
+    suSelectedUsername = null;
+    suUpdateStep1Button();
+    clearTimeout(suCustomCheckTimer);
+    if (!v) { avail.textContent = ""; avail.className = "su-avail"; document.getElementById("suHandlePreview").textContent = "choose one below"; return; }
+    if (!/^[a-z0-9._=/-]+$/.test(v)) {
+      avail.textContent = "Only lowercase letters, numbers, . _ = / -";
+      avail.className = "su-avail bad";
+      return;
+    }
+    avail.textContent = "Checking availability…";
+    avail.className = "su-avail wait";
+    document.getElementById("suHandlePreview").textContent = v;
+    suCustomCheckTimer = setTimeout(async () => {
+      const ok = await suCheckAvailable(v);
+      if (input.value.trim().toLowerCase() !== v) return; // stale
+      if (ok) {
+        avail.textContent = "✓ available";
+        avail.className = "su-avail ok";
+        suSelectedUsername = v;
+      } else {
+        avail.textContent = "✕ already taken";
+        avail.className = "su-avail bad";
+        suSelectedUsername = null;
+      }
+      suUpdateStep1Button();
+    }, 400);
+  });
+}
+
+function suGoToStep2() {
+  document.getElementById("suHandleP2").textContent = "@" + suSelectedUsername + ":matrix.org";
+  suGotoStep(2);
+  if (suPwMode === "auto" && !suGeneratedPassword) suGeneratePassword();
+}
+
+function suGeneratePassword() {
+  const charset = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
+  let pw = "";
+  for (let i = 0; i < 16; i++) pw += charset.charAt(Math.floor(Math.random() * charset.length));
+  suGeneratedPassword = pw;
+  document.getElementById("suPwValue").textContent = pw;
+  suUpdateStep2Button();
+}
+
+function suSetPwMode(mode) {
+  suPwMode = mode;
+  document.getElementById("suPwAutoBtn").classList.toggle("on", mode === "auto");
+  document.getElementById("suPwManualBtn").classList.toggle("on", mode === "manual");
+  document.getElementById("suPwAuto").classList.toggle("hidden", mode !== "auto");
+  document.getElementById("suPwManual").classList.toggle("hidden", mode !== "manual");
+  if (mode === "auto") {
+    if (!suGeneratedPassword) suGeneratePassword();
+  } else {
+    suGeneratedPassword = null;
+    suUpdateStep2Button();
+  }
+}
+
+function suHandleManualPassword() {
+  const v = document.getElementById("suPwInput").value;
+  const el = document.getElementById("suPwStrength");
+  if (!v) { el.textContent = ""; el.className = "su-strength"; suGeneratedPassword = null; }
+  else if (v.length < 8) { el.textContent = "Too short — 8 characters minimum"; el.className = "su-strength bad"; suGeneratedPassword = null; }
+  else {
+    let score = 0;
+    if (/[a-z]/.test(v)) score++;
+    if (/[A-Z]/.test(v)) score++;
+    if (/[0-9]/.test(v)) score++;
+    if (/[^A-Za-z0-9]/.test(v)) score++;
+    if (score < 3) { el.textContent = "Weak — add a number, symbol, or mixed case"; el.className = "su-strength mid"; suGeneratedPassword = null; }
+    else { el.textContent = "✓ Strong password"; el.className = "su-strength ok"; suGeneratedPassword = v; }
+  }
+  suUpdateStep2Button();
+}
+
+function suUpdateStep2Button() {
+  document.getElementById("suToStep3").disabled = !suGeneratedPassword;
+}
+
+function suUpdateCreateButton() {
+  const terms = document.getElementById("suTerms").checked;
+  document.getElementById("suCreateBtn").disabled = !(terms && suCaptchaReady && suCaptchaResponse);
+}
+
+function onRecaptchaApiReady() { suCaptchaReady = true; }
+
+async function suGoToStep3() {
+  suGotoStep(3);
+  suRegSession = null;
+  suRegFlow = null;
+  suRegCompleted = [];
+  suCaptchaResponse = null;
+  try {
+    const res = await fetch(`${MATRIX_ORG_HS}/_matrix/client/v3/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
+    });
+    const data = await res.json();
+    if (res.status !== 401 || !data.session) throw new Error(data.error || "Couldn't start registration.");
+    suRegSession = data.session;
+    suRegFlow = (data.flows && data.flows[0] && data.flows[0].stages) || [];
+    const params = data.params || {};
+    const rcParams = params["m.login.recaptcha"];
+    if (rcParams && rcParams.public_key) {
+      suRenderCaptcha(rcParams.public_key);
+    } else {
+      // No recaptcha required by this flow — treat verification as satisfied already.
+      suCaptchaReady = true;
+      suCaptchaResponse = "none";
+      document.getElementById("suCaptchaBox").innerHTML = '<p style="font-size:12.5px;color:var(--muted)">No additional verification required.</p>';
+    }
+    suUpdateCreateButton();
+  } catch (e) {
+    suShowErr("Couldn't reach matrix.org to start sign-up: " + e.message);
+  }
+}
+
+function suRenderCaptcha(sitekey) {
+  const box = document.getElementById("suCaptchaBox");
+  const tryRender = () => {
+    if (!window.grecaptcha || !window.grecaptcha.render) { setTimeout(tryRender, 300); return; }
+    box.innerHTML = "";
+    suCaptchaWidgetId = window.grecaptcha.render(box, {
+      sitekey,
+      callback: (token) => { suCaptchaResponse = token; suUpdateCreateButton(); },
+      "expired-callback": () => { suCaptchaResponse = null; suUpdateCreateButton(); }
+    });
+  };
+  tryRender();
+}
+
+function suNextAuthPayload() {
+  const remaining = suRegFlow.filter((s) => !suRegCompleted.includes(s));
+  const stage = remaining[0];
+  if (!stage) return null;
+  if (stage === "m.login.recaptcha") return { type: stage, response: suCaptchaResponse, session: suRegSession };
+  if (stage === "m.login.terms") return { type: stage, session: suRegSession };
+  if (stage === "m.login.dummy") return { type: stage, session: suRegSession };
+  return { type: stage, session: suRegSession };
+}
+
+async function suCreateAccount() {
+  const btn = document.getElementById("suCreateBtn");
+  btn.disabled = true;
+  suGotoWork("Creating your account…", "Talking to matrix.org — this takes a few seconds.");
+  try {
+    let registered = null;
+    let guard = 0;
+    // UIA: submit one completed stage per request until the server returns 200.
+    while (!registered && guard++ < suRegFlow.length + 2) {
+      const auth = suNextAuthPayload();
+      if (!auth) throw new Error("Registration didn't complete — please try again.");
+      const body = { username: suSelectedUsername, password: suGeneratedPassword, initial_device_display_name: "Feedback Platform", auth };
+      const res = await fetch(`${MATRIX_ORG_HS}/_matrix/client/v3/register`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) { registered = data; break; }
+      if (data.errcode === "M_USER_IN_USE") {
+        suShowErr("That username was just taken. Pick another.");
+        suGotoStep(1);
+        suGenerateUsernames();
+        return;
+      }
+      if (!data.session) throw new Error(data.error || "Registration failed.");
+      suRegSession = data.session;
+      suRegCompleted = data.completed || [...suRegCompleted, auth.type];
+    }
+    if (!registered) throw new Error("Registration didn't complete — please try again.");
+    suRegisteredData = registered;
+    suGotoWork("Setting up your inbox…", "Connecting your new account so it's ready to use.");
+    suClientReadyPromise = suSetupClientFromRegistration(registered);
+    suShowSuccess(registered);
+  } catch (e) {
+    suShowErr("Couldn't create the account: " + e.message);
+    suGotoStep(3);
+    btn.disabled = false;
+  }
+}
+
+async function suSetupClientFromRegistration(data) {
+  try {
+    const sdk = window.matrixcs;
+    const client = sdk.createClient({
+      baseUrl: MATRIX_ORG_HS, accessToken: data.access_token,
+      userId: data.user_id, deviceId: data.device_id
+    });
+    try { if (client.initCrypto) await client.initCrypto(); } catch (e) { console.warn("E2EE:", e.message); }
+    client.startClient({ initialSyncLimit: 50 });
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
+      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
+    });
+    loginState = { kind: "matrix", client, userId: data.user_id };
+  } catch (e) {
+    console.warn("Post-signup client setup failed, will retry on continue:", e.message);
+    loginState = null;
+  }
+}
+
+function suShowSuccess(data) {
+  document.getElementById("suFinalUserId").textContent = data.user_id;
+  document.getElementById("suFinalPassword").textContent = suGeneratedPassword;
+  document.getElementById("suSavedCheck").checked = false;
+  document.getElementById("suContinueBtn").disabled = true;
+  suGotoStep(4);
+}
+
+function suShowErr(text) {
+  const el = document.getElementById("suErr");
+  el.textContent = text;
+  el.classList.add("show");
+}
+
+function suClearErr() {
+  document.getElementById("suErr").classList.remove("show");
+}
+
+function suGotoStep(n) {
+  suClearErr();
+  document.querySelectorAll(".su-step").forEach((s) => s.classList.remove("on"));
+  document.getElementById("suStepWork").classList.remove("on");
+  document.getElementById(`suStep${n}`).classList.add("on");
+  document.querySelectorAll(".su-steps i").forEach((i, idx) => i.classList.toggle("at", idx < n));
+}
+
+function suGotoWork(what, why) {
+  document.querySelectorAll(".su-step").forEach((s) => s.classList.remove("on"));
+  document.getElementById("suWorkWhat").textContent = what;
+  document.getElementById("suWorkWhy").textContent = why;
+  document.getElementById("suStepWork").classList.add("on");
+}
+
+function suCredentialsText(data) {
+  return [
+    "matrix.org account — Feedback Platform",
+    "",
+    `User ID:    ${data.user_id}`,
+    `Password:   ${suGeneratedPassword}`,
+    `Homeserver: ${MATRIX_ORG_HS}`,
+    "",
+    "Keep this somewhere safe — matrix.org has no password reset yet.",
+    "Created " + new Date().toString(),
+  ].join("\n");
+}
+
+function suDownloadCredentials() {
+  const text = suCredentialsText(suRegisteredData);
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `matrix-account-${suRegisteredData.user_id.replace(/[^a-z0-9]/gi, "_")}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function suCopyField(kind, btn) {
+  const text = kind === "userid" ? suRegisteredData.user_id
+    : kind === "password" ? suGeneratedPassword
+    : MATRIX_ORG_HS;
+  await copyText(text);
+  btn.textContent = "Copied";
+  btn.classList.add("done");
+  setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("done"); }, 1500);
+}
+
+function wireSignupWizard() {
+  suWireCustomUsername();
+  document.getElementById("loginSignup").onclick = openSignupWizard;
+  document.getElementById("suBack1").onclick = closeSignupWizard;
+  document.getElementById("suBack2").onclick = () => suGotoStep(1);
+  document.getElementById("suBack3").onclick = () => suGotoStep(2);
+  document.getElementById("suRegen").onclick = suGenerateUsernames;
+  document.getElementById("suToStep2").onclick = suGoToStep2;
+  document.getElementById("suPwAutoBtn").onclick = () => suSetPwMode("auto");
+  document.getElementById("suPwManualBtn").onclick = () => suSetPwMode("manual");
+  document.getElementById("suPwRegen").onclick = suGeneratePassword;
+  document.getElementById("suPwInput").oninput = suHandleManualPassword;
+  document.getElementById("suPwCopy").onclick = (e) => suCopyField("password", e.target);
+  document.getElementById("suToStep3").onclick = suGoToStep3;
+  document.getElementById("suTerms").onchange = suUpdateCreateButton;
+  document.getElementById("suCreateBtn").onclick = suCreateAccount;
+  document.getElementById("suFallbackLink").onclick = openMatrixSignup;
+  document.getElementById("suDownloadBtn").onclick = suDownloadCredentials;
+  document.getElementById("suSavedCheck").onchange = (e) => {
+    document.getElementById("suContinueBtn").disabled = !e.target.checked;
+  };
+  document.querySelectorAll(".su-cred .cp").forEach((btn) => {
+    btn.onclick = () => suCopyField(btn.dataset.copy, btn);
+  });
+  document.getElementById("suContinueBtn").onclick = async () => {
+    const btn = document.getElementById("suContinueBtn");
+    btn.disabled = true;
+    btn.textContent = "Loading…";
+    if (suClientReadyPromise) await suClientReadyPromise;
+    if (!loginState) { loginState = { kind: "matrix", client: null, userId: suRegisteredData.user_id }; }
+    hideLogin();
+    boot();
+  };
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch {}
+    ta.remove();
+  }
 }
 
 // matrix.org is assumed, so the sign-in form asks for a username and nothing
@@ -3061,7 +3646,7 @@ function showLoginError(text, { offerSignup = false, offerReset = false } = {}) 
     err.appendChild(el);
   };
   if (offerReset) cta("Forgot your password? →", openMatrixPasswordReset);
-  if (offerSignup) cta("Create a free account →", openMatrixSignup);
+  if (offerSignup) cta("Create a free account →", openSignupWizard);
   err.classList.add("show");
 }
 
@@ -3100,8 +3685,8 @@ function doDemoLogin() {
 }
 
 function wireLogin() {
+  wireSignupWizard();
   document.getElementById("loginDemo").onclick = doDemoLogin;
-  document.getElementById("loginSignup").onclick = openMatrixSignup;
   document.getElementById("loginShowMatrix").onclick = () => {
     const open = document.getElementById("matrixFields").classList.toggle("open");
     if (open) document.getElementById("loginUserId").focus();
@@ -3133,7 +3718,7 @@ function wireLogin() {
   };
   document.getElementById("loginForgotPw").onclick = openMatrixPasswordReset;
   // In-app nudge for demo sessions.
-  document.getElementById("demoBarSignup").onclick = openMatrixSignup;
+  document.getElementById("demoBarSignup").onclick = openSignupWizard;
   document.getElementById("demoBarSignin").onclick = () => {
     loginState = null;
     if (store?.client) try { store.client.stopClient(); } catch {}
