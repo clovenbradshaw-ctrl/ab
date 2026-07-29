@@ -212,17 +212,39 @@ nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-
 .inline-editor.on{opacity:1;pointer-events:auto}
 .inline-editor .modal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow-lg);width:min(420px,92vw);padding:18px 20px;animation:modalIn .2s var(--ease-out)}
 .inline-editor h3{font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:0 0 3px}
-.inline-editor .field-path{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace;margin:0 0 10px}
-.inline-editor .field-input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);margin-bottom:10px;resize:vertical}
-.inline-editor .field-input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
-.inline-editor .field-enum{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
-.inline-editor .field-enum label{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13.5px;transition:border-color .15s ease,background .15s ease}
-.inline-editor .field-enum label:hover{border-color:var(--seal);background:var(--seal-soft)}
-.inline-editor .field-enum input[type=radio]{accent-color:var(--seal)}
+/* Shared field-input styling: used by the inline editor modal, the admin's
+   question-creation wizard modal, and the end-user's no-model form wizard. */
+.field-path{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace;margin:0 0 10px}
+.field-input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);margin-bottom:10px;resize:vertical}
+.field-input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.field-enum{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.field-enum label{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13.5px;transition:border-color .15s ease,background .15s ease}
+.field-enum label:hover{border-color:var(--seal);background:var(--seal-soft)}
+.field-enum input[type=radio]{accent-color:var(--seal)}
 .inline-editor .btns{display:flex;gap:7px;justify-content:flex-end}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .inline-editor .btns button.cancel:hover{background:#F2F5F7}
+.inline-editor .btns button:disabled{opacity:.4;cursor:default}
+.wiz-step-count{font-size:11px;color:var(--muted);margin:-2px 0 10px}
+
+/* No-model form wizard (end-user intake, one field per screen) */
+.wizard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.wiz-body{flex:1;overflow-y:auto;padding:28px 32px;display:flex;flex-direction:column;justify-content:center;gap:4px;max-width:520px;margin:0 auto;width:100%}
+.wiz-label{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.wiz-help{color:var(--muted);font-size:13.5px;line-height:1.5;margin:0 0 16px}
+.wiz-input{margin-bottom:6px}
+.wiz-error{font-size:12.5px;color:var(--red);margin:0 0 10px;display:none}
+.wiz-nav{border-top:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;gap:8px}
+.wiz-nav button{font:inherit;font-size:13px;padding:8px 16px;border-radius:8px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.wiz-nav button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.wiz-nav button:disabled{opacity:.35;cursor:default}
+.wiz-complete{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;padding:32px}
+.wiz-complete h2{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:22px;margin:0}
+.wiz-complete p{color:var(--muted);font-size:13.5px;margin:0;max-width:380px}
+.wiz-bool{display:flex;gap:8px;margin-bottom:6px}
+.wiz-bool button{flex:1;font:inherit;font-size:13.5px;padding:9px;border-radius:8px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.wiz-bool button.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
 
 /* Admin view */
 .adminview{max-width:1280px;margin:0 auto;padding:14px 20px 40px;min-height:100%}
@@ -400,6 +422,26 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
         </div>
         <div class="hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck</div>
       </section>
+      <section class="wizard hidden" id="wizardPane">
+        <div class="progress" id="wizProgress">
+          <div class="ring-wrap"><div class="ring" id="wizRing"></div><b id="wizRingN">0/0</b></div>
+          <div class="meta"><strong id="wizTitle">…</strong><span class="prog-sub" id="wizProgTxt"></span></div>
+        </div>
+        <div class="wiz-body" id="wizBody">
+          <div id="wizFieldView">
+            <h2 class="wiz-label" id="wizLabel"></h2>
+            <p class="wiz-help" id="wizHelp"></p>
+            <div class="wiz-input" id="wizInput"></div>
+            <p class="wiz-error" id="wizError"></p>
+          </div>
+          <div class="wiz-complete hidden" id="wizComplete"></div>
+        </div>
+        <div class="wiz-nav">
+          <button id="wizBack">← Back</button>
+          <span class="spacer"></span>
+          <button class="primary" id="wizNext">Next →</button>
+        </div>
+      </section>
       <aside class="rail">
         <div class="card"><h2>Your answers <span class="count" id="checkCount"></span></h2><ul class="check" id="check"></ul></div>
         <div class="card">
@@ -435,6 +477,20 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <div class="inline-editor" id="inlineEditor"><div class="modal">
   <h3 id="ieTitle">Edit</h3><p class="field-path" id="iePath"></p><div id="ieBody"></div>
   <div class="btns"><button class="cancel" id="ieCancel">Cancel</button><button class="primary" id="ieSave">Save</button></div>
+</div></div>
+
+<!-- Admin: new-question wizard (walks through one property at a time) -->
+<div class="inline-editor" id="qWizModal"><div class="modal">
+  <h3 id="qWizLabel">New question</h3>
+  <p class="wiz-step-count" id="qWizStepCount"></p>
+  <p class="field-path" id="qWizHelp"></p>
+  <div id="qWizInput"></div>
+  <p class="field-path" id="qWizError" style="color:var(--red);display:none"></p>
+  <div class="btns">
+    <button class="cancel" id="qWizCancel">Cancel</button>
+    <button id="qWizBack">← Back</button>
+    <button class="primary" id="qWizNext">Next →</button>
+  </div>
 </div></div>
 
 <!-- Context drawer -->
@@ -1112,6 +1168,20 @@ const REPLY_SCHEMA = {
 const REPLY_SCHEMA_STR = JSON.stringify(REPLY_SCHEMA);
 const MAX_REPLY_TOKENS = 200; // one short conversational turn — keeps a small model snappy
 
+// The model's output is the REPLY_SCHEMA envelope, not raw prose — so naively
+// streaming raw tokens would render literal JSON syntax character-by-character
+// (`{"reply": "Got` `it` `\u2014`...) before the final parse swaps it for the
+// real text. Since "reply" is both the schema's first required property and
+// (under constrained decoding) reliably the first key generated, this pulls
+// out just its still-growing string value on every chunk, so the chat bubble
+// shows the actual reply typing out live instead of raw envelope syntax.
+function extractPartialReply(raw) {
+  const m = raw.match(/"reply"\s*:\s*"((?:\\.|[^"\\])*)/);
+  if (!m) return "";
+  try { return JSON.parse('"' + m[1] + '"'); }
+  catch { return m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n"); }
+}
+
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 class WebLLMModel {
   constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
@@ -1683,7 +1753,17 @@ class Intake {
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
-    try { raw = await this.model.chat(messages); }
+    try {
+      // onToken hands us only the latest delta, not the running total — the
+      // model.stream() call itself resolves to the full text, but only once
+      // the whole thing is done, so track it ourselves for the live display.
+      let acc = "";
+      raw = await this.model.stream(messages, (chunk) => {
+        acc += chunk;
+        thinking.text = extractPartialReply(acc) || "…";
+        this._emit("token", thinking);
+      });
+    }
     catch (e) { thinking.text = "The model isn't responding — you can keep typing and I'll store your answers directly."; thinking.streaming = false; this._emit("message", thinking); return; }
 
     const parsed = this._parse(raw, f, text);
@@ -2097,6 +2177,7 @@ const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) 
 const MAX_DOC_BYTES = 25 * 1024 * 1024;
 
 let intake, store, configStore, knowledge, currentStoreKind = "demo";
+let flowMode = false; // true = no-model step wizard, false = chat with a model
 let firstBoot = !localStorage.getItem("intake:welcomeDismissed");
 
 // ── Toast notifications ──
@@ -2147,51 +2228,79 @@ function celebrate() {
 
 // ── Inline editor ──
 let ieResolve = null;
+// buildFieldInput(field, currentValue) -> { el, getValue(), focus() }
+// One control-builder shared by the inline checklist editor, the admin's
+// question-creation wizard, and the end-user's no-model form wizard — each
+// mounts `el` wherever it needs and reads the value back the same way.
+function buildFieldInput(field, currentValue) {
+  if (field.type === "enum" && field.enum?.length) {
+    const wrap = el("div", "field-enum");
+    const name = "fi_" + Math.random().toString(36).slice(2);
+    const radios = [];
+    for (const opt of field.enum) {
+      const label = document.createElement("label");
+      const radio = document.createElement("input");
+      radio.type = "radio"; radio.name = name; radio.value = opt;
+      if (opt === currentValue) radio.checked = true;
+      radios.push(radio);
+      label.appendChild(radio);
+      label.appendChild(document.createTextNode(opt));
+      wrap.appendChild(label);
+    }
+    return { el: wrap, getValue: () => radios.find((r) => r.checked)?.value || "", focus: () => radios[0]?.focus() };
+  }
+  if (field.type === "select" && field.enum?.length) {
+    const sel = document.createElement("select"); sel.className = "field-input";
+    for (const opt of field.enum) sel.appendChild(new Option(opt, opt, false, opt === currentValue));
+    return { el: sel, getValue: () => sel.value, focus: () => sel.focus() };
+  }
+  if (field.type === "boolean") {
+    const wrap = el("div", "wiz-bool");
+    const yes = document.createElement("button"); yes.type = "button"; yes.textContent = "Yes";
+    const no = document.createElement("button"); no.type = "button"; no.textContent = "No";
+    let val = currentValue !== false;
+    const paint = () => { yes.classList.toggle("on", val === true); no.classList.toggle("on", val === false); };
+    yes.onclick = () => { val = true; paint(); };
+    no.onclick = () => { val = false; paint(); };
+    paint();
+    wrap.appendChild(yes); wrap.appendChild(no);
+    return { el: wrap, getValue: () => val, focus: () => yes.focus() };
+  }
+  if (field.type === "date") {
+    const inp = document.createElement("input");
+    inp.type = "date"; inp.className = "field-input";
+    if (currentValue) { try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {} }
+    return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
+  }
+  if (field.type === "textarea") {
+    const inp = document.createElement("textarea"); inp.rows = 4; inp.className = "field-input";
+    inp.value = currentValue || "";
+    return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
+  }
+  const inp = document.createElement(field.type === "text" && (currentValue || "").length > 60 ? "textarea" : "input");
+  if (inp.tagName === "TEXTAREA") { inp.rows = 3; inp.className = "field-input"; }
+  else { inp.type = field.type === "email" ? "email" : "text"; inp.className = "field-input"; }
+  inp.value = currentValue || "";
+  return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
+}
+
+let ieCurrentInput = null;
 function openInlineEditor(field, currentValue) {
   return new Promise((resolve) => {
     ieResolve = resolve;
     $("ieTitle").textContent = field.label;
     $("iePath").textContent = field.path;
     const body = $("ieBody"); body.innerHTML = "";
-    if (field.type === "enum" && field.enum?.length) {
-      const wrap = el("div", "field-enum");
-      for (const opt of field.enum) {
-        const label = document.createElement("label");
-        const radio = document.createElement("input");
-        radio.type = "radio"; radio.name = "ieEnum"; radio.value = opt;
-        if (opt === currentValue) radio.checked = true;
-        label.appendChild(radio);
-        label.appendChild(document.createTextNode(opt));
-        wrap.appendChild(label);
-      }
-      body.appendChild(wrap);
-    } else if (field.type === "date") {
-      const inp = document.createElement("input");
-      inp.type = "date"; inp.className = "field-input";
-      if (currentValue) {
-        try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {}
-      }
-      body.appendChild(inp);
-    } else {
-      const inp = document.createElement(field.type === "text" && (currentValue || "").length > 60 ? "textarea" : "input");
-      if (inp.tagName === "TEXTAREA") { inp.rows = 3; inp.className = "field-input"; }
-      else { inp.type = "text"; inp.className = "field-input"; }
-      inp.value = currentValue || "";
-      body.appendChild(inp);
-    }
+    ieCurrentInput = buildFieldInput(field, currentValue);
+    body.appendChild(ieCurrentInput.el);
     $("inlineEditor").classList.add("on");
-    const firstInput = body.querySelector("input, textarea");
-    if (firstInput) setTimeout(() => firstInput.focus(), 100);
+    setTimeout(() => ieCurrentInput.focus(), 100);
   });
 }
 $("ieCancel").onclick = () => { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null); };
 $("ieSave").onclick = () => {
-  const body = $("ieBody");
-  const radio = body.querySelector("input[type=radio]:checked");
-  if (radio) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(radio.value); return; }
-  const inp = body.querySelector("input:not([type=radio]), textarea");
-  if (inp) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(inp.value); return; }
-  $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve("");
+  $("inlineEditor").classList.remove("on");
+  if (ieResolve) ieResolve(ieCurrentInput ? ieCurrentInput.getValue() : "");
 };
 $("inlineEditor").addEventListener("click", (e) => { if (e.target === $("inlineEditor")) { $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null); } });
 document.addEventListener("keydown", (e) => {
@@ -2199,6 +2308,85 @@ document.addEventListener("keydown", (e) => {
     $("inlineEditor").classList.remove("on"); if (ieResolve) ieResolve(null);
   }
 });
+
+// createWizard(refs, opts) — drives Back/Next/progress/validation over an
+// ordered list of steps, one typed input per screen. Shared by the end-user's
+// no-model form wizard and the admin's question-creation wizard: same
+// step/validate/skip contract, different DOM to mount into and a different
+// commit strategy (per-step DEF vs. one batched putField on finish).
+//
+// refs: { label, help, inputBox, error, backBtn, nextBtn, ring?, ringN?, progTxt?, stepCount? }
+// opts: {
+//   steps: step[] | (values) => step[]   // step: { key, label, help, type, enum, required, initial, validate(v), skipIf(values) }
+//   initialValues?: object
+//   finishLabel?: string
+//   onStep?: (key, value, values) => void   // fires right after each successful Next
+//   onFinish?: (values) => void             // fires once, when the last step is passed
+// }
+function createWizard(refs, opts) {
+  let index = 0;
+  let values = { ...(opts.initialValues || {}) };
+  let currentInput = null;
+
+  const stepsOf = () => (typeof opts.steps === "function" ? opts.steps(values) : opts.steps);
+  const visible = (list, i) => { const s = list[i]; return s && !(s.skipIf && s.skipIf(values)); };
+  const clampForward = (list, i) => { while (i < list.length && !visible(list, i)) i++; return i; };
+  const clampBackward = (list, i) => { while (i >= 0 && !visible(list, i)) i--; return i; };
+
+  function showError(msg) { if (refs.error) { refs.error.textContent = msg; refs.error.style.display = "block"; } }
+  function clearError() { if (refs.error) { refs.error.textContent = ""; refs.error.style.display = "none"; } }
+
+  function renderStep() {
+    const list = stepsOf();
+    const s = list[index];
+    clearError();
+    if (refs.stepCount) refs.stepCount.textContent = `Step ${index + 1} of ${list.length}`;
+    if (refs.ring) refs.ring.style.setProperty("--p", list.length ? Math.round((index / list.length) * 100) : 0);
+    if (refs.ringN) refs.ringN.textContent = `${index}/${list.length}`;
+    if (refs.progTxt) refs.progTxt.textContent = list.length ? `Question ${index + 1} of ${list.length}` : "";
+    if (refs.label) refs.label.textContent = s.label + (s.required === false ? " (optional)" : "");
+    if (refs.help) { refs.help.textContent = s.help || ""; refs.help.style.display = s.help ? "" : "none"; }
+    refs.inputBox.innerHTML = "";
+    currentInput = buildFieldInput(s, values[s.key] ?? s.initial ?? "");
+    refs.inputBox.appendChild(currentInput.el);
+    setTimeout(() => currentInput.focus?.(), 50);
+    if (refs.backBtn) refs.backBtn.disabled = clampBackward(list, index - 1) < 0;
+    if (refs.nextBtn) refs.nextBtn.disabled = false;
+    if (refs.nextBtn) refs.nextBtn.textContent = index === list.length - 1 ? (opts.finishLabel || "Finish") : "Next →";
+  }
+
+  function goBack() {
+    const list = stepsOf();
+    const prev = clampBackward(list, index - 1);
+    if (prev < 0) return;
+    index = prev;
+    renderStep();
+  }
+
+  function goNext() {
+    const list = stepsOf();
+    const s = list[index];
+    const value = currentInput ? currentInput.getValue() : "";
+    if (s.required !== false && (value === "" || value == null)) { showError("This one's required."); return; }
+    if (s.validate) { const err = s.validate(value); if (err) { showError(err); return; } }
+    values[s.key] = value;
+    opts.onStep?.(s.key, value, values);
+    const next = clampForward(stepsOf(), index + 1);
+    if (next >= stepsOf().length) { opts.onFinish?.(values); return; }
+    index = next;
+    renderStep();
+  }
+
+  return {
+    start(initialValues, startIndex) {
+      if (initialValues) values = { ...initialValues };
+      index = clampForward(stepsOf(), startIndex ?? 0);
+      renderStep();
+    },
+    goBack, goNext,
+    values: () => values,
+  };
+}
 
 // ── Status ──
 function setStatus(txt, cls = "") { $("statusTxt").textContent = txt; $("dot").className = "dot " + cls; }
@@ -2244,6 +2432,8 @@ function onIntake(kind, data) {
     if (data.streaming && !data.text) { streamingNode = renderTyping(data); return; }
     if (streamingNode && data.streaming === false) { streamingNode.remove(); streamingNode = null; }
     renderMessage(data);
+  } else if (kind === "token") {
+    if (streamingNode) updateStreamingText(streamingNode, data.text);
   } else if (kind === "stored") {
     flashLedger(data.event); toast("Answer saved");
   } else if (kind === "field") {
@@ -2288,10 +2478,26 @@ function renderTyping() {
   const meta = el("div", "msg-meta");
   meta.appendChild(el("span", "msg-name", "Assistant"));
   body.appendChild(meta);
-  const t = el("span", "typing"); t.innerHTML = "<i></i><i></i><i></i>";
-  body.appendChild(t);
+  const bubble = el("div", "msg-bubble");
+  const dots = el("span", "typing"); dots.innerHTML = "<i></i><i></i><i></i>";
+  bubble.appendChild(dots);
+  const streamText = document.createElement("span"); streamText.className = "stream-text";
+  bubble.appendChild(streamText);
+  body.appendChild(bubble);
   group.appendChild(body);
   $("stream").appendChild(group); scrollChat(); return group;
+}
+
+// As stream tokens arrive, morph the typing-dots bubble into the live reply
+// text (see extractPartialReply() in model.js) instead of waiting for the
+// full completion before showing anything.
+function updateStreamingText(node, text) {
+  const dots = node.querySelector(".typing");
+  const streamText = node.querySelector(".stream-text");
+  if (!text) return;
+  if (dots) dots.style.display = "none";
+  if (streamText) streamText.textContent = text;
+  scrollChat();
 }
 
 function scrollChat() { const s = $("stream"); s.scrollTop = s.scrollHeight; }
@@ -2440,6 +2646,70 @@ function flashLedger(ev) {
 function updateLedgerCount() {
   const n = store.timeline().length;
   $("ledgerCount").textContent = n + " event" + (n === 1 ? "" : "s");
+}
+
+// ── No-model form wizard ──
+// Swapped in for #wizardPane when modelSel="echo" (see _bootAfterStore): the
+// same schema/store/validate() the chat drives, just answered one typed
+// field at a time with no model call at all.
+let userWizard = null;
+let wizardCelebrated = false;
+
+function initUserWizard() {
+  userWizard = createWizard({
+    ring: $("wizRing"), ringN: $("wizRingN"), progTxt: $("wizProgTxt"),
+    label: $("wizLabel"), help: $("wizHelp"), inputBox: $("wizInput"), error: $("wizError"),
+    backBtn: $("wizBack"), nextBtn: $("wizNext"),
+  }, {
+    steps: () => intake.schema.fields.map((f) => ({
+      key: f.path, label: f.label, help: f.help, type: f.type, required: f.required, enum: f.enum,
+      validate: (v) => validate(f, v),
+    })),
+    onStep: (path, value) => {
+      if (!String(value ?? "").trim()) return; // optional + left blank: nothing to store
+      const r = intake.editField(path, value);
+      if (!r.ok) toast(r.error, "error");
+    },
+    onFinish: () => wizardCompleteUI(true),
+  });
+  $("wizBack").onclick = () => userWizard.goBack();
+  $("wizNext").onclick = () => userWizard.goNext();
+}
+
+function startUserWizard() {
+  wizardCelebrated = false; // a fresh boot (e.g. after Reset) should be able to celebrate again
+  $("wizFieldView").classList.remove("hidden");
+  $("wizComplete").classList.add("hidden");
+  $("wizBack").disabled = false; $("wizNext").disabled = false;
+  const answers = intake.answers();
+  const fields = intake.schema.fields;
+  if (intake.isComplete()) { wizardCompleteUI(false); return; }
+  const firstUnanswered = fields.findIndex((f) => answers[f.path] == null || answers[f.path] === "");
+  userWizard.start(answers, firstUnanswered === -1 ? 0 : firstUnanswered);
+}
+
+function wizardCompleteUI(shouldCelebrate) {
+  $("wizFieldView").classList.add("hidden");
+  const box = $("wizComplete");
+  box.classList.remove("hidden");
+  box.innerHTML = `<h2>All done</h2><p>Every answer is saved. Use the checklist on the right anytime to change something.</p>`;
+  const btn = document.createElement("button");
+  btn.style.cssText = "font:600 13px Inter;padding:9px 18px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;margin-top:6px";
+  btn.textContent = "View your submission";
+  btn.onclick = () => $("submissionBtn").click();
+  box.appendChild(btn);
+  $("wizBack").disabled = true; $("wizNext").disabled = true;
+  $("wizProgTxt").textContent = "Complete";
+  const total = intake.schema.fields.length;
+  $("wizRingN").textContent = `${total}/${total}`;
+  $("wizRing").style.setProperty("--p", 100);
+  document.getElementById("submissionBtn").style.display = "";
+  if (shouldCelebrate && !wizardCelebrated) {
+    wizardCelebrated = true;
+    celebrate();
+    toast("All questions answered!", "success");
+    renderSubmission();
+  }
 }
 
 // ── Compose ──
@@ -2716,19 +2986,31 @@ async function _bootAfterStore() {
   const cfg = ensureSeeded(configStore);
   const schema = { id:cfg.schema.id, title:cfg.schema.title, blurb:cfg.schema.blurb||"", fields:cfg.schema.fields.length?cfg.schema.fields:[] };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
-  
+
   intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM });
   document.getElementById("docTitle").textContent = schema.title;
+  document.getElementById("wizTitle").textContent = schema.title;
   document.getElementById("stream").innerHTML = ""; document.getElementById("ledger").innerHTML = "";
-  
+
   intake.on(onIntake);
   store.subscribe(renderSide);
   store.subscribe(renderDocs);
   configStore.subscribe(onConfigChange);
   renderLedgerFromTimeline();
   renderSide(); renderDocs();
-  await intake.begin();
-  
+
+  // "Demo" carries no model at all, so it gets the plain step-by-step form
+  // wizard instead of a scripted chat; a real local model (Llama/Ollama)
+  // gets the interactive chat.
+  flowMode = modelKind === "echo";
+  document.querySelector(".chat").classList.toggle("hidden", flowMode);
+  document.getElementById("wizardPane").classList.toggle("hidden", !flowMode);
+  // "View folded context" shows AI prompt-assembly internals — irrelevant
+  // (and a little confusing) when there's no model actually reading it.
+  document.getElementById("ctxBtn").style.display = flowMode ? "none" : "";
+  if (flowMode) startUserWizard();
+  else await intake.begin();
+
   if (intake.isComplete()) { document.getElementById("submissionBtn").style.display = ""; renderSubmission(); }
 }
 
@@ -2914,15 +3196,7 @@ function renderQPanel() {
   });
 
   const addBtn = document.getElementById("qAddBtn");
-  if (addBtn) addBtn.onclick = () => {
-    const label = prompt("Question label:");
-    if (!label) return;
-    const path = label.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"") || "field";
-    putField(configStore, { path, label, type:"text", required:false, prompt:label+"?", help:"" });
-    setFieldOrder(configStore, [...fields.map(f=>f.path), path]);
-    renderQPanel();
-    toast("Question added");
-  };
+  if (addBtn) addBtn.onclick = () => openQuestionWizard();
 
   const memList = document.getElementById("qMemList");
   knowledgeItems.forEach((k) => {
@@ -3013,6 +3287,75 @@ function deleteMemoryQ(row) {
   toast("Memory deleted");
 }
 
+// ── Admin: new-question wizard ──
+// Same createWizard()/buildFieldInput() engine as the end-user's no-model
+// flow, but batches everything into one putField() on Finish rather than
+// committing per-step — a half-authored question (label set, type not yet
+// chosen) shouldn't land in the shared config room where real users read it.
+const QUESTION_TYPE_OPTIONS = ["text", "email", "date", "enum"];
+
+function questionWizardSteps(values) {
+  const steps = [
+    { key: "label", label: "What should this question be called?", type: "text", required: true,
+      help: "The short internal label for this question, e.g. \"Email address\"." },
+    { key: "type", label: "What kind of answer is this?", type: "select", enum: QUESTION_TYPE_OPTIONS, required: true, initial: "text",
+      help: "Controls validation, and which input the no-model form wizard shows." },
+  ];
+  if (values.type === "enum") {
+    steps.push({
+      key: "enumOptions", label: "List the choices, one per line", type: "textarea", required: true,
+      validate: (v) => (String(v).split("\n").map((s) => s.trim()).filter(Boolean).length < 2 ? "Add at least two choices." : null),
+    });
+  }
+  steps.push(
+    { key: "prompt", label: "How should this be asked?", type: "textarea", required: true,
+      help: "The question as shown/spoken to the applicant." },
+    { key: "help", label: "Any extra guidance?", type: "textarea", required: false,
+      help: "Shown alongside the question to help the applicant answer." },
+    { key: "required", label: "Is answering this required to finish the intake?", type: "boolean", required: true, initial: true },
+  );
+  return steps;
+}
+
+let questionWizard = null;
+function initQuestionWizard() {
+  questionWizard = createWizard({
+    stepCount: $("qWizStepCount"), label: $("qWizLabel"), help: $("qWizHelp"),
+    inputBox: $("qWizInput"), error: $("qWizError"),
+    backBtn: $("qWizBack"), nextBtn: $("qWizNext"),
+  }, {
+    steps: questionWizardSteps,
+    finishLabel: "Create question",
+    onFinish: (values) => {
+      const path = values.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field";
+      const field = {
+        path, label: values.label.trim(), type: values.type, required: values.required !== false,
+        prompt: (values.prompt || "").trim() || values.label.trim() + "?",
+        help: (values.help || "").trim(),
+      };
+      if (values.type === "enum") field.enum = String(values.enumOptions).split("\n").map((s) => s.trim()).filter(Boolean);
+      putField(configStore, field);
+      const order = foldConfig(configStore.timeline()).schema.fields.map((f) => f.path).filter((p) => p !== path);
+      setFieldOrder(configStore, [...order, path]);
+      closeQuestionWizard();
+      renderQPanel();
+      toast("Question added");
+    },
+  });
+  $("qWizBack").onclick = () => questionWizard.goBack();
+  $("qWizNext").onclick = () => questionWizard.goNext();
+  $("qWizCancel").onclick = closeQuestionWizard;
+  $("qWizModal").addEventListener("click", (e) => { if (e.target === $("qWizModal")) closeQuestionWizard(); });
+}
+
+function openQuestionWizard() {
+  questionWizard.start({});
+  $("qWizModal").classList.add("on");
+}
+function closeQuestionWizard() {
+  $("qWizModal").classList.remove("on");
+}
+
 // ── Init ──
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
@@ -3021,6 +3364,8 @@ document.addEventListener("DOMContentLoaded", () => {
   wireChat();
   wireNewNav();
   wireQPanelDirtyTracking();
+  initUserWizard();
+  initQuestionWizard();
   showLogin();
 });
 
