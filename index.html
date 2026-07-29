@@ -59,6 +59,20 @@ body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui
 .signup li::before{content:"✓";color:var(--seal);font-weight:700;flex:none}
 .signup .after{font-size:11.5px;color:var(--muted);text-align:center;margin:8px 0 0}
 .signup a.plain{color:var(--seal);text-decoration:underline;text-underline-offset:2px}
+.mxid-wrap{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:9px;background:var(--surface);overflow:hidden;transition:border-color .15s ease}
+.mxid-wrap:focus-within{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.mxid-wrap input{border:none!important;border-radius:0!important;flex:1;min-width:0}
+.mxid-wrap input:focus{outline:none!important}
+.mxid-suffix{display:flex;align-items:center;padding:0 11px;font:500 13.5px "IBM Plex Mono",monospace;color:var(--muted);background:var(--paper);border-left:1px solid var(--line);white-space:nowrap;flex:none}
+.mxid-suffix.custom{color:var(--seal)}
+.mxid-suffix.hidden{display:none}
+.hs-toggle{display:block;width:100%;margin-top:10px;padding:0;border:none;background:none;font:500 12.5px Inter;color:var(--muted);text-align:center;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.hs-toggle:hover{color:var(--ink)}
+.hs-fields{max-height:0;overflow:hidden;opacity:0;transition:max-height .3s ease,opacity .2s ease}
+.hs-fields.open{max-height:220px;opacity:1;margin-top:10px}
+.hs-note{font-size:11.5px;color:var(--muted);margin:-4px 0 0;line-height:1.45}
+.fp-link{display:block;margin:6px 0 0;padding:0;border:none;background:none;font:500 12px Inter;color:var(--muted);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.fp-link:hover{color:var(--ink)}
 .login-card .login-error .err-cta{display:inline-block;margin-top:6px;color:var(--seal);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 .demo-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-left:3px solid var(--seal);border-radius:10px;background:var(--seal-soft);padding:9px 12px;margin:10px 0 0;font-size:13px}
 .demo-bar .txt{flex:1;min-width:220px;line-height:1.45}
@@ -370,6 +384,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .mem .memfoot{display:flex;align-items:center;gap:6px;margin-top:3px}
 .mem .memfoot .scoped{font-size:11px;color:var(--muted);margin-right:auto}
 .iconbtn{padding:4px 8px;line-height:1}
+.iconbtn.danger{color:var(--red);border-color:var(--red-soft)}
+.iconbtn.danger:hover{background:var(--red-soft)}
 </style>
 </head>
 <body>
@@ -382,31 +398,42 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <p class="sub">Document your experience with a government agency. Your responses are encrypted and stored privately.</p>
 
     <div class="signup">
-      <h2>You'll need a free matrix.org account</h2>
-      <p>matrix.org is the public home of the Matrix network. Signing up takes about a minute and costs nothing.</p>
+      <h2>Create your free account</h2>
+      <p>Takes about a minute, and it's free.</p>
       <ul>
-        <li>Your submission is saved to your own account, not to us</li>
+        <li>Your submission is saved under your own login, not on our servers</li>
         <li>End-to-end encrypted — only you and the reviewing agency can read it</li>
         <li>Come back from any device and pick up where you left off</li>
       </ul>
-      <button class="login-btn seal" id="loginSignup">Create a free matrix.org account →</button>
-      <p class="after">Opens matrix.org's sign-up page in a new tab. Come back here and sign in when you're done — <a class="plain" href="https://matrix.org/" target="_blank" rel="noopener noreferrer">what is matrix.org?</a></p>
+      <button class="login-btn seal" id="loginSignup">Create an account →</button>
+      <p class="after">Opens in a new tab. Come back here and sign in when you're done.</p>
     </div>
 
     <div class="divider">already have one?</div>
 
     <div class="login-error" id="loginError"></div>
 
-    <button class="login-btn ghost" id="loginShowMatrix">Sign in with your matrix.org account →</button>
+    <button class="login-btn ghost" id="loginShowMatrix">Sign in →</button>
 
     <div class="matrix-fields" id="matrixFields">
-      <div class="form-group"><label>User ID</label><input id="loginUserId" placeholder="@you:matrix.org"></div>
-      <div class="form-group"><label>Password</label><input id="loginPassword" type="password" placeholder="••••••••"></div>
-      <div class="form-group"><label>Homeserver URL</label><input id="loginHomeserver" value="https://matrix.org" placeholder="https://matrix.org"></div>
+      <div class="form-group">
+        <label>Username</label>
+        <div class="mxid-wrap"><input id="loginUserId" placeholder="you" autocomplete="username"><span class="mxid-suffix" id="loginUserSuffix">:matrix.org</span></div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password">
+        <button type="button" class="fp-link" id="loginForgotPw">Forgot password?</button>
+      </div>
       <button class="login-btn primary" id="loginMatrix">Sign in</button>
+      <button type="button" class="hs-toggle" id="loginShowHs">Using a different provider?</button>
+      <div class="hs-fields" id="hsFields">
+        <div class="form-group"><label>Server address</label><input id="loginHomeserver" value="https://matrix.org" placeholder="https://matrix.org"></div>
+        <p class="hs-note">Leave this alone unless your account isn't one you made here. Typing a full ID like <span class="mono">@you:example.org</span> above fills it in for you.</p>
+      </div>
     </div>
 
-    <p class="sso-hint">Your credentials are used only to connect to your Matrix homeserver and are never stored.</p>
+    <p class="sso-hint">Your password is sent straight to your account provider and is never stored here.</p>
 
     <div class="divider">just looking?</div>
     <button class="login-btn quiet" id="loginDemo">Try a demo — nothing you write is saved</button>
@@ -433,8 +460,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
   <!-- Shown only in demo mode: nothing is persisted, so nudge toward a real
        matrix.org account before the user has typed a whole complaint. -->
   <div class="demo-bar hidden" id="demoBar">
-    <span class="txt"><b>Demo mode.</b> Answers live in this browser only — clear your data or switch devices and they're gone. A free matrix.org account keeps them, encrypted, under your own login.</span>
-    <button class="go" id="demoBarSignup">Create matrix.org account</button>
+    <span class="txt"><b>Demo mode.</b> Answers live in this browser only — clear your data or switch devices and they're gone. A free account keeps them, encrypted, under your own login.</span>
+    <button class="go" id="demoBarSignup">Create account</button>
     <button id="demoBarSignin">Sign in</button>
     <button class="x" id="demoBarClose" title="Dismiss">×</button>
   </div>
@@ -2051,7 +2078,9 @@ function initAdminView({ onClose }) {
     wrap.style.cssText = "display:flex;flex-direction:column;gap:16px";
 
     const cfg = foldConfig(configStore.timeline());
-    const fields = cfg.schema.fields.length ? cfg.schema.fields : DEFAULT_CONFIG.fields;
+    // No fallback to DEFAULT_CONFIG here: an admin who deleted every question
+    // should see an empty eval, not the built-in ones back from the dead.
+    const fields = cfg.schema.fields;
     // Always fold fresh from configStore rather than the (possibly stale, set
     // only at boot) global `knowledge` — an admin editing Memory just above
     // expects Retrieval Eval to reflect it immediately, not after a reload.
@@ -2907,8 +2936,8 @@ function renderSubmission() {
       </div>
       ${currentStoreKind === "demo" ? `
         <div class="demo-bar" style="margin:0 0 16px">
-          <span class="txt"><b>This submission isn't filed anywhere.</b> Demo answers stay in this browser. Create a free matrix.org account and sign in to store it encrypted under your own login, then submit it for real.</span>
-          <button class="go" id="subSignup">Create matrix.org account</button>
+          <span class="txt"><b>This submission isn't filed anywhere.</b> Demo answers stay in this browser. Create a free account and sign in to store it encrypted under your own login, then submit it for real.</span>
+          <button class="go" id="subSignup">Create account</button>
         </div>` : ""}
       ${schema.fields.map(f => {
         const val = answers[f.path];
@@ -2939,52 +2968,100 @@ function hideLogin() {
 // matrix.org homeserver *is* the account. Registration happens in a Matrix
 // client, so "sign up" means handing the user off to Element's register flow
 // with matrix.org already selected as the homeserver.
+const MATRIX_ORG_DOMAIN = "matrix.org";
 const MATRIX_ORG_HS = "https://matrix.org";
 const MATRIX_ORG_SIGNUP = "https://app.element.io/#/register";
+const MATRIX_ORG_RESET = "https://app.element.io/#/forgot_password";
 
 function openMatrixSignup() {
   window.open(MATRIX_ORG_SIGNUP, "_blank", "noopener,noreferrer");
 }
+// matrix.org accounts already have a password-reset flow (email-verified,
+// server-side) — no reason to build our own when Element's does the job.
+function openMatrixPasswordReset() {
+  window.open(MATRIX_ORG_RESET, "_blank", "noopener,noreferrer");
+}
 
-// "alice" → "@alice:matrix.org"; "@alice" → "@alice:matrix.org". A bare
-// username is the common case for someone who just signed up on matrix.org,
-// and making them type the full MXID is a needless place to fail.
+// matrix.org is assumed, so the sign-in form asks for a username and nothing
+// else: "alice" → "@alice:matrix.org". Someone who is elsewhere can still say
+// so — a full "@alice:example.org" is taken at its word, and the homeserver
+// field (tucked behind a toggle) always wins if they filled it in by hand.
 function normalizeUserId(raw) {
   const v = (raw || "").trim();
   if (!v) return v;
   const local = v.startsWith("@") ? v.slice(1) : v;
-  return local.includes(":") ? "@" + local : "@" + local + ":matrix.org";
+  return local.includes(":") ? "@" + local : "@" + local + ":" + MATRIX_ORG_DOMAIN;
+}
+
+function userIdDomain(raw) {
+  const id = normalizeUserId(raw);
+  return id ? id.slice(id.indexOf(":") + 1) : MATRIX_ORG_DOMAIN;
+}
+
+// Set once the user edits the homeserver box themselves; from then on we stop
+// deriving it from the user ID and leave whatever they typed alone.
+let hsFieldTouched = false;
+
+function resolveHomeserver(rawUserId) {
+  const typed = document.getElementById("loginHomeserver").value.trim();
+  if (hsFieldTouched && typed) return typed;
+  const domain = userIdDomain(rawUserId);
+  return domain === MATRIX_ORG_DOMAIN ? MATRIX_ORG_HS : "https://" + domain;
+}
+
+// Keeps the ":matrix.org" chip, the homeserver box, and the disclosure state
+// agreeing with whatever is currently in the username field.
+function syncHomeserverToUserId() {
+  const raw = document.getElementById("loginUserId").value.trim();
+  const suffix = document.getElementById("loginUserSuffix");
+  const hsField = document.getElementById("loginHomeserver");
+  const typedFullId = raw.includes(":");
+  // The chip is a promise about what we'll append — meaningless once they've
+  // typed the domain themselves.
+  suffix.classList.toggle("hidden", typedFullId);
+  const domain = userIdDomain(raw);
+  const elsewhere = raw && domain !== MATRIX_ORG_DOMAIN;
+  if (!hsFieldTouched) hsField.value = resolveHomeserver(raw);
+  // Only pop the homeserver box open on its own when the user ID says the
+  // account isn't on matrix.org — otherwise the default stays out of the way.
+  if (elsewhere) document.getElementById("hsFields").classList.add("open");
 }
 
 // Wrong-password and no-such-user come back from Synapse as the same
-// M_FORBIDDEN, so the message covers both — and offers the sign-up route,
-// since "no account yet" is the likelier reason a first-timer is stuck.
+// M_FORBIDDEN, so the message covers both — and offers both the sign-up and
+// reset-password routes rather than guessing which one a stuck first-timer
+// needs. The matrix.org domain is named only when it's actually relevant
+// (a custom, non-default server) — the default case just says "account".
 function loginErrorMessage(e, homeserver) {
   const code = e?.errcode || "";
   const onMatrixOrg = /(^|\/\/)([^/]*\.)?matrix\.org\/?$/.test(homeserver || "");
-  const where = onMatrixOrg ? "matrix.org" : homeserver;
   if (code === "M_FORBIDDEN" || code === "M_USER_DEACTIVATED")
-    return { text: `That user ID and password didn't match on ${where}.`, offerSignup: true };
+    return {
+      text: onMatrixOrg ? "That username and password didn't match." : `That username and password didn't match on ${homeserver}.`,
+      offerSignup: true, offerReset: true,
+    };
   if (code === "M_USER_IN_USE" || code === "M_INVALID_USERNAME")
-    return { text: `That doesn't look like a valid user ID. Try @you:matrix.org.`, offerSignup: false };
+    return { text: "That doesn't look like a valid username. Try a plain name, like alice.", offerSignup: false, offerReset: false };
   if (code === "M_LIMIT_EXCEEDED")
-    return { text: "Too many attempts — wait a moment and try again.", offerSignup: false };
+    return { text: "Too many attempts — wait a moment and try again.", offerSignup: false, offerReset: false };
   if (!onMatrixOrg)
-    return { text: `Couldn't reach ${where}: ${e.message}. If you don't have an account of your own yet, matrix.org is the easiest place to get one.`, offerSignup: true };
-  return { text: "Login failed: " + e.message, offerSignup: false };
+    return { text: `Couldn't reach ${homeserver}: ${e.message}. If your account isn't on a server of its own, we can set one up for you.`, offerSignup: true, offerReset: false };
+  return { text: "Sign-in failed: " + e.message, offerSignup: false, offerReset: false };
 }
 
-function showLoginError(text, offerSignup) {
+function showLoginError(text, { offerSignup = false, offerReset = false } = {}) {
   const err = document.getElementById("loginError");
   err.textContent = text;
-  if (offerSignup) {
-    const cta = document.createElement("span");
-    cta.className = "err-cta";
-    cta.textContent = "Create a free matrix.org account →";
-    cta.onclick = openMatrixSignup;
+  const cta = (label, handler) => {
+    const el = document.createElement("span");
+    el.className = "err-cta";
+    el.textContent = label;
+    el.onclick = handler;
     err.appendChild(document.createElement("br"));
-    err.appendChild(cta);
-  }
+    err.appendChild(el);
+  };
+  if (offerReset) cta("Forgot your password? →", openMatrixPasswordReset);
+  if (offerSignup) cta("Create a free account →", openMatrixSignup);
   err.classList.add("show");
 }
 
@@ -3009,9 +3086,9 @@ async function doMatrixLogin(homeserver, userId, password) {
     hideLogin();
     boot();
   } catch (e) {
-    const { text, offerSignup } = loginErrorMessage(e, homeserver);
+    const { text, offerSignup, offerReset } = loginErrorMessage(e, homeserver);
     err.textContent = "";
-    showLoginError(text, offerSignup);
+    showLoginError(text, { offerSignup, offerReset });
     document.getElementById("loginMatrix").disabled = false;
   }
 }
@@ -3029,24 +3106,20 @@ function wireLogin() {
     const open = document.getElementById("matrixFields").classList.toggle("open");
     if (open) document.getElementById("loginUserId").focus();
   };
-  // Typing a bare username or a full MXID both work; the homeserver field
-  // follows the user ID so the two can't silently disagree.
-  document.getElementById("loginUserId").onblur = (e) => {
-    const id = normalizeUserId(e.target.value);
-    if (!id) return;
-    e.target.value = id;
-    const hsField = document.getElementById("loginHomeserver");
-    const domain = id.slice(id.indexOf(":") + 1);
-    if (domain === "matrix.org") hsField.value = MATRIX_ORG_HS;
-    else if (hsField.value.trim() === MATRIX_ORG_HS) hsField.value = "https://" + domain;
+  // A bare username is all matrix.org users need to type; a full MXID is
+  // still accepted and drags the homeserver along with it.
+  document.getElementById("loginUserId").oninput = syncHomeserverToUserId;
+  document.getElementById("loginShowHs").onclick = () => {
+    document.getElementById("hsFields").classList.toggle("open");
   };
+  document.getElementById("loginHomeserver").oninput = () => { hsFieldTouched = true; };
   document.getElementById("loginMatrix").onclick = () => {
-    const userId = normalizeUserId(document.getElementById("loginUserId").value);
-    document.getElementById("loginUserId").value = userId;
-    const homeserver = document.getElementById("loginHomeserver").value.trim() || MATRIX_ORG_HS;
+    const raw = document.getElementById("loginUserId").value;
+    const userId = normalizeUserId(raw);
+    const homeserver = resolveHomeserver(raw);
     document.getElementById("loginError").classList.remove("show");
     if (!userId || !document.getElementById("loginPassword").value) {
-      showLoginError("Enter the user ID and password for your matrix.org account.", true);
+      showLoginError("Enter your username and password.", { offerSignup: true });
       return;
     }
     document.getElementById("loginMatrix").disabled = true;
@@ -3058,6 +3131,7 @@ function wireLogin() {
   document.getElementById("loginUserId").onkeydown = (e) => {
     if (e.key === "Enter") document.getElementById("loginPassword").focus();
   };
+  document.getElementById("loginForgotPw").onclick = openMatrixPasswordReset;
   // In-app nudge for demo sessions.
   document.getElementById("demoBarSignup").onclick = openMatrixSignup;
   document.getElementById("demoBarSignin").onclick = () => {
@@ -3269,9 +3343,9 @@ function renderQPanel() {
           </div>
         </div>
         <div class="q-card"><div class="qh">Questions <span class="count">${fields.length}</span></div>
-          <div class="body"><p class="note">Each question asked in order. Reorder with ▲▼.</p>
+          <div class="body"><p class="note">Each question asked in order. Reorder with ▲▼, remove with ✕. Click a question to edit its wording.</p>
             <div class="qlist" id="qAdminList"></div>
-            <div class="btns" style="margin-top:10px"><button class="primary" id="qAddBtn">+ Add question</button></div>
+            <div class="btns" style="margin-top:10px"><button class="primary" id="qAddBtn">+ Add question</button>${fields.length ? '<button class="danger" id="qClearAllBtn">Clear all questions</button>' : ''}</div>
           </div>
         </div>
       </div>
@@ -3321,6 +3395,14 @@ function renderQPanel() {
     const mv = document.createElement("div"); mv.style.cssText = "display:flex;gap:4px";
     if (i > 0) { const u = document.createElement("button"); u.className="iconbtn"; u.textContent="▲"; u.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i-1);}; mv.appendChild(u); }
     if (i < fields.length-1) { const d = document.createElement("button"); d.className="iconbtn"; d.textContent="▼"; d.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i+1);}; mv.appendChild(d); }
+    // Delete lives in the header too, not only at the bottom of the (collapsed
+    // by default) edit body — removing a question shouldn't need a hunt.
+    const del = document.createElement("button");
+    del.className = "iconbtn danger"; del.textContent = "✕";
+    del.title = `Delete "${f.label}"`;
+    del.setAttribute("aria-label", `Delete question: ${f.label}`);
+    del.onclick = (e) => { e.stopPropagation(); removeField(f.path, f.label); };
+    mv.appendChild(del);
     head.appendChild(mv);
     card.appendChild(head);
     const b = document.createElement("div"); b.className = "qbody";
@@ -3336,6 +3418,8 @@ function renderQPanel() {
 
   const addBtn = document.getElementById("qAddBtn");
   if (addBtn) addBtn.onclick = () => openQuestionWizard();
+  const clearAllBtn = document.getElementById("qClearAllBtn");
+  if (clearAllBtn) clearAllBtn.onclick = () => clearAllFields();
 
   const memList = document.getElementById("qMemList");
   knowledgeItems.forEach((k) => {
@@ -3391,12 +3475,35 @@ function saveFieldQ(btn) {
 
 function deleteFieldQ(btn) {
   const path = btn.dataset.path;
-  if (!confirm("Delete this question?")) return;
+  const label = foldConfig(configStore.timeline()).schema.fields.find(f => f.path === path)?.label;
+  removeField(path, label);
+}
+
+// Tombstones the field and rewrites field_order without it. Answers already
+// given to it stay in each applicant's room — the question just stops being
+// asked, and drops out of the checklist and the submission view.
+function removeField(path, label) {
+  const name = label ? `"${label}"` : "this question";
+  if (!confirm(`Delete ${name}?\n\nIt won't be asked again. Answers already collected stay in the event log.`)) return;
   deleteField(configStore, path);
   const cur = foldConfig(configStore.timeline()).schema.fields.map(f=>f.path).filter(p=>p!==path);
   setFieldOrder(configStore, cur);
   renderQPanel();
-  toast("Deleted");
+  toast(label ? `Deleted "${label}"` : "Question deleted");
+}
+
+// Wipes every question — including the shipped defaults — down to a blank
+// form. Same tombstone path as a single delete, just applied to all of them
+// plus an emptied field_order, so a fresh admin can start from nothing
+// instead of pruning the seeded example schema one row at a time.
+function clearAllFields() {
+  const fields = foldConfig(configStore.timeline()).schema.fields;
+  if (!fields.length) return;
+  if (!confirm(`Delete all ${fields.length} questions?\n\nThe form will be empty until you add new ones. Answers already collected stay in the event log.`)) return;
+  fields.forEach(f => deleteField(configStore, f.path));
+  setFieldOrder(configStore, []);
+  renderQPanel();
+  toast("All questions cleared");
 }
 
 function moveFieldQ(path, from, to) {
