@@ -7,7 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/matrix-js-sdk@34.3.1/dist/browser-matrix.min.js"></script>
+<!-- matrix-js-sdk has no published browser/UMD build (no dist/ folder, no
+     unpkg field) — a CDN tag pointing at one 404s and silently leaves
+     window.matrixcs undefined. This is a self-built bundle (see
+     vendor/README.md to rebuild/upgrade it) that includes the Rust crypto
+     backend needed for real E2EE. -->
+<script src="vendor/matrix-sdk-bundle.js"></script>
 <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
@@ -1757,17 +1762,92 @@ async function previewDocument(doc, media) {
 const CONFIG_ANCHOR = "qconfig";
 const ENTITY = Object.freeze({ FIELD: "field", KNOWLEDGE: "knowledge" });
 
-// The shared room every user reads for the questions. In a live deployment this
-// is a real Matrix room id whose membership is "all intake users, read".
+// Demo mode only: pure localStorage keys, no real Matrix room behind them.
+// For real accounts see ensureConfigRoom()/ensureAnswerRoom() below — a
+// client-side string can't be a real Matrix room id (those are opaque and
+// server-assigned), so the real path has to create/discover rooms for real.
 const CONFIG_ROOM = "!intake-config:local";
-
-// Each user gets their own answers room. Derived here for the demo; in a live
-// deployment it is a real per-user room id (created/invited out of band) so one
-// person's message content is never visible in another's timeline. This is also
-// the room the document-review dashboard (admin.js) reads for uploaded files.
 function answerRoomFor(userId = "@demo:local") {
   const safe = String(userId).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "user";
   return "!intake-answers-" + safe + ":local";
+}
+
+// ── Real room provisioning (matrix accounts) ──
+// Two rooms, same shape as the demo constants above, but for real: one
+// shared config room (all users read, admin writes) and one private,
+// encrypted answers room per user (submitter + invited admin only).
+
+const ANSWER_ROOM_ACCOUNT_DATA_TYPE = "social.feedback-platform.answers_room";
+
+function homeserverDomain(userId) {
+  const at = String(userId || "").indexOf(":");
+  return at === -1 ? "matrix.org" : userId.slice(at + 1);
+}
+
+// A room alias is the only way every submitter — regardless of which
+// homeserver their own account lives on — can find the *same* shared config
+// room via federation, without the app needing a directory of its own.
+function configRoomAlias() {
+  return "#feedback-platform-config:" + homeserverDomain(ADMIN_USER_ID);
+}
+
+// Each user's answers room id is opaque and server-assigned, so it can't be
+// derived the way the demo one is — it's created once and then remembered
+// via account_data on the user's own account. That (not localStorage) is
+// what makes "come back from any device" actually true: account_data lives
+// on the homeserver, not in one browser.
+async function ensureAnswerRoom(client) {
+  const existing = await client.getAccountDataFromServer(ANSWER_ROOM_ACCOUNT_DATA_TYPE).catch(() => null);
+  if (existing?.room_id && client.getRoom(existing.room_id)) return existing.room_id;
+  if (existing?.room_id) {
+    try { await client.joinRoom(existing.room_id); return existing.room_id; } catch {}
+  }
+  const { room_id } = await client.createRoom({
+    preset: "private_chat",
+    visibility: "private",
+    invite: client.getUserId() === ADMIN_USER_ID ? [] : [ADMIN_USER_ID],
+    initial_state: [
+      { type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } },
+    ],
+    name: "Feedback Platform — submission",
+  });
+  await client.setAccountData(ANSWER_ROOM_ACCOUNT_DATA_TYPE, { room_id });
+  return room_id;
+}
+
+// The config room isn't sensitive (it's just the shared question set), so it
+// stays unencrypted — that also keeps it simple for the admin to publish an
+// alias for it. Only the admin can create it; everyone else just resolves
+// the alias and joins, and gets the built-in defaults if it doesn't exist yet.
+async function ensureConfigRoom(client) {
+  const alias = configRoomAlias();
+  try {
+    const { room_id } = await client.getRoomIdForAlias(alias);
+    if (!client.getRoom(room_id)) await client.joinRoom(room_id);
+    return room_id;
+  } catch (e) {
+    if (client.getUserId() !== ADMIN_USER_ID) return null; // wait for the admin to set it up
+  }
+  const { room_id } = await client.createRoom({
+    preset: "public_chat",
+    visibility: "private",
+    room_alias_name: alias.slice(1, alias.indexOf(":")),
+    name: "Feedback Platform — questions",
+  });
+  return room_id;
+}
+
+// The admin needs to actually join a submitter's room (not just be invited)
+// before its timeline is readable. Called once at boot and left listening so
+// rooms created by users who sign up later get picked up automatically.
+function autoJoinInvitesForAdmin(client) {
+  const tryJoin = (room) => {
+    if (room.getMyMembership() === "invite") client.joinRoom(room.roomId).catch(() => {});
+  };
+  client.getRooms().forEach(tryJoin);
+  client.on("Room.myMembership", (room, membership) => {
+    if (membership === "invite") tryJoin(room);
+  });
 }
 
 // foldConfig(timeline) -> { meta, schema:{ id,title,blurb,fields:[...] }, systemPrompt, knowledge:[...] }
@@ -3155,6 +3235,22 @@ function openMatrixPasswordReset() {
   window.open(MATRIX_ORG_RESET, "_blank", "noopener,noreferrer");
 }
 
+// Real E2EE (Megolm room encryption via the Rust crypto backend), not the
+// legacy libolm initCrypto() — that call requires a separately-loaded olm.wasm
+// this app never provided, so it always silently no-op'd. initRustCrypto()
+// downloads/instantiates its WASM from the bundle itself; no extra script tag.
+// Login/signup still proceed if this fails (e.g. no IndexedDB/WASM support),
+// but the user is told plainly rather than silently losing the protection the
+// login screen promises them.
+async function initClientCrypto(client) {
+  try {
+    await client.initRustCrypto({ useIndexedDB: true });
+  } catch (e) {
+    console.error("E2EE setup failed:", e);
+    toast("Couldn't set up encryption — your data will sync but without the extra protection.", "warn");
+  }
+}
+
 function openSignupWizard() {
   showLogin();
   document.getElementById("loginMainView").classList.add("hidden");
@@ -3439,7 +3535,7 @@ async function suSetupClientFromRegistration(data) {
       baseUrl: MATRIX_ORG_HS, accessToken: data.access_token,
       userId: data.user_id, deviceId: data.device_id
     });
-    try { if (client.initCrypto) await client.initCrypto(); } catch (e) { console.warn("E2EE:", e.message); }
+    await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
@@ -3661,7 +3757,7 @@ async function doMatrixLogin(homeserver, userId, password) {
       baseUrl: homeserver, accessToken: res.access_token,
       userId: res.user_id, deviceId: res.device_id
     });
-    try { if (client.initCrypto) await client.initCrypto(); } catch (e) { console.warn("E2EE:", e.message); }
+    await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
@@ -3750,10 +3846,11 @@ async function boot() {
 
   if (loginState.kind === "matrix") {
     const { client, userId } = loginState;
-    const safe = userId.replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"").toLowerCase();
-    const answersRoom = "!intake-answers-" + safe + ":local";
     try {
-      configStore = await new MatrixStore(client).open("!intake-config:local");
+      if (userId === ADMIN_USER_ID) autoJoinInvitesForAdmin(client);
+      const configRoomId = await ensureConfigRoom(client);
+      const answersRoom = await ensureAnswerRoom(client);
+      configStore = await new MatrixStore(client).open(configRoomId);
       store = await new MatrixStore(client).open(answersRoom);
       listenForChatMessages(client, answersRoom);
     } catch (e) { console.error(e); doDemoLogin(); return; }
@@ -3781,7 +3878,10 @@ async function _bootAfterStore() {
     catch(e) { toast("Ollama not reachable","warn"); document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
   }
   
-  const cfg = ensureSeeded(configStore);
+  // A regular (non-admin) user can land here before the admin has ever logged
+  // in to create the shared config room — configStore.roomId is null in that
+  // case. Read-only defaults are fine; only the admin's session seeds the room.
+  const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
   const schema = { id:cfg.schema.id, title:cfg.schema.title, blurb:cfg.schema.blurb||"", fields:cfg.schema.fields.length?cfg.schema.fields:[] };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
