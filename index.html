@@ -45,6 +45,27 @@ body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui
 .login-card .matrix-fields{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease;opacity:0}
 .login-card .matrix-fields.open{max-height:600px;opacity:1}
 .login-card .sso-hint{font-size:12px;color:var(--muted);text-align:center;margin-top:12px}
+/* matrix.org account steering */
+.login-btn.seal{background:var(--seal);color:#fff}
+.login-btn.seal:hover{opacity:.88}
+.login-btn.seal:active{transform:scale(.98)}
+.login-btn.quiet{background:transparent;color:var(--muted);border:1px dashed var(--line);font-weight:500;font-size:13.5px;padding:9px}
+.login-btn.quiet:hover{color:var(--ink);border-style:solid}
+.signup{border:1px solid var(--line);border-radius:12px;background:var(--seal-soft);padding:14px;margin-bottom:14px}
+.signup h2{font:600 14px Inter;margin:0 0 6px}
+.signup p{font-size:13px;color:var(--muted);margin:0 0 10px;line-height:1.5}
+.signup ul{list-style:none;margin:0 0 12px;padding:0;font-size:12.5px;color:var(--muted)}
+.signup li{display:flex;gap:7px;align-items:flex-start;margin-bottom:4px}
+.signup li::before{content:"✓";color:var(--seal);font-weight:700;flex:none}
+.signup .after{font-size:11.5px;color:var(--muted);text-align:center;margin:8px 0 0}
+.signup a.plain{color:var(--seal);text-decoration:underline;text-underline-offset:2px}
+.login-card .login-error .err-cta{display:inline-block;margin-top:6px;color:var(--seal);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.demo-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-left:3px solid var(--seal);border-radius:10px;background:var(--seal-soft);padding:9px 12px;margin:10px 0 0;font-size:13px}
+.demo-bar .txt{flex:1;min-width:220px;line-height:1.45}
+.demo-bar .txt b{font-weight:600}
+.demo-bar button{font:600 12.5px Inter;padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.demo-bar button.go{background:var(--seal);border-color:var(--seal);color:#fff}
+.demo-bar button.x{border:none;background:transparent;color:var(--muted);font-size:16px;padding:2px 4px;line-height:1}
 
 /* Nav */
 .wrap{max-width:var(--max-w);margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 16px}
@@ -360,22 +381,35 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <h1>Feedback Platform</h1>
     <p class="sub">Document your experience with a government agency. Your responses are encrypted and stored privately.</p>
 
-    <button class="login-btn primary" id="loginDemo">Continue as Demo (no account needed)</button>
+    <div class="signup">
+      <h2>You'll need a free matrix.org account</h2>
+      <p>matrix.org is the public home of the Matrix network. Signing up takes about a minute and costs nothing.</p>
+      <ul>
+        <li>Your submission is saved to your own account, not to us</li>
+        <li>End-to-end encrypted — only you and the reviewing agency can read it</li>
+        <li>Come back from any device and pick up where you left off</li>
+      </ul>
+      <button class="login-btn seal" id="loginSignup">Create a free matrix.org account →</button>
+      <p class="after">Opens matrix.org's sign-up page in a new tab. Come back here and sign in when you're done — <a class="plain" href="https://matrix.org/" target="_blank" rel="noopener noreferrer">what is matrix.org?</a></p>
+    </div>
 
-    <div class="divider">or sign in with Matrix</div>
+    <div class="divider">already have one?</div>
 
     <div class="login-error" id="loginError"></div>
 
-    <button class="login-btn ghost" id="loginShowMatrix">Sign in with Matrix →</button>
+    <button class="login-btn ghost" id="loginShowMatrix">Sign in with your matrix.org account →</button>
 
     <div class="matrix-fields" id="matrixFields">
-      <div class="form-group"><label>Homeserver URL</label><input id="loginHomeserver" value="https://matrix.org" placeholder="https://matrix.org"></div>
-      <div class="form-group"><label>User ID</label><input id="loginUserId" placeholder="@user:matrix.org"></div>
+      <div class="form-group"><label>User ID</label><input id="loginUserId" placeholder="@you:matrix.org"></div>
       <div class="form-group"><label>Password</label><input id="loginPassword" type="password" placeholder="••••••••"></div>
+      <div class="form-group"><label>Homeserver URL</label><input id="loginHomeserver" value="https://matrix.org" placeholder="https://matrix.org"></div>
       <button class="login-btn primary" id="loginMatrix">Sign in</button>
     </div>
 
     <p class="sso-hint">Your credentials are used only to connect to your Matrix homeserver and are never stored.</p>
+
+    <div class="divider">just looking?</div>
+    <button class="login-btn quiet" id="loginDemo">Try a demo — nothing you write is saved</button>
   </div>
 </div>
 
@@ -395,6 +429,15 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
       <button id="logoutBtn" title="Switch account">⇥</button>
     </div>
   </nav>
+
+  <!-- Shown only in demo mode: nothing is persisted, so nudge toward a real
+       matrix.org account before the user has typed a whole complaint. -->
+  <div class="demo-bar hidden" id="demoBar">
+    <span class="txt"><b>Demo mode.</b> Answers live in this browser only — clear your data or switch devices and they're gone. A free matrix.org account keeps them, encrypted, under your own login.</span>
+    <button class="go" id="demoBarSignup">Create matrix.org account</button>
+    <button id="demoBarSignin">Sign in</button>
+    <button class="x" id="demoBarClose" title="Dismiss">×</button>
+  </div>
 
   <div class="shell" id="appShell">
     <div class="grid">
@@ -2862,6 +2905,11 @@ function renderSubmission() {
         <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">Your submission</h2>
         <span style="color:var(--muted);font-size:12px">${Object.keys(answers).length} fields completed</span>
       </div>
+      ${currentStoreKind === "demo" ? `
+        <div class="demo-bar" style="margin:0 0 16px">
+          <span class="txt"><b>This submission isn't filed anywhere.</b> Demo answers stay in this browser. Create a free matrix.org account and sign in to store it encrypted under your own login, then submit it for real.</span>
+          <button class="go" id="subSignup">Create matrix.org account</button>
+        </div>` : ""}
       ${schema.fields.map(f => {
         const val = answers[f.path];
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
@@ -2875,6 +2923,8 @@ function renderSubmission() {
           <div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">${e.payload.attrs.filename} (${(e.payload.attrs.size/1024).toFixed(1)} KB)</div>
         `).join("")}` : ""}
     </div>`;
+  const subSignup = document.getElementById("subSignup");
+  if (subSignup) subSignup.onclick = openMatrixSignup;
 }
 
 // ── Login flow ──
@@ -2882,6 +2932,60 @@ function showLogin() { document.getElementById("loginScreen").classList.remove("
 function hideLogin() {
   document.getElementById("loginScreen").classList.add("closing");
   setTimeout(() => document.getElementById("loginScreen").classList.add("closed"), 400);
+}
+
+// ── matrix.org account steering ──
+// The app has no user directory of its own: an account on the public
+// matrix.org homeserver *is* the account. Registration happens in a Matrix
+// client, so "sign up" means handing the user off to Element's register flow
+// with matrix.org already selected as the homeserver.
+const MATRIX_ORG_HS = "https://matrix.org";
+const MATRIX_ORG_SIGNUP = "https://app.element.io/#/register";
+
+function openMatrixSignup() {
+  window.open(MATRIX_ORG_SIGNUP, "_blank", "noopener,noreferrer");
+}
+
+// "alice" → "@alice:matrix.org"; "@alice" → "@alice:matrix.org". A bare
+// username is the common case for someone who just signed up on matrix.org,
+// and making them type the full MXID is a needless place to fail.
+function normalizeUserId(raw) {
+  const v = (raw || "").trim();
+  if (!v) return v;
+  const local = v.startsWith("@") ? v.slice(1) : v;
+  return local.includes(":") ? "@" + local : "@" + local + ":matrix.org";
+}
+
+// Wrong-password and no-such-user come back from Synapse as the same
+// M_FORBIDDEN, so the message covers both — and offers the sign-up route,
+// since "no account yet" is the likelier reason a first-timer is stuck.
+function loginErrorMessage(e, homeserver) {
+  const code = e?.errcode || "";
+  const onMatrixOrg = /(^|\/\/)([^/]*\.)?matrix\.org\/?$/.test(homeserver || "");
+  const where = onMatrixOrg ? "matrix.org" : homeserver;
+  if (code === "M_FORBIDDEN" || code === "M_USER_DEACTIVATED")
+    return { text: `That user ID and password didn't match on ${where}.`, offerSignup: true };
+  if (code === "M_USER_IN_USE" || code === "M_INVALID_USERNAME")
+    return { text: `That doesn't look like a valid user ID. Try @you:matrix.org.`, offerSignup: false };
+  if (code === "M_LIMIT_EXCEEDED")
+    return { text: "Too many attempts — wait a moment and try again.", offerSignup: false };
+  if (!onMatrixOrg)
+    return { text: `Couldn't reach ${where}: ${e.message}. If you don't have an account of your own yet, matrix.org is the easiest place to get one.`, offerSignup: true };
+  return { text: "Login failed: " + e.message, offerSignup: false };
+}
+
+function showLoginError(text, offerSignup) {
+  const err = document.getElementById("loginError");
+  err.textContent = text;
+  if (offerSignup) {
+    const cta = document.createElement("span");
+    cta.className = "err-cta";
+    cta.textContent = "Create a free matrix.org account →";
+    cta.onclick = openMatrixSignup;
+    err.appendChild(document.createElement("br"));
+    err.appendChild(cta);
+  }
+  err.classList.add("show");
 }
 
 async function doMatrixLogin(homeserver, userId, password) {
@@ -2905,8 +3009,9 @@ async function doMatrixLogin(homeserver, userId, password) {
     hideLogin();
     boot();
   } catch (e) {
-    err.textContent = "Login failed: " + e.message;
-    err.classList.add("show");
+    const { text, offerSignup } = loginErrorMessage(e, homeserver);
+    err.textContent = "";
+    showLoginError(text, offerSignup);
     document.getElementById("loginMatrix").disabled = false;
   }
 }
@@ -2919,20 +3024,50 @@ function doDemoLogin() {
 
 function wireLogin() {
   document.getElementById("loginDemo").onclick = doDemoLogin;
+  document.getElementById("loginSignup").onclick = openMatrixSignup;
   document.getElementById("loginShowMatrix").onclick = () => {
-    document.getElementById("matrixFields").classList.toggle("open");
+    const open = document.getElementById("matrixFields").classList.toggle("open");
+    if (open) document.getElementById("loginUserId").focus();
+  };
+  // Typing a bare username or a full MXID both work; the homeserver field
+  // follows the user ID so the two can't silently disagree.
+  document.getElementById("loginUserId").onblur = (e) => {
+    const id = normalizeUserId(e.target.value);
+    if (!id) return;
+    e.target.value = id;
+    const hsField = document.getElementById("loginHomeserver");
+    const domain = id.slice(id.indexOf(":") + 1);
+    if (domain === "matrix.org") hsField.value = MATRIX_ORG_HS;
+    else if (hsField.value.trim() === MATRIX_ORG_HS) hsField.value = "https://" + domain;
   };
   document.getElementById("loginMatrix").onclick = () => {
-    document.getElementById("loginMatrix").disabled = true;
+    const userId = normalizeUserId(document.getElementById("loginUserId").value);
+    document.getElementById("loginUserId").value = userId;
+    const homeserver = document.getElementById("loginHomeserver").value.trim() || MATRIX_ORG_HS;
     document.getElementById("loginError").classList.remove("show");
-    doMatrixLogin(
-      document.getElementById("loginHomeserver").value.trim(),
-      document.getElementById("loginUserId").value.trim(),
-      document.getElementById("loginPassword").value
-    );
+    if (!userId || !document.getElementById("loginPassword").value) {
+      showLoginError("Enter the user ID and password for your matrix.org account.", true);
+      return;
+    }
+    document.getElementById("loginMatrix").disabled = true;
+    doMatrixLogin(homeserver, userId, document.getElementById("loginPassword").value);
   };
   document.getElementById("loginPassword").onkeydown = (e) => {
     if (e.key === "Enter") document.getElementById("loginMatrix").click();
+  };
+  document.getElementById("loginUserId").onkeydown = (e) => {
+    if (e.key === "Enter") document.getElementById("loginPassword").focus();
+  };
+  // In-app nudge for demo sessions.
+  document.getElementById("demoBarSignup").onclick = openMatrixSignup;
+  document.getElementById("demoBarSignin").onclick = () => {
+    loginState = null;
+    if (store?.client) try { store.client.stopClient(); } catch {}
+    location.reload();
+  };
+  document.getElementById("demoBarClose").onclick = () => {
+    document.getElementById("demoBar").classList.add("hidden");
+    try { sessionStorage.setItem("eo.demoBarDismissed", "1"); } catch {}
   };
   document.getElementById("logoutBtn").onclick = () => {
     if (confirm("Switch accounts?")) {
@@ -2949,6 +3084,10 @@ async function boot() {
 
   document.getElementById("submissionBtn").style.display = "none";
   currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";
+
+  let demoBarDismissed = false;
+  try { demoBarDismissed = sessionStorage.getItem("eo.demoBarDismissed") === "1"; } catch {}
+  document.getElementById("demoBar").classList.toggle("hidden", currentStoreKind !== "demo" || demoBarDismissed);
 
   if (loginState.kind === "matrix") {
     const { client, userId } = loginState;
