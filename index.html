@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>eoAI</title>
+<title>Feedback Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -335,7 +335,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <div class="login" id="loginScreen">
   <div class="login-card">
     <div class="login-logo">◈</div>
-    <h1>eoAI</h1>
+    <h1>Feedback Platform</h1>
     <p class="sub">Document your experience with a government agency. Your responses are encrypted and stored privately.</p>
 
     <button class="login-btn primary" id="loginDemo">Continue as Demo (no account needed)</button>
@@ -360,7 +360,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <!-- Main app -->
 <div class="wrap" id="appWrap">
   <nav class="top" id="topNav">
-    <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>eoAI</h1><span class="sub">agency service complaint</span></a>
+    <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>Feedback Platform</h1><span class="sub">agency service complaint</span></a>
     <span class="spacer"></span>
     <div class="setup">
       <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Llama 3.2 1B</option><option value="ollama">☀ Ollama</option></select>
@@ -437,12 +437,6 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
   <div class="btns"><button class="cancel" id="ieCancel">Cancel</button><button class="primary" id="ieSave">Save</button></div>
 </div></div>
 
-<!-- Document preview -->
-<div class="docscrim" id="docScrim"><div class="docmodal">
-  <button class="docclose" id="docClose">&times;</button>
-  <div class="dochead" id="docHead"></div><div class="docbody" id="docBody"></div>
-</div></div>
-
 <!-- Context drawer -->
 <div class="scrim" id="ctxScrim"></div>
 <aside class="drawer" id="ctxDrawer" aria-label="Folded context" aria-hidden="true">
@@ -463,7 +457,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 
 <!-- Question authoring panel -->
 <div class="hidden" id="questionsPanel">
-    <nav class="top"><div class="brand" id="qBack" style="cursor:pointer"><span class="logo">◈</span><h1>eoAI · Questions</h1><span class="sub">author the question set</span></div><span class="spacer"></span><div class="setup"><span class="status"><span class="dot" id="qDot"></span><span id="qStatusTxt">ready</span></span></div></nav>
+    <nav class="top"><div class="brand" id="qBack" style="cursor:pointer"><span class="logo">◈</span><h1>Feedback Platform · Questions</h1><span class="sub">author the question set</span></div><span class="spacer"></span><div class="setup"><span class="status"><span class="dot" id="qDot"></span><span id="qStatusTxt">ready</span></span><button id="qToAdmin">View submissions →</button></div></nav>
   <div class="q-panel" id="qPanelBody"></div>
 </div>
 
@@ -471,6 +465,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
     <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="eval">Retrieval Eval</button></div>
+    <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminClose">← Back</button>
   </header>
   <div class="abody" id="adminBody"></div>
@@ -1503,7 +1498,7 @@ function foldConfig(events) {
 
   return {
     meta,
-    schema: { id: meta.id || "custom", title: meta.title || "eoAI", blurb: meta.blurb || "", fields: ordered },
+    schema: { id: meta.id || "custom", title: meta.title || "Feedback Platform", blurb: meta.blurb || "", fields: ordered },
     systemPrompt,
     knowledge,
   };
@@ -1855,6 +1850,7 @@ function initAdminView({ onClose }) {
   let ctx = null;
   let searchQuery = "";
   let searchTimer = null;
+  let evalTimer = null;
 
   tabs.forEach((btn) => {
     btn.onclick = () => {
@@ -1891,7 +1887,7 @@ function initAdminView({ onClose }) {
       searchTimer = setTimeout(() => { searchQuery = searchInput.value; renderActive(); }, 200);
     };
     searchBar.appendChild(searchInput);
-    body.appendChild(searchBar);
+    if (active !== "eval") body.appendChild(searchBar);
 
     if (active === "table") {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
@@ -1903,7 +1899,93 @@ function initAdminView({ onClose }) {
     } else if (active === "kanban") {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
       body.appendChild(renderKanban(filtered));
+    } else if (active === "eval") {
+      body.appendChild(renderEval());
     }
+  }
+
+  // Retrieval Eval: exercise the same KnowledgeStore.retrieve()/.surface() calls
+  // the live assistant uses each turn, so an admin can sanity-check the memory
+  // folded into a question before applicants ever see it.
+  function knowledgeRow(rank, item) {
+    const row = $e("div", "mem");
+    const head = $e("div", null, `#${rank} · ${item.topic || "(untitled)"}`);
+    head.style.cssText = "font:600 12px Inter;margin-bottom:3px";
+    row.appendChild(head);
+    const text = $e("div", null, item.text || "");
+    text.style.cssText = "font-size:12px;color:var(--ink);line-height:1.5";
+    row.appendChild(text);
+    if (item.tags?.length) {
+      const tags = $e("div", null, item.tags.join(", "));
+      tags.style.cssText = "font-size:10.5px;color:var(--muted);margin-top:4px";
+      row.appendChild(tags);
+    }
+    return row;
+  }
+
+  function renderEval() {
+    const wrap = $e("div");
+    wrap.style.cssText = "display:flex;flex-direction:column;gap:16px";
+
+    const cfg = foldConfig(configStore.timeline());
+    const fields = cfg.schema.fields.length ? cfg.schema.fields : DEFAULT_CONFIG.fields;
+    // Always fold fresh from configStore rather than the (possibly stale, set
+    // only at boot) global `knowledge` — an admin editing Memory just above
+    // expects Retrieval Eval to reflect it immediately, not after a reload.
+    const kn = KnowledgeStore.fromJSON(cfg.knowledge);
+
+    const intro = $e("div", "atable-wrap");
+    intro.style.cssText = "padding:12px 16px";
+    const introText = $e("div", null, "Preview which knowledge items retrieve() / surface() would fold into the prompt — the same calls the live assistant makes each turn.");
+    introText.style.cssText = "font-size:12.5px;color:var(--muted);line-height:1.5";
+    intro.appendChild(introText);
+    wrap.appendChild(intro);
+
+    // Free-text query tester (surface()).
+    const testCard = $e("div", "atable-wrap");
+    testCard.style.cssText = "padding:14px 16px";
+    const label = $e("div", null, "Test a free-text query");
+    label.style.cssText = "font:600 12.5px Inter;margin-bottom:8px";
+    testCard.appendChild(label);
+    const input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = 'e.g. "long hold times on the phone"';
+    input.style.cssText = "width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);margin-bottom:10px";
+    testCard.appendChild(input);
+    const resultsBox = $e("div");
+    testCard.appendChild(resultsBox);
+    function runSurface() {
+      resultsBox.innerHTML = "";
+      const query = input.value.trim();
+      if (!query) { resultsBox.appendChild($e("div", "aempty", "Type a query above to see which knowledge items surface() would retrieve.")); return; }
+      const { items } = kn.surface(query, { limit: 5 });
+      if (!items.length) { resultsBox.appendChild($e("div", "aempty", "No knowledge items match that query.")); return; }
+      items.forEach((it, i) => resultsBox.appendChild(knowledgeRow(i + 1, it)));
+    }
+    input.oninput = () => { clearTimeout(evalTimer); evalTimer = setTimeout(runSurface, 150); };
+    runSurface();
+    wrap.appendChild(testCard);
+
+    // Per-question retrieval preview (retrieve()), mirroring assemble()'s defaults.
+    const fieldsHead = $e("div", null, "Per-question retrieval");
+    fieldsHead.style.cssText = "font:600 13px Inter";
+    wrap.appendChild(fieldsHead);
+    for (const f of fields) {
+      const seed = f.help ? [{ topic: f.label, text: f.help }] : [];
+      const { items } = kn.retrieve(f, { budget: 700, seed });
+      const card = $e("div", "atable-wrap");
+      card.style.cssText = "padding:12px 16px";
+      const head = $e("div", null, `${f.label} `);
+      head.style.cssText = "font:600 12.5px Inter;margin-bottom:6px";
+      const pathTag = $e("span", "mono", f.path);
+      pathTag.style.cssText = "color:var(--muted);font-size:11px;font-weight:400;margin-left:6px";
+      head.appendChild(pathTag);
+      card.appendChild(head);
+      if (!items.length) card.appendChild($e("div", "aempty", "No knowledge item scores high enough to fold in for this field."));
+      else items.forEach((it, i) => card.appendChild(knowledgeRow(i + 1, it)));
+      wrap.appendChild(card);
+    }
+    return wrap;
   }
 
   function viewBtn(d) {
@@ -2143,73 +2225,13 @@ function hideLoader() {
   l.classList.remove("on"); $("loadBar").classList.remove("indet");
 }
 
-// ── Boot ──
-async function boot() {
-  hideLoader();
-  const modelKind = $("modelSel").value;
-  const storeSel = $("storeSel");
-  const storeKind = storeSel ? storeSel.value : "demo";
-  currentStoreKind = storeKind;
-
-  if (storeKind === "matrix") {
-    const homeserver = prompt("Homeserver URL", "https://matrix.org");
-    const userId = prompt("Matrix user ID", "@you:matrix.org");
-    const password = prompt("Password");
-    if (!homeserver || !userId || !password) { if (storeSel) storeSel.value = "demo"; return boot(); }
-    const configRoom = prompt("Shared config room id", CONFIG_ROOM) || CONFIG_ROOM;
-    const answersRoom = prompt("Your private answers room id", answerRoomFor(userId)) || answerRoomFor(userId);
-    setStatus("signing in…", "warn");
-    try {
-      const base = await MatrixStore.login({ homeserver, userId, password });
-      configStore = await new MatrixStore(base.client).open(configRoom);
-      store = await new MatrixStore(base.client).open(answersRoom);
-      setStatus("live · " + userId, "live");
-    } catch (e) { toast("Login failed — falling back to demo.", "error"); if (storeSel) storeSel.value = "demo"; return boot(); }
-  } else {
-    configStore = await new DemoStore("@admin:local").open(CONFIG_ROOM);
-    store = await new DemoStore("@demo:local").open(answerRoomFor("@demo:local"));
-    setStatus("demo");
-  }
-
-  const model = makeModel(modelKind, { model: modelKind === "ollama" ? "llama3.2" : undefined });
-  if (modelKind === "webllm") {
-    if (!navigator.gpu) { setStatus("no WebGPU", "warn"); $("modelSel").value = "echo"; return boot(); }
-    showLoader();
-    try {
-      await model.ready((text, p) => updateLoader(text, p));
-      hideLoader(); setStatus("Llama 3.2 1B · ready", "live");
-    } catch (e) { hideLoader(); setStatus("demo", "warn"); $("modelSel").value = "echo"; return boot(); }
-  } else if (modelKind === "ollama") {
-    try { await model.ready(); setStatus("ollama ready", "live"); }
-    catch (e) { toast("Ollama not reachable — starting in demo mode.", "warn"); $("modelSel").value = "echo"; return boot(); }
-  }
-
-  const cfg = ensureSeeded(configStore);
-  const schema = {
-    id: cfg.schema.id, title: cfg.schema.title,
-    blurb: cfg.schema.blurb || DEFAULT_CONFIG.meta.blurb,
-    fields: cfg.schema.fields.length ? cfg.schema.fields : DEFAULT_CONFIG.fields,
-  };
-  const systemPrompt = cfg.systemPrompt || MINIMAL_SYSTEM;
-  knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
-
-  intake = new Intake({ schema, store, model, knowledge, systemPrompt });
-  $("docTitle").textContent = schema.title;
-  $("stream").innerHTML = ""; $("ledger").innerHTML = "";
-
-  intake.on(onIntake);
-  store.subscribe(renderSide);
-  store.subscribe(renderDocs);
-  configStore.subscribe(onConfigChange);
-  renderLedgerFromTimeline();
-  renderSide(); renderDocs();
-  await intake.begin();
-  showWelcome();
-}
-
 let configDirty = false;
 function onConfigChange() {
   if (configDirty) return;
+  // Editing the config room fires this same subscription for the admin who
+  // made the edit — they're already looking at the result, so only nag when
+  // the change came from somewhere else (another tab, another admin).
+  if (!document.getElementById("questionsPanel").classList.contains("hidden")) return;
   configDirty = true;
   setStatus("questions updated — reload to apply", "warn");
   toast("Questions have been updated by the admin. Reload to apply.", "warn");
@@ -2383,20 +2405,11 @@ function docRow(d) {
 }
 
 // ── Admin dashboard ──
+// adminBtn/adminClose are wired for real in wireNewNav() below, once the
+// login-aware boot flow knows whether the current session is demo or matrix.
 const adminCtl = initAdminView({
-  onClose: () => { $("adminView").classList.add("hidden"); document.querySelector(".shell").classList.remove("hidden"); document.querySelector("nav").classList.remove("hidden"); },
+  onClose: () => { $("adminView").classList.add("hidden"); $("appWrap").classList.remove("hidden"); },
 });
-$("adminBtn").onclick = () => {
-  if (!store) return;
-  if (currentStoreKind === "matrix" && store.user !== ADMIN_USER_ID) {
-    toast(`Sign in as ${ADMIN_USER_ID} to view submissions.`, "warn");
-    return;
-  }
-  document.querySelector(".shell").classList.add("hidden");
-  document.querySelector("nav").classList.add("hidden");
-  $("adminView").classList.remove("hidden");
-  adminCtl.show({ storeKind: currentStoreKind, client: store.client, currentUserId: store.user });
-};
 
 // ── Ledger ──
 function renderLedgerFromTimeline() {
@@ -2498,19 +2511,11 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx()
 
 // ── Controls ──
 $("modelSel").onchange = boot;
-{
-  const storeSel = $("storeSel");
-  if (storeSel) storeSel.onchange = boot;
-}
 $("resetBtn")?.addEventListener("click", async () => {
   if (!confirm("Clear all stored answers?")) return;
   if (store.reset) await store.reset();
   boot();
 });
-
-wireCompose();
-wireDocs();
-boot();
 
 
 
@@ -2583,7 +2588,7 @@ function renderSubmission() {
   pane.innerHTML = `
     <div style="max-width:720px;margin:0 auto;padding:20px 24px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <button onclick="document.getElementById('submissionPane').classList.add('hidden');document.getElementById('appShell').classList.remove('hidden');document.getElementById('topNav').classList.remove('hidden')" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">← Back</button>
+        <button onclick="document.getElementById('submissionPane').classList.add('hidden');document.getElementById('appWrap').classList.remove('hidden')" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">← Back</button>
         <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">Your submission</h2>
         <span style="color:var(--muted);font-size:12px">${Object.keys(answers).length} fields completed</span>
       </div>
@@ -2668,13 +2673,13 @@ function wireLogin() {
   };
 }
 
-// ── Override boot for login flow ──
-const _origBoot = boot;
-boot = async function boot() {
+// ── Boot ──
+async function boot() {
   if (!loginState) { showLogin(); return; }
-  
+
   document.getElementById("submissionBtn").style.display = "none";
-  
+  currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";
+
   if (loginState.kind === "matrix") {
     const { client, userId } = loginState;
     const safe = userId.replace(/[^a-z0-9]+/gi,"-").replace(/^-+|-+$/g,"").toLowerCase();
@@ -2688,9 +2693,9 @@ boot = async function boot() {
     configStore = await new DemoStore("@admin:local").open("!intake-config:local");
     store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
   }
-  
+
   await _bootAfterStore();
-};
+}
 
 async function _bootAfterStore() {
   const modelKind = document.getElementById("modelSel").value;
@@ -2741,50 +2746,88 @@ onIntake = function(kind, data) {
 function wireNewNav() {
   document.getElementById("brandBtn").onclick = () => {
     document.querySelectorAll(".pane").forEach(p => p.classList.add("hidden"));
-    document.getElementById("appShell").classList.remove("hidden");
-    document.getElementById("topNav").classList.remove("hidden");
+    document.getElementById("questionsPanel").classList.add("hidden");
+    document.getElementById("adminView").classList.add("hidden");
+    document.getElementById("appWrap").classList.remove("hidden");
   };
-  
+
   document.getElementById("questionsBtn").onclick = () => showQuestionsPanel();
   document.getElementById("qBack").onclick = () => {
+    if (!confirmLeaveQuestions()) return;
     document.getElementById("questionsPanel").classList.add("hidden");
-    document.getElementById("appShell").classList.remove("hidden");
-    document.getElementById("topNav").classList.remove("hidden");
+    document.getElementById("appWrap").classList.remove("hidden");
     boot();
   };
-  
+  document.getElementById("qToAdmin").onclick = () => {
+    if (!confirmLeaveQuestions()) return;
+    openAdmin();
+  };
+
   document.getElementById("submissionBtn").onclick = () => {
-    document.getElementById("appShell").classList.add("hidden");
-    document.getElementById("topNav").classList.add("hidden");
+    document.getElementById("appWrap").classList.add("hidden");
     document.getElementById("submissionPane").classList.remove("hidden");
     renderSubmission();
   };
-  
-  document.getElementById("adminBtn").onclick = () => {
-    if (!store) return;
-    if (loginState?.kind === "matrix" && store.user !== ADMIN_USER_ID) {
-      toast("Sign in as admin","warn"); return;
-    }
-    document.getElementById("appShell").classList.add("hidden");
-    document.getElementById("topNav").classList.add("hidden");
-    document.getElementById("adminView").classList.remove("hidden");
-    adminCtl.show({ storeKind: loginState?.kind==="matrix"?"matrix":"demo", client: store?.client, currentUserId: store?.user });
-  };
-  
+
+  document.getElementById("adminBtn").onclick = openAdmin;
+  document.getElementById("adminToQuestions").onclick = () => showQuestionsPanel();
+
   document.getElementById("adminClose").onclick = () => {
     document.getElementById("adminView").classList.add("hidden");
-    document.getElementById("appShell").classList.remove("hidden");
-    document.getElementById("topNav").classList.remove("hidden");
+    document.getElementById("appWrap").classList.remove("hidden");
   };
+}
+
+// Shared by the top nav's Admin button and the Questions panel's cross-link.
+function openAdmin() {
+  if (!store) return;
+  if (loginState?.kind === "matrix" && store.user !== ADMIN_USER_ID) {
+    toast("Sign in as admin","warn"); return;
+  }
+  document.getElementById("appWrap").classList.add("hidden");
+  document.getElementById("questionsPanel").classList.add("hidden");
+  document.getElementById("submissionPane").classList.add("hidden");
+  document.getElementById("adminView").classList.remove("hidden");
+  adminCtl.show({ storeKind: loginState?.kind==="matrix"?"matrix":"demo", client: store?.client, currentUserId: store?.user });
+}
+
+// Unsaved edits in the Questions panel aren't lost (each Save writes straight
+// to the config room) but an admin mid-edit shouldn't be bounced out silently.
+function confirmLeaveQuestions() {
+  if (!document.querySelector("#qPanelBody .dirty")) return true;
+  return confirm("You have unsaved changes — leave anyway?");
 }
 
 // ── Question authoring panel ──
 function showQuestionsPanel() {
-  document.getElementById("appShell").classList.add("hidden");
+  document.getElementById("appWrap").classList.add("hidden");
   document.getElementById("adminView").classList.add("hidden");
   document.getElementById("submissionPane").classList.add("hidden");
   document.getElementById("questionsPanel").classList.remove("hidden");
   renderQPanel();
+}
+
+function escAttr(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+}
+
+// Dirty-tracking is delegated once to the panel container (survives the
+// innerHTML rebuilds renderQPanel() does) rather than rewired per render.
+function wireQPanelDirtyTracking() {
+  const panelBody = document.getElementById("qPanelBody");
+  if (!panelBody) return;
+  panelBody.addEventListener("input", (e) => {
+    e.target.closest(".q, .mem, .q-card")?.classList.add("dirty");
+    updateQStatus();
+  });
+}
+
+function updateQStatus() {
+  const dot = document.getElementById("qDot"), txt = document.getElementById("qStatusTxt");
+  if (!dot || !txt) return;
+  const dirty = document.querySelector("#qPanelBody .dirty");
+  dot.className = "dot" + (dirty ? " warn" : "");
+  txt.textContent = dirty ? "unsaved changes" : "saved";
 }
 
 function renderQPanel() {
@@ -2792,10 +2835,18 @@ function renderQPanel() {
   if (!body || !configStore) { body.innerHTML = "<p>No config store.</p>"; return; }
   const cfg = foldConfig(configStore.timeline());
   const fields = cfg.schema.fields;
+  const knowledgeItems = cfg.knowledge;
   body.innerHTML = `
-    <div class="banner">You're editing the <strong>shared config room</strong> — questions, order, and memory every user reads.</div>
+    <div class="banner">You're editing the <strong>shared config room</strong> — questions, order, memory, branding, and the assistant's instructions every user reads.</div>
     <div class="q-grid">
       <div class="q-col">
+        <div class="q-card"><div class="qh">Branding</div>
+          <div class="body"><p class="note">The document title and intro message every applicant sees first.</p>
+            <div class="fieldgrp"><label class="lab">Title</label><input class="f" id="brandTitle" value="${escAttr(cfg.schema.title)}"></div>
+            <div class="fieldgrp"><label class="lab">Intro / blurb</label><textarea class="f" id="brandBlurb" rows="3">${escAttr(cfg.schema.blurb)}</textarea></div>
+            <div class="btns"><button class="primary" id="brandSaveBtn">Save branding</button></div>
+          </div>
+        </div>
         <div class="q-card"><div class="qh">Questions <span class="count">${fields.length}</span></div>
           <div class="body"><p class="note">Each question asked in order. Reorder with ▲▼.</p>
             <div class="qlist" id="qAdminList"></div>
@@ -2804,14 +2855,44 @@ function renderQPanel() {
         </div>
       </div>
       <div class="q-col">
+        <div class="q-card"><div class="qh">Assistant instructions</div>
+          <div class="body"><p class="note">The base system prompt folded into every turn — tone, boundaries, how strictly it stays on one field at a time.</p>
+            <textarea class="f" id="brandSystemPrompt" rows="8">${escAttr(cfg.systemPrompt || MINIMAL_SYSTEM)}</textarea>
+            <div class="btns" style="margin-top:8px"><button class="primary" id="promptSaveBtn">Save instructions</button><button id="promptResetBtn">Reset to default</button></div>
+          </div>
+        </div>
+        <div class="q-card"><div class="qh">Memory <span class="count">${knowledgeItems.length}</span></div>
+          <div class="body"><p class="note">Reference material folded in for a matching question, or every question if left unscoped. Test what surfaces under the <strong>Retrieval Eval</strong> admin tab.</p>
+            <div id="qMemList"></div>
+            <div class="btns" style="margin-top:10px"><button class="primary" id="memAddBtn">+ Add memory</button></div>
+          </div>
+        </div>
         <div class="q-card"><div class="qh">Event log <span class="count">${configStore.timeline().length}</span></div>
           <div class="body"><div id="qLedgerWrap" style="max-height:400px;overflow-y:auto"></div></div>
         </div>
       </div>
     </div>`;
-  
+
+  document.getElementById("brandSaveBtn").onclick = (e) => {
+    setMeta(configStore, "title", document.getElementById("brandTitle").value.trim() || "Feedback Platform");
+    setMeta(configStore, "blurb", document.getElementById("brandBlurb").value.trim());
+    e.target.closest(".q-card").classList.remove("dirty"); updateQStatus();
+    toast("Branding saved");
+  };
+  document.getElementById("promptSaveBtn").onclick = (e) => {
+    setSystemPrompt(configStore, document.getElementById("brandSystemPrompt").value);
+    e.target.closest(".q-card").classList.remove("dirty"); updateQStatus();
+    toast("Instructions saved");
+  };
+  document.getElementById("promptResetBtn").onclick = (e) => {
+    if (!confirm("Reset assistant instructions to the built-in default?")) return;
+    document.getElementById("brandSystemPrompt").value = MINIMAL_SYSTEM;
+    setSystemPrompt(configStore, MINIMAL_SYSTEM);
+    e.target.closest(".q-card").classList.remove("dirty"); updateQStatus();
+    toast("Instructions reset to default");
+  };
+
   const list = document.getElementById("qAdminList");
-  if (!list) return;
   fields.forEach((f, i) => {
     const card = document.createElement("div"); card.className = "q";
     const head = document.createElement("div"); head.className = "qhead";
@@ -2822,16 +2903,16 @@ function renderQPanel() {
     head.appendChild(mv);
     card.appendChild(head);
     const b = document.createElement("div"); b.className = "qbody";
-    b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${f.label}"></div>
-      <div class="fieldgrp"><label class="lab">Prompt</label><textarea class="f" id="qp_${f.path}" rows="2">${(f.prompt||"").replace(/"/g,"&quot;")}</textarea></div>
-      <div class="fieldgrp"><label class="lab">Help</label><textarea class="f" id="qh_${f.path}" rows="2">${(f.help||"").replace(/"/g,"&quot;")}</textarea></div>
+    b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${escAttr(f.label)}"></div>
+      <div class="fieldgrp"><label class="lab">Prompt</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
       <div class="btns"><button class="primary" data-path="${f.path}" onclick="saveFieldQ(this)">Save</button><button class="danger" data-path="${f.path}" onclick="deleteFieldQ(this)">Delete</button></div>`;
     card.appendChild(b);
     head.onclick = () => { const d=b.style.display; b.style.display=d==="none"?"block":"none"; };
     b.style.display = "none";
     list.appendChild(card);
   });
-  
+
   const addBtn = document.getElementById("qAddBtn");
   if (addBtn) addBtn.onclick = () => {
     const label = prompt("Question label:");
@@ -2842,7 +2923,34 @@ function renderQPanel() {
     renderQPanel();
     toast("Question added");
   };
-  
+
+  const memList = document.getElementById("qMemList");
+  knowledgeItems.forEach((k) => {
+    const row = document.createElement("div"); row.className = "mem"; row.dataset.id = k.id;
+    row.innerHTML = `
+      <div class="fieldgrp"><label class="lab">Topic</label><input class="f" data-k="topic" value="${escAttr(k.topic)}"></div>
+      <div class="fieldgrp"><label class="lab">Text</label><textarea class="f" data-k="text" rows="3">${escAttr(k.text)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Tags (comma separated)</label><input class="f" data-k="tags" value="${escAttr((k.tags||[]).join(", "))}"></div>
+      <div class="fieldgrp"><label class="lab">Scope to a question</label>
+        <select class="f" data-k="scope"><option value="">Any question</option>${fields.map(f => `<option value="${escAttr(f.path)}" ${k.scope?.field===f.path?"selected":""}>${escAttr(f.label)}</option>`).join("")}</select>
+      </div>
+      <div class="memfoot"><span class="scoped">${k.scope?.field ? "Scoped to one question" : "Applies to all questions"}</span>
+        <button class="primary" data-action="save">Save</button><button class="danger" data-action="delete">Delete</button>
+      </div>`;
+    row.querySelector('[data-action="save"]').onclick = () => saveMemoryQ(row);
+    row.querySelector('[data-action="delete"]').onclick = () => deleteMemoryQ(row);
+    memList.appendChild(row);
+  });
+
+  const memAddBtn = document.getElementById("memAddBtn");
+  if (memAddBtn) memAddBtn.onclick = () => {
+    const topic = prompt("Topic (short label):");
+    if (!topic) return;
+    putKnowledge(configStore, { id: newId("k"), topic, text: "", tags: [], scope: {} });
+    renderQPanel();
+    toast("Memory added — fill it in and save");
+  };
+
   const lw = document.getElementById("qLedgerWrap");
   if (lw) {
     const ul = document.createElement("ul"); ul.className = "ledger";
@@ -2856,11 +2964,15 @@ function renderQPanel() {
     }); }
     lw.appendChild(ul);
   }
+
+  updateQStatus();
 }
 
 function saveFieldQ(btn) {
   const path = btn.dataset.path;
   putField(configStore, { path, label: (document.getElementById("ql_"+path)?.value||path).trim(), type:"text", required:false, prompt: (document.getElementById("qp_"+path)?.value||"").trim(), help: (document.getElementById("qh_"+path)?.value||"").trim() });
+  btn.closest(".q")?.classList.remove("dirty");
+  updateQStatus();
   toast("Saved");
 }
 
@@ -2882,6 +2994,25 @@ function moveFieldQ(path, from, to) {
   renderQPanel();
 }
 
+function saveMemoryQ(row) {
+  const id = row.dataset.id;
+  const topic = row.querySelector('[data-k="topic"]').value.trim();
+  const text = row.querySelector('[data-k="text"]').value.trim();
+  const tags = row.querySelector('[data-k="tags"]').value.split(",").map(s => s.trim()).filter(Boolean);
+  const field = row.querySelector('[data-k="scope"]').value;
+  putKnowledge(configStore, { id, topic, text, tags, scope: field ? { field } : {} });
+  row.classList.remove("dirty");
+  updateQStatus();
+  toast("Memory saved");
+}
+
+function deleteMemoryQ(row) {
+  if (!confirm("Delete this memory item?")) return;
+  deleteKnowledge(configStore, row.dataset.id);
+  renderQPanel();
+  toast("Memory deleted");
+}
+
 // ── Init ──
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
@@ -2889,6 +3020,7 @@ document.addEventListener("DOMContentLoaded", () => {
   wireDocs();
   wireChat();
   wireNewNav();
+  wireQPanelDirtyTracking();
   showLogin();
 });
 
