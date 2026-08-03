@@ -139,7 +139,12 @@
   // that's right" / "no wait" / "not sure, can you explain?") — scanning
   // an entire long, detailed disclosure for the same short words would
   // false-positive constantly, since ordinary narration is full of them
-  // ("...and I said no, and I still don't understand why..."). distress
+  // ("...and I said no, and I still don't understand why..."). Single-word
+  // phrases get an even tighter window (the first two words): "help" is a
+  // genuine request when the whole reply is "help", but as the fifth word
+  // of "we asked for legal help and..." it is ordinary narration about a
+  // service, not a request aimed at this app — and "yes"/"no" a few words
+  // into a sentence are just as often narrative, not confirmation. distress
   // phrases get no such limit: a crisis signal buried mid-paragraph still
   // has to fire.
   function matchesAny(text, phrases, { leading = null } = {}) {
@@ -147,7 +152,10 @@
     if (!norm) return false;
     const words = norm.split(" ");
     const zone = leading ? words.slice(0, leading) : words;
-    return phrases.some((p) => phraseFuzzyPresentIn(zone, p));
+    return phrases.some((p) => {
+      const single = !normalize(p).includes(" ");
+      return phraseFuzzyPresentIn(single ? words.slice(0, 2) : zone, p);
+    });
   }
 
   const LEXICON = {
