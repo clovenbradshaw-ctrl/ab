@@ -13,6 +13,8 @@
      vendor/README.md to rebuild/upgrade it) that includes the Rust crypto
      backend needed for real E2EE. -->
 <script src="vendor/matrix-sdk-bundle.js"></script>
+<script src="vendor/steer.js"></script>
+<script src="vendor/voice.js"></script>
 <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
@@ -247,6 +249,11 @@ nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-
 .compose .send-btn:disabled{opacity:.35;cursor:default;transform:none}
 .hint{padding:0 14px 8px;font-size:11px;color:var(--muted)}
 .hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
+#micBtn.recording{color:var(--red);background:var(--red-soft);animation:mic-pulse 1.4s ease-in-out infinite}
+#micBtn.busy{opacity:.6;cursor:default}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,64,47,.25)}50%{box-shadow:0 0 0 5px rgba(176,64,47,.08)}}
+.voice-note{padding:0 14px 6px;font-size:11px;color:var(--muted);line-height:1.4}
+.voice-note.hidden{display:none}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
@@ -471,9 +478,50 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .iconbtn{padding:4px 8px;line-height:1}
 .iconbtn.danger{color:var(--red);border-color:var(--red-soft)}
 .iconbtn.danger:hover{background:var(--red-soft)}
+
+/* Front-door language gate — sits above the login screen (z-index) since it
+   decides everything downstream: which schema, which mechanical script,
+   which voice-recognition locale. */
+.lang-gate{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:var(--paper);transition:opacity .3s ease}
+.lang-gate.hidden{display:none}
+.lang-gate .card{background:var(--surface);border-radius:20px;box-shadow:var(--shadow-lg);width:min(420px,92vw);padding:36px 30px;text-align:center}
+.lang-gate .logo{width:56px;height:56px;border-radius:14px;background:var(--seal);display:grid;place-items:center;font:700 30px Inter;color:#fff;margin:0 auto 18px}
+.lang-gate h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0 0 22px}
+.lang-btn{display:block;width:100%;padding:14px;margin-bottom:10px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:600 16px Inter;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.lang-btn:hover{background:var(--seal-soft);border-color:var(--seal)}
+.lang-gate .staff{margin-top:18px;font-size:12px;color:var(--muted);background:none;border:none;text-decoration:underline;cursor:pointer}
+.entry-loader{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;background:var(--paper)}
+.entry-loader.hidden{display:none}
+.entry-loader .box{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted);font-size:13px}
+.entry-loader .spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--seal);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Vivid, standalone banner for messages that must not read as an ordinary
+   chat bubble — the mandatory closing block, the 180-day filing warning. */
+.msg-banner{margin:14px 0;padding:14px 16px;border-radius:12px;font-size:13.5px;line-height:1.55;font-weight:600;white-space:pre-wrap;background:var(--seal-soft);border:1.5px solid var(--seal);color:var(--ink)}
+.msg-banner.warn{background:var(--red-soft);border-color:var(--red)}
 </style>
 </head>
 <body>
+
+<!-- Language gate — the very first thing a constituent sees. No account
+     screen, no sign-up form: pick a language and you're straight into the
+     conversation. A private space is set up quietly behind the scenes. -->
+<div class="lang-gate hidden" id="langGate">
+  <div class="card">
+    <div class="logo">◈</div>
+    <h1>Choose your language / Elige tu idioma</h1>
+    <button class="lang-btn" id="langEnBtn" type="button">English</button>
+    <button class="lang-btn" id="langEsBtn" type="button">Español</button>
+    <button class="staff" id="langStaffLink" type="button">Staff sign-in</button>
+  </div>
+</div>
+
+<!-- Brief loader while a private session is quietly set up. Times out fast —
+     typing is never blocked waiting on the network. -->
+<div class="entry-loader hidden" id="entryLoader">
+  <div class="box"><div class="spin"></div><span id="entryLoaderText">Setting things up…</span></div>
+</div>
 
 <!-- Login screen -->
 <div class="login" id="loginScreen">
@@ -624,7 +672,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>Feedback Platform</h1><span class="sub">agency service complaint</span></a>
     <span class="spacer"></span>
     <div class="setup">
-      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Llama 3.2 1B</option><option value="ollama">☀ Ollama</option></select>
+      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Qwen2.5 0.5B (smallest)</option><option value="ollama">☀ Ollama</option></select>
+      <select id="langSel" title="Conversation language"><option value="en" selected>English</option><option value="es">Español</option></select>
       <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
       <button id="ctxBtn" class="icon-btn" title="View folded context">⊡</button>
       <button id="submissionBtn" title="View my submission" style="display:none">📋</button>
@@ -664,10 +713,14 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
         <div class="compose">
           <div class="input-wrap">
             <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
-            <div class="input-actions"><button id="attachBtn" title="Attach a file" type="button">📎</button></div>
+            <div class="input-actions">
+              <button id="micBtn" title="Speak your answer" type="button" hidden>🎙</button>
+              <button id="attachBtn" title="Attach a file" type="button">📎</button>
+            </div>
           </div>
           <button class="send-btn" id="send">Send</button>
         </div>
+        <div class="voice-note hidden" id="voiceNote"></div>
         <div class="hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck</div>
       </section>
       <section class="wizard hidden" id="wizardPane">
@@ -858,102 +911,254 @@ function isEncrypted(value) {
 }
 
 
+// Every field carries an English prompt/help and its Spanish counterpart
+// (promptEs/helpEs). These are schema-authored text — same trust level as
+// the English versions — never generated. Steer.pickReply() falls back to
+// English if a custom admin-authored field skips the Es variant.
+//
+// This is an OCR (Office for Civil Rights) complaint intake for families
+// navigating Tennessee DCS, built from the generic ocr-complaint-template.txt
+// structure (no real case content — every field below is original,
+// plain-language question text, not copied from any actual filing). It asks
+// one question at a time by construction (the whole engine works this way),
+// which is what satisfies the "sections should be sequential, never bundled"
+// requirement without any special-casing.
+//
+// Two known gaps against the real field_schema.md this should eventually
+// match exactly: the section numbering here doesn't necessarily line up
+// with "sections 1, 6, 9" as referenced elsewhere, and placement history is
+// one guided free-text field rather than a repeating group (the intake
+// engine has no repeating-field support yet). Both are safe to refine from
+// the admin's "Author questions" panel without touching this file again.
 const SCHEMA = {
-  id: "agency-complaint",
-  title: "Agency service complaint",
-  blurb: "We'll walk through the details of your experience with the government agency. Nothing is saved until you confirm it, and you can stop and come back anytime.",
+  id: "ocr-complaint-tn-dcs",
+  title: "OCR complaint intake — Tennessee DCS",
+  titleEs: "Admisión para queja ante la OCR — DCS de Tennessee",
+  blurb: "We're going to ask about your family's experience with the Tennessee Department of Children's Services, one question at a time. Nothing is sent anywhere until you review it. You can stop and come back whenever you need to.",
+  blurbEs: "Vamos a preguntarte sobre la experiencia de tu familia con el Departamento de Servicios para Niños de Tennessee (DCS), una pregunta a la vez. Nada se envía a ningún lado hasta que tú lo revises. Puedes detenerte y volver cuando lo necesites.",
   fields: [
     {
-      path: "full_name",
+      path: "complainant_name",
       label: "Your full name",
       type: "text",
       required: true,
-      prompt: "Let's start. What's your full name so we know who's filing this?",
-      help: "First and last name is fine. If you'd prefer to remain anonymous, you can say 'anonymous' and we'll note it.",
+      prompt: "Let's start with you. What's your full name?",
+      promptEs: "Empecemos contigo. ¿Cuál es tu nombre completo?",
+      help: "This is the name that will go on the complaint as the person filing it.",
+      helpEs: "Este es el nombre que aparecerá en la queja como la persona que la presenta.",
     },
     {
-      path: "contact_email",
-      label: "Email address",
+      path: "complainant_relationship",
+      label: "Your relationship to the child",
+      type: "enum",
+      enum: ["Parent", "Legal guardian", "Other relationship"],
+      required: true,
+      prompt: "What is your relationship to the child?",
+      promptEs: "¿Cuál es tu relación con el niño o la niña?",
+      help: "Pick the option that fits best. If it's something else, choose \"Other relationship\" and you can explain later.",
+      helpEs: "Elige la opción que mejor se ajuste. Si es algo distinto, elige \"Otra relación\" y podrás explicarlo más adelante.",
+    },
+    {
+      path: "complainant_address",
+      label: "Your mailing address",
+      type: "text",
+      required: true,
+      prompt: "What's your mailing address? Street, city, state, and zip code.",
+      promptEs: "¿Cuál es tu dirección postal? Calle, ciudad, estado y código postal.",
+      help: "This is where any written reply about the complaint would be sent.",
+      helpEs: "Aquí es donde se enviaría cualquier respuesta por escrito sobre la queja.",
+    },
+    {
+      path: "complainant_phone",
+      label: "Your phone number",
+      type: "text",
+      required: true,
+      prompt: "What's the best phone number to reach you?",
+      promptEs: "¿Cuál es el mejor número de teléfono para comunicarnos contigo?",
+      help: "A number where someone from the office can reach you if they have questions.",
+      helpEs: "Un número donde alguien de la oficina pueda comunicarse contigo si tiene preguntas.",
+    },
+    {
+      path: "complainant_email",
+      label: "Your email address",
       type: "email",
       required: false,
-      prompt: "What email address should we use to follow up with you?",
-      help: "We'll only use this to communicate about your complaint. If you'd rather not share it, just say so.",
+      prompt: "What's your email address? You can skip this if you don't have one.",
+      promptEs: "¿Cuál es tu correo electrónico? Puedes saltarte esto si no tienes uno.",
+      help: "Only used to follow up about this complaint.",
+      helpEs: "Solo se usará para dar seguimiento a esta queja.",
     },
     {
-      path: "agency_name",
-      label: "Agency or department",
+      path: "child_initials",
+      label: "Child's initials",
       type: "text",
       required: true,
-      prompt: "Which government agency or department are you filing a complaint about?",
-      help: "The full name if you know it — e.g. 'Department of Motor Vehicles', 'Social Security Administration', 'City Housing Authority'. An acronym is fine if that's what you know it by.",
+      prompt: "Now let's talk about your child. To help protect their privacy, please give just their initials, not their full name.",
+      promptEs: "Ahora hablemos de tu hijo o hija. Para proteger su privacidad, por favor da solo sus iniciales, no su nombre completo.",
+      help: "For example, if their name is Maria Lopez, you'd enter M.L.",
+      helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
     },
     {
-      path: "agency_level",
-      label: "Level of government",
-      type: "enum",
-      enum: ["Federal", "State", "County / City / Local", "Tribal", "Not sure"],
+      path: "child_age",
+      label: "Child's age",
+      type: "number",
       required: true,
-      prompt: "Is this a federal, state, or local agency?",
-      help: "Federal agencies include things like the IRS, SSA, USCIS, VA. State includes DMV, state health departments. Local includes city hall, county clerk, school boards.",
+      prompt: "How old is your child?",
+      promptEs: "¿Cuántos años tiene tu hijo o hija?",
+      help: "Their age right now is fine.",
+      helpEs: "Su edad actual está bien.",
     },
     {
-      path: "service_sought",
-      label: "Service or benefit you were seeking",
+      path: "child_race_ethnicity",
+      label: "Child's race or ethnicity",
       type: "text",
       required: true,
-      prompt: "What service, benefit, or assistance were you trying to get from this agency?",
-      help: "Be as specific as you're comfortable with — e.g. 'a driver's license renewal', 'food stamp benefits', 'a building permit', 'my tax refund'. If this has been going on a while, tell us what it started as.",
+      prompt: "How would you describe your child's race or ethnicity?",
+      promptEs: "¿Cómo describirías la raza o etnicidad de tu hijo o hija?",
+      help: "Use whatever words feel right to you. This matters because the complaint may involve unequal treatment.",
+      helpEs: "Usa las palabras que te parezcan correctas. Esto importa porque la queja puede tratar sobre un trato desigual.",
     },
     {
-      path: "incident_date",
-      label: "Date this started",
-      type: "date",
-      required: true,
-      prompt: "When did you first try to get this service or first experience the problem?",
-      help: "An approximate date is fine if you don't remember the exact day. We just need a general timeframe.",
-    },
-    {
-      path: "communication_failures",
-      label: "How communication broke down",
-      type: "text",
-      required: true,
-      prompt: "Tell us about how the agency communicated with you — or didn't. Were calls returned? Did you get conflicting information? Were you left waiting without updates?",
-      help: "Common issues: no response to calls or emails, long hold times, being transferred between departments, getting different answers from different staff, not being told about delays, language barriers, no accommodation for disabilities.",
-    },
-    {
-      path: "service_failure",
-      label: "What the agency failed to provide",
-      type: "text",
-      required: true,
-      prompt: "What specifically did the agency fail to do or provide? What should have happened that didn't?",
-      help: "Examples: never processed an application past the deadline, denied a benefit you believe you qualify for, lost your paperwork, refused to provide a service available to others, didn't make reasonable accommodations.",
-    },
-    {
-      path: "attempts_to_resolve",
-      label: "What you've tried so far",
+      path: "child_disability",
+      label: "Child's disability or diagnosis",
       type: "text",
       required: false,
-      prompt: "Have you tried to resolve this already? If so, what steps have you taken and what happened?",
-      help: "Include any complaints you've already filed, supervisors you've spoken to, appeals you've submitted, or elected officials you've contacted. Even if nothing came of it, it helps to know what's been tried.",
+      prompt: "Does your child have a disability, diagnosis, or medical or learning condition that's part of this? If so, tell us about it. If not, you can say \"none.\"",
+      promptEs: "¿Tu hijo o hija tiene alguna discapacidad, diagnóstico, o condición médica o de aprendizaje relacionada con esto? Si es así, cuéntanos. Si no, puedes decir \"ninguna.\"",
+      help: "For example, a seizure disorder, autism, ADHD, or a learning disability. Include a diagnosis if you have one.",
+      helpEs: "Por ejemplo, un trastorno convulsivo, autismo, TDAH, o una discapacidad de aprendizaje. Incluye un diagnóstico si lo tienes.",
     },
     {
-      path: "impact",
-      label: "How this has affected you",
+      path: "custody_start_date",
+      label: "Date DCS custody began",
+      type: "date",
+      required: true,
+      prompt: "About when did your child enter DCS custody?",
+      promptEs: "¿Aproximadamente cuándo entró tu hijo o hija bajo la custodia de DCS?",
+      help: "An approximate date is fine if you don't remember the exact day.",
+      helpEs: "Una fecha aproximada está bien si no recuerdas el día exacto.",
+    },
+    {
+      path: "dcs_county",
+      label: "County handling the case",
       type: "text",
       required: true,
-      prompt: "How has this agency's failure affected you or your household?",
-      help: "This can include financial harm, health impacts, lost work, stress, inability to access necessities, missed opportunities. Everything you share helps document the real cost of the service failure.",
+      prompt: "Which county's DCS office is handling your child's case?",
+      promptEs: "¿Qué oficina de condado de DCS está manejando el caso de tu hijo o hija?",
+      help: "For example, Davidson County or Knox County.",
+      helpEs: "Por ejemplo, el condado de Davidson o el condado de Knox.",
+    },
+    {
+      path: "dcs_case_number",
+      label: "DCS case number",
+      type: "text",
+      required: false,
+      prompt: "Do you know the DCS case number? If not, that's okay, you can skip this.",
+      promptEs: "¿Sabes el número de caso de DCS? Si no, está bien, puedes saltarte esto.",
+      help: "Usually on paperwork DCS has given you.",
+      helpEs: "Normalmente está en los documentos que DCS te ha dado.",
+    },
+    {
+      path: "home_language",
+      label: "Language spoken at home",
+      type: "text",
+      required: true,
+      prompt: "What language does your family mainly speak at home?",
+      promptEs: "¿Qué idioma habla tu familia principalmente en casa?",
+      help: "This matters if language ever got in the way of understanding DCS or being understood by them.",
+      helpEs: "Esto importa si el idioma alguna vez fue un obstáculo para entender a DCS o para que DCS te entendiera a ti.",
+    },
+    {
+      path: "family_background",
+      label: "A little about your family",
+      type: "text",
+      required: false,
+      prompt: "In a sentence or two, tell us a bit about your family and how your child came to be in DCS custody.",
+      promptEs: "En una o dos oraciones, cuéntanos un poco sobre tu familia y cómo tu hijo o hija terminó bajo la custodia de DCS.",
+      help: "Just a short summary is fine. You'll have room to go into detail in the next few questions.",
+      helpEs: "Un breve resumen está bien. Tendrás espacio para dar más detalles en las próximas preguntas.",
+    },
+    {
+      path: "placement_history",
+      label: "Placement history",
+      type: "text",
+      required: true,
+      prompt: "Since entering DCS custody, where has your child been placed? Please list each placement in order, with about when it started, what kind of placement it was (like a relative's home, a foster home, a group home, or a facility), and where.",
+      promptEs: "Desde que entró bajo la custodia de DCS, ¿dónde ha sido colocado tu hijo o hija? Por favor enumera cada colocación en orden, con aproximadamente cuándo comenzó, qué tipo de colocación fue (como la casa de un familiar, un hogar de crianza, un hogar grupal, o una instalación) y dónde.",
+      help: "One line per placement is perfect, in order. For example: \"January 2026, group home, Wilson County.\"",
+      helpEs: "Una línea por colocación es perfecto, en orden. Por ejemplo: \"enero de 2026, hogar grupal, condado de Wilson.\"",
+    },
+    {
+      path: "alternatives_asked",
+      label: "Asking about family-based options",
+      type: "text",
+      required: false,
+      prompt: "Did you ever ask DCS about therapeutic foster care or other family-based options, instead of a group home or facility? What did they tell you?",
+      promptEs: "¿Alguna vez le preguntaste a DCS sobre cuidado terapéutico de crianza u otras opciones familiares, en lugar de un hogar grupal o una instalación? ¿Qué te dijeron?",
+      help: "If this didn't come up, that's okay, you can say so.",
+      helpEs: "Si esto no surgió, está bien, puedes decirlo.",
+    },
+    {
+      path: "dcs_actions_failures",
+      label: "What DCS did or failed to do",
+      type: "text",
+      required: true,
+      prompt: "Now the main part. In your own words, what did DCS do, or fail to do, that you believe was wrong? Please include dates you remember, and the names of any caseworkers or supervisors involved.",
+      promptEs: "Ahora la parte principal. En tus propias palabras, ¿qué hizo DCS, o qué dejó de hacer, que crees que estuvo mal? Por favor incluye las fechas que recuerdes, y los nombres de cualquier trabajador social o supervisor involucrado.",
+      help: "Take your time. Specific details help, like what was said, what was promised, and what actually happened, but general is fine too if that's what you remember.",
+      helpEs: "Tómate tu tiempo. Los detalles específicos ayudan, como lo que se dijo, lo que se prometió, y lo que realmente pasó, pero algo general también está bien si es lo que recuerdas.",
+    },
+    {
+      path: "coercion_threats",
+      label: "Pressure or threats (if this applies to you)",
+      type: "text",
+      required: false,
+      prompt: "This next part may not apply to you, and that's okay. Did DCS ever pressure or threaten you, like saying something bad would happen if you didn't agree to something? If so, tell us about it. If not, you can say \"not applicable\" or leave it blank.",
+      promptEs: "Esta siguiente parte puede que no te aplique, y está bien. ¿DCS alguna vez te presionó o amenazó, como decir que algo malo pasaría si no aceptabas algo? Si es así, cuéntanos. Si no, puedes decir \"no aplica\" o dejarlo en blanco.",
+      help: "For example, being told a refusal would be used against you, or that something would happen to your child if you didn't comply.",
+      helpEs: "Por ejemplo, que te dijeran que una negativa se usaría en tu contra, o que algo le pasaría a tu hijo o hija si no cumplías.",
+    },
+    {
+      path: "last_incident_date",
+      label: "Date of the most recent incident",
+      type: "date",
+      required: true,
+      prompt: "What's the date of the most recent thing you want to include in this complaint?",
+      promptEs: "¿Cuál es la fecha de lo más reciente que quieres incluir en esta queja?",
+      help: "OCR complaints normally need to be filed within 180 days of the most recent incident, so this date matters. An approximate date is okay.",
+      helpEs: "Las quejas ante la OCR normalmente deben presentarse dentro de los 180 días posteriores al incidente más reciente, así que esta fecha importa. Una fecha aproximada está bien.",
     },
     {
       path: "desired_outcome",
-      label: "What would resolve this",
+      label: "What you're hoping for",
       type: "text",
       required: false,
-      prompt: "What would a good outcome look like from your perspective?",
-      help: "The service you originally asked for? An apology? A policy change? Compensation? Reimbursement for costs incurred? There's no wrong answer — this is about what would make things right for you.",
+      prompt: "Last question. What are you hoping happens as a result of this complaint?",
+      promptEs: "Última pregunta. ¿Qué esperas que pase como resultado de esta queja?",
+      help: "There's no wrong answer. This could be a different placement, more visits, a policy change, or something else.",
+      helpEs: "No hay una respuesta incorrecta. Podría ser una colocación distinta, más visitas, un cambio de política, u otra cosa.",
     },
   ],
 };
+
+// The field whose confirmed value drives the 180-day filing-window check —
+// kept as one named constant rather than a magic string scattered through
+// Intake, since this is domain-specific business logic layered on top of an
+// otherwise generic intake engine.
+const DEADLINE_CHECK_FIELD = "last_incident_date";
+const OCR_FILING_WINDOW_DAYS = 180;
+
+// Both messages below are required, exact wording (per the project's
+// intake instructions), not phrasing the model or Steer's generic table
+// gets to pick — the interview must continue after the deadline warning,
+// never stop, and the closing message must always point back to
+// Representative Behn's office as the mandatory review step before anything
+// is filed. Rendered as a visually distinct banner, not a normal chat bubble
+// (see renderMessage()'s `m.banner` handling).
+const DEADLINE_WARNING_EN = "OCR complaints can only be filed within 180 days of the last incident. This interview will continue, but this draft can not be filed as it is past the timeline restrictions.";
+const DEADLINE_WARNING_ES = "Las quejas ante la OCR solo pueden presentarse dentro de los 180 días posteriores al último incidente. Esta entrevista continuará, pero este borrador no podrá presentarse porque ya pasó el plazo permitido.";
+const CLOSING_MESSAGE_EN = "Thank you so much for completing this interview. PLEASE DO NOT SEND THIS DRAFT UNTIL IT HAS BEEN REVIEWED WITH REPRESENTATIVE BEHN'S OFFICE. We will contact you soon with next steps.";
+const CLOSING_MESSAGE_ES = "Muchas gracias por completar esta entrevista. POR FAVOR NO ENVÍES ESTE BORRADOR HASTA QUE HAYA SIDO REVISADO POR LA OFICINA DE LA REPRESENTANTE BEHN. Nos pondremos en contacto contigo pronto con los próximos pasos.";
 
 
 
@@ -1144,28 +1349,29 @@ function jaccard(a, b) {
   return inter / union.size;
 }
 
-function classifyTerrainStance(field, pending, discourse) {
-  const kws = keywords((field?.label || "") + " " + (field?.help || ""));
-  const userKws = keywords(discourse.filter((m) => m.role === "user").map((m) => m.text || "").join(" "));
-
-  const supportKws = new Set(["help", "what", "why", "explain", "mean", "unsure", "stuck", "dont", "doubt", "clarify"]);
-  const confirmKws = new Set(["confirm", "looks good", "correct", "right", "okay", "yes", "yes", "done", "finished"]);
-  const answerKws = new Set(["answer", "reply", "say", "tell", "provide", "fill", "enter", "type"]);
-
+// Typo-tolerant, bilingual: uses the same Steer.classifyIntent() the
+// confirmation step uses, so "does this look like a help request or a
+// confirmation" is answered identically everywhere in the app rather than
+// by a second, separately-tuned heuristic.
+function classifyTerrainStance(field, pending, discourse, lang = "en") {
   let active = discourse.filter((m) => m.epoch === Math.max(0, ...discourse.map((x) => x.epoch || 0)));
   const lastUser = [...active].reverse().find((m) => m.role === "user")?.text || "";
   const lastAssistant = [...active].reverse().find((m) => m.role === "assistant")?.text || "";
+  const intent = Steer.classifyIntent(lastUser, lang);
 
   if (pending) return { operator: OPERATORS.DEF, focus: "confirming" };
-  if (jaccard(userKws, supportKws) > 0.15) return { operator: OPERATORS.NUL, focus: "supporting" };
-  if (jaccard(userKws, confirmKws) > 0.15) return { operator: OPERATORS.EVA, focus: "evaluating" };
+  if (intent.help) return { operator: OPERATORS.NUL, focus: "supporting" };
+  if (intent.yes) return { operator: OPERATORS.EVA, focus: "evaluating" };
   if (field && lastAssistant && !lastUser) return { operator: OPERATORS.SEG, focus: "asking" };
   if (field && lastUser && !active.some((m) => m.support)) return { operator: OPERATORS.DEF, focus: "extracting" };
   return { operator: OPERATORS.NUL, focus: "listening" };
 }
 
-function classifyFocus({ field, pending, discourse = [] }) {
-  const { operator, focus } = classifyTerrainStance(field, pending, discourse);
+// The FOCUS block below is informational context for the model's
+// classification, not a style instruction — the model writes nothing, so
+// there's no "respond in a way that matches this mode" left to say.
+function classifyFocus({ field, pending, discourse = [], lang = "en" }) {
+  const { operator, focus } = classifyTerrainStance(field, pending, discourse, lang);
   return {
     operator,
     terrain: operator.terrain,
@@ -1173,12 +1379,11 @@ function classifyFocus({ field, pending, discourse = [] }) {
     focus,
     label: `${operator.terrain}/${operator.stance} · ${focus}`,
     system: `FOCUS: ${operator.terrain} / ${operator.stance} — ${focus}
-You are currently ${focus} the applicant about "${field?.label || "the intake"}". Respond in a way that matches this mode:
-- asking: present the question clearly, one at a time
-- supporting: explain, reassure, give examples
-- extracting: listen for the answer, normalize it
-- confirming: verify the extracted value before storing
-- evaluating: confirm the answer looks correct`,
+The person is in the "${focus}" phase of being asked about "${field?.label || "the intake"}". This shapes only how you classify — you write nothing the person will see:
+- supporting: they're asking a question or seem stuck; classify support=true, ready=false.
+- extracting: read their latest message as a candidate answer; if it's usable, set ready=true with the normalized value in extracted.
+- confirming / evaluating: they're responding to a yes/no confirmation of a value already extracted; a bare yes/no is enough to decide ready.
+- asking / listening: nothing to classify yet.`,
   };
 }
 
@@ -1283,32 +1488,44 @@ function keywords(str) {
 }
 
 const DEMO_KNOWLEDGE = new KnowledgeStore([
-  { topic: "Describing agency failures clearly", scope: { field: "service_failure" }, tags: ["evidence", "specificity"],
-    text: "Encourage the person to be specific about what the agency did or didn't do. Vague descriptions are common but harder to act on. Help them identify: what was promised vs what happened, any deadlines that were missed, any written communication they received. If they have documents, ask them to upload them." },
-  { topic: "Communication barriers with agencies", scope: { field: "communication_failures" }, tags: ["access", "language"],
-    text: "Document all forms of communication breakdown: unanswered calls or emails, being transferred repeatedly, being told different things by different staff, long hold times, lack of return calls, inaccessible formats for people with disabilities, language barriers. Note dates and times if they have them — even approximate ones help establish a pattern." },
-  { topic: "Documenting impact on the person", scope: { field: "impact" }, tags: ["evidence", "harm"],
-    text: "Impact can be financial (lost wages, incurred costs), physical (health deteriorated while waiting), emotional (stress, anxiety, humiliation), or practical (lost housing, inability to work, missed medical care). Every detail matters for building a complete picture of the harm caused by the service failure." },
-  { topic: "Agency complaint escalation paths", scope: { field: "attempts_to_resolve" }, tags: ["procedure", "ombudsman"],
-    text: "Common next steps after a complaint: ask for a supervisor, file a formal grievance through the agency's process, contact the agency's inspector general or ombudsman, reach out to an elected representative (city council, state assembly, congressional office), file for a hearing or appeal if one exists, or contact a legal aid organization." },
-  { topic: "What constitutes a valid agency complaint", tags: ["eligibility", "jurisdiction"],
-    text: "A valid agency service complaint typically involves: failure to provide a service the agency is legally required to provide, unreasonable delay, failure to communicate, providing incorrect information, discrimination, retaliation, or failure to accommodate a disability. Complaints can be filed by the person affected or by someone acting on their behalf." },
+  { topic: "Describing DCS actions and failures clearly", scope: { field: "dcs_actions_failures" }, tags: ["evidence", "specificity"],
+    text: "Encourage specificity without pressuring for it: what was said vs what happened, whether written notice was given, names of caseworkers or supervisors if known, and approximate dates. Vague is still usable; a person's own words and timeline matter more than legal precision." },
+  { topic: "Placement history detail", scope: { field: "placement_history" }, tags: ["evidence", "specificity"],
+    text: "One line per placement, roughly in order, is enough: about when it started, what kind of placement (relative's home, foster home, group home, residential facility), and where. Exact dates aren't required, a general timeframe is fine." },
+  { topic: "Language access matters", scope: { field: "home_language" }, tags: ["access", "language"],
+    text: "If a family's primary language isn't English, note it. Whether the agency provided interpretation, translated documents, or otherwise accommodated language needs can itself be part of the discrimination claim." },
+  { topic: "Coercion and threats, if it happened", scope: { field: "coercion_threats" }, tags: ["support", "sensitivity"],
+    text: "This section frequently doesn't apply, and that's a normal, complete answer. When it does apply, common examples are being told a refusal to comply would be held against a parent, or that something negative would happen to the child. Never suggest this happened; just make it easy to say if it did." },
+  { topic: "The 180-day filing window", tags: ["eligibility", "deadline"],
+    text: "OCR complaints generally must be filed within 180 days of the most recent incident. If the most recent incident is older than that, the interview should still continue in full, but the person must be told clearly that this draft cannot be filed as-is because of the timeline." },
   { topic: "Trauma-informed intake approach", tags: ["support", "wellbeing"],
-    text: "People filing complaints about government agencies are often frustrated, stressed, or traumatized by their experience. Allow them to tell their story at their own pace. Reassure them that partial information is okay — answers can be supplemented later. Acknowledge that navigating agency bureaucracy is genuinely difficult and their frustration is valid." },
+    text: "Families going through this are often navigating an active, stressful, and sometimes frightening situation involving their child. Let them tell their story at their own pace. Reassure them that a partial or approximate answer is okay. Never rush a family through describing what happened to their child." },
 ]);
 
 
 
+// This is the ENTIRE instruction the model ever gets, and note what it is
+// NOT asked to do: write anything. A fixed, hand-written script (see
+// vendor/steer.js — Steer.pickReply) is the only source of text the
+// person ever reads. The model's one job is to classify the latest
+// message about the current field, in whichever of the two supported
+// languages (or mix — code-switching is common) the person is using, and
+// however typo-ridden it is.
 const MINIMAL_SYSTEM =
-`You are a calm intake companion helping someone fill a sensitive document one field at a time. You are not a lawyer and give no legal advice.
-Work only on the current field. If they seem stuck or ask a question, help briefly (support=true, ready=false). When their message contains a usable answer, normalize it, set ready=true and extracted to the clean value, and ask them to confirm. Never invent facts; if unsure, ask one short question.
-Reply with ONLY a JSON object: {"reply":string,"support":boolean,"ready":boolean,"extracted":string|null}`;
+`You are the classification step behind a trauma-informed intake conversation. You never write a reply — a separate fixed script shows the person text, never you. Your only job is to read their latest message about CURRENT FIELD and classify it.
+The person may write in English or Spanish, sometimes both, often with typos or informal grammar — read past all of that for meaning.
+- support: true only if this message is a question, confusion, or a request for help rather than an attempt to answer.
+- distress: true only if the message itself signals the person may be in crisis or in immediate danger right now — not merely for describing past hardship, abuse, or trauma, which is expected and should NOT set this true.
+- ready: true once the message contains a usable answer for CURRENT FIELD.
+- extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
+Never invent facts about the person. When uncertain, leave ready false rather than guessing.
+Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean}`;
 
-function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null }) {
+function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null, lang = "en" }) {
   const B = { knowledge: 700, digest: 400, liveTurns: 6, ...budget };
   const answers = answersOf(fold(timeline), anchor);
 
-  const focus = classifyFocus({ field, pending, discourse });
+  const focus = classifyFocus({ field, pending, discourse, lang });
 
   const seed = field.help ? [{ topic: field.label, text: field.help }] : [];
   const know = knowledge
@@ -1337,6 +1554,7 @@ function assemble({ field, discourse = [], timeline = [], knowledge = null, sche
     { kind: "system", label: "Instructions", text: system },
     { kind: "focus", label: "Focus — how to steer", text: focus.system },
     { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}` },
+    { kind: "language", label: "Language", text: `LANGUAGE: ${lang}` },
   ];
   if (know.text) parts.push({ kind: "memory", label: `Reference — memory folded for this field (${know.items.length})`, text: `REFERENCE (folded for this field):\n${know.text}` });
   parts.push({ kind: "progress", label: "Progress + answer digest", text: `PROGRESS: ${done}/${total} captured.` + (digest ? `\nAlready recorded — do not re-ask:\n${digest}` : "") });
@@ -1400,39 +1618,40 @@ function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 // asking for it in the system prompt, we hand backends that support grammar-
 // constrained decoding this schema directly — output can't structurally be
 // anything else, and generation halts the instant it's satisfied. That's what
-// keeps a 1B model "on the rails": fast (no wasted tokens rambling past the
-// envelope, bounded by max_tokens/num_predict below) and reliable (no
+// keeps a small model "on the rails": fast (no wasted tokens rambling past
+// the envelope, bounded by max_tokens/num_predict below) and reliable (no
 // malformed-JSON fallback needed on the happy path).
-const REPLY_SCHEMA = {
+//
+// Note there is no "reply" field. Earlier this schema had the model write
+// the text the person reads; it no longer does. What the person sees comes
+// exclusively from Steer.pickReply()'s fixed, bilingual, hand-written
+// table (see intake.js's submit() below) — the model only classifies the
+// turn. That's a smaller, easier task, which is what let the default
+// model shrink (see WebLLMModel above) without losing quality: a tiny
+// model has to get four small judgments right, not compose good prose.
+const CLASSIFY_SCHEMA = {
   type: "object",
   properties: {
-    reply: { type: "string" },
     support: { type: "boolean" },
     ready: { type: "boolean" },
     extracted: { anyOf: [{ type: "string" }, { type: "null" }] },
+    distress: { type: "boolean" },
   },
-  required: ["reply", "support", "ready", "extracted"],
+  required: ["support", "ready", "extracted", "distress"],
 };
-const REPLY_SCHEMA_STR = JSON.stringify(REPLY_SCHEMA);
-const MAX_REPLY_TOKENS = 200; // one short conversational turn — keeps a small model snappy
-
-// The model's output is the REPLY_SCHEMA envelope, not raw prose — so naively
-// streaming raw tokens would render literal JSON syntax character-by-character
-// (`{"reply": "Got` `it` `\u2014`...) before the final parse swaps it for the
-// real text. Since "reply" is both the schema's first required property and
-// (under constrained decoding) reliably the first key generated, this pulls
-// out just its still-growing string value on every chunk, so the chat bubble
-// shows the actual reply typing out live instead of raw envelope syntax.
-function extractPartialReply(raw) {
-  const m = raw.match(/"reply"\s*:\s*"((?:\\.|[^"\\])*)/);
-  if (!m) return "";
-  try { return JSON.parse('"' + m[1] + '"'); }
-  catch { return m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n"); }
-}
+const CLASSIFY_SCHEMA_STR = JSON.stringify(CLASSIFY_SCHEMA);
+const MAX_REPLY_TOKENS = 60; // classification only, not prose — small and fast
 
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 class WebLLMModel {
-  constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
+  // Qwen2.5-0.5B is the smallest WebLLM-prebuilt instruct model that still
+  // classifies reliably in both English and Spanish. It's viable at this
+  // size specifically because its job shrank: it no longer authors any
+  // text the person reads (see CLASSIFY_SCHEMA below) — it only has to
+  // output four small classification fields, not compose a reply. That's
+  // a much easier task than free generation, so the smallest model that
+  // gets it right is smaller than the one free-text generation needed.
+  constructor(modelId = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC") {
     this.modelId = modelId; this.engine = null;
   }
   async ready(onProgress) {
@@ -1445,7 +1664,7 @@ class WebLLMModel {
   async chat(messages) {
     const r = await this.engine.chat.completions.create({
       messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS,
-      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+      response_format: { type: "json_object", schema: CLASSIFY_SCHEMA_STR },
     });
     return r.choices[0].message.content;
   }
@@ -1453,7 +1672,7 @@ class WebLLMModel {
     let full = "";
     const it = await this.engine.chat.completions.create({
       messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS, stream: true,
-      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+      response_format: { type: "json_object", schema: CLASSIFY_SCHEMA_STR },
     });
     for await (const chunk of it) {
       const t = chunk.choices[0]?.delta?.content || "";
@@ -1475,7 +1694,7 @@ class OllamaModel {
   async chat(messages) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: false, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+      body: JSON.stringify({ model: this.model, messages, stream: false, format: CLASSIFY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const d = await r.json();
     return d.message.content;
@@ -1483,7 +1702,7 @@ class OllamaModel {
   async stream(messages, onToken) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: true, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+      body: JSON.stringify({ model: this.model, messages, stream: true, format: CLASSIFY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const reader = r.body.getReader(); const dec = new TextDecoder(); let full = "";
     for (;;) {
@@ -1499,9 +1718,12 @@ class OllamaModel {
 
 // ---- Echo: no model, deterministic ----------------------------------------
 // Not an LLM. It reads the same system contract the real backends get, finds
-// the "CURRENT FIELD" block the controller injects, and returns the structured
-// JSON the controller parses — so you can walk the entire intake with zero
-// setup, then swap in WebLLM/Ollama without touching the controller.
+// the "CURRENT FIELD" block the controller injects, and returns the
+// classify-only envelope the controller parses — so you can walk the
+// entire intake with zero setup, then swap in WebLLM/Ollama without
+// touching the controller. Uses the exact same Steer.classifyIntent() and
+// Steer.validate() the real backends' output is checked against, so Echo
+// is a faithful stand-in rather than a separately-tuned approximation.
 class EchoModel {
   async ready() {}
   async chat(messages) {
@@ -1509,37 +1731,20 @@ class EchoModel {
     const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content?.trim() || "";
     const field = this._field(sys);
     const focus = this._focus(sys);
+    const lang = this._lang(sys);
+    const intent = Steer.classifyIntent(lastUser, lang);
 
-    if (/^\??$|help|what|why|explain|mean|unsure|don't know|dont know/i.test(lastUser) && lastUser.length < 40) {
-      if (focus?.includes("confirming")) {
-        return JSON.stringify({
-          reply: "Does that look right? You can say yes to confirm, or no to change it.",
-          support: true, ready: false, extracted: null,
-        });
-      }
-      return JSON.stringify({
-        reply: this._reference(sys) || field?.help || "Take your time — answer in whatever words feel natural and I'll tidy it up.",
-        support: true, ready: false, extracted: null,
-      });
+    if (intent.distress) return JSON.stringify({ support: true, ready: false, extracted: null, distress: true });
+    if (intent.help) return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
+
+    if (focus?.includes("confirming") || focus?.includes("evaluating")) {
+      if (intent.yes) return JSON.stringify({ support: false, ready: true, extracted: lastUser, distress: false });
+      return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
     }
 
-    if (focus?.includes("confirming")) {
-      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good)/i.test(lastUser)) {
-        return JSON.stringify({ reply: "Got it — I'll save that.", support: false, ready: true, extracted: lastUser });
-      }
-      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(lastUser)) {
-        return JSON.stringify({ reply: "No problem — tell me the right version.", support: true, ready: false, extracted: null });
-      }
-      return JSON.stringify({ reply: "Is this the answer you want to save? Say yes to confirm or no to edit.", support: true, ready: false, extracted: null });
-    }
-
-    const value = lastUser;
-    const err = field ? validate(field, value) : null;
-    if (err) return JSON.stringify({ reply: err, support: true, ready: false, extracted: null });
-    return JSON.stringify({
-      reply: `Got it — I'll record "${value}". Does that look right?`,
-      support: false, ready: true, extracted: value,
-    });
+    const err = field ? Steer.validate(field, lastUser, lang) : null;
+    if (err) return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
+    return JSON.stringify({ support: false, ready: true, extracted: lastUser, distress: false });
   }
   stream(messages, onToken) { return this.chat(messages).then((s) => { onToken?.(s); return s; }); }
 
@@ -1549,32 +1754,22 @@ class EchoModel {
     try { return JSON.parse(m[1]); } catch { return null; }
   }
 
-  // Pull the first line of the folded REFERENCE block (the field's own help is
-  // seeded first), stripped of its "• Topic: " prefix — Echo's stand-in for the
-  // reasoning a real model would do over the retrieved reference.
-  _reference(sys) {
-    const m = sys.match(/REFERENCE \(folded for this field\):\n([\s\S]*?)(?:\n\n|$)/);
-    if (!m) return "";
-    return (m[1].split("\n")[0] || "").replace(/^•\s*[^:]*:\s*/, "").trim();
-  }
-
   _focus(sys) {
     const m = sys.match(/FOCUS:\s*([^\n]+)/);
     return m ? m[1].trim() : null;
   }
+
+  _lang(sys) {
+    const m = sys.match(/LANGUAGE:\s*(\w+)/);
+    return m ? m[1].trim() : "en";
+  }
 }
 
-// Shared lightweight validation, used by Echo and re-exported for the controller.
-function validate(field, value) {
-  const v = (value ?? "").toString().trim();
-  if (field.required && !v) return "This one's required — even a rough answer is fine to start.";
-  if (field.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "That doesn't look like an email address — mind checking it?";
-  if (field.type === "date" && v && isNaN(Date.parse(v))) return "I couldn't read that as a date. A format like 1990-04-23 works well.";
-  if (field.type === "number" && v && isNaN(Number(v))) return "That should be a number.";
-  if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase()))
-    return `Please pick one of: ${field.enum.join(", ")}.`;
-  return null;
-}
+// Thin bridge to the shared, bilingual, tested validator in vendor/steer.js
+// — kept as a same-named local function since it's threaded through a lot
+// of call sites (the no-model wizard, the admin field editor) that don't
+// all have a `lang` in scope yet.
+function validate(field, value, lang = "en") { return Steer.validate(field, value, lang); }
 
 function makeModel(kind, opts = {}) {
   if (kind === "webllm") return new WebLLMModel(opts.model);
@@ -1891,7 +2086,11 @@ function foldConfig(events) {
 
   return {
     meta,
-    schema: { id: meta.id || "custom", title: meta.title || "Feedback Platform", blurb: meta.blurb || "", fields: ordered },
+    schema: {
+      id: meta.id || "custom", title: meta.title || "Feedback Platform", blurb: meta.blurb || "",
+      titleEs: meta.titleEs || "", blurbEs: meta.blurbEs || "",
+      fields: ordered,
+    },
     systemPrompt,
     knowledge,
   };
@@ -1930,7 +2129,7 @@ function deleteKnowledge(store, id) {
 // config room opens onto a working intake with zero setup — same ethos as the
 // demo store. Everything below is editable from the admin surface afterward.
 const DEFAULT_CONFIG = {
-  meta: { id: SCHEMA.id, title: SCHEMA.title, blurb: SCHEMA.blurb },
+  meta: { id: SCHEMA.id, title: SCHEMA.title, blurb: SCHEMA.blurb, titleEs: SCHEMA.titleEs, blurbEs: SCHEMA.blurbEs },
   fields: SCHEMA.fields,
   systemPrompt: MINIMAL_SYSTEM,
   knowledge: DEMO_KNOWLEDGE.toJSON(),
@@ -1940,6 +2139,8 @@ function seedConfig(store, cfg = DEFAULT_CONFIG) {
   setMeta(store, "id", cfg.meta.id);
   setMeta(store, "title", cfg.meta.title);
   setMeta(store, "blurb", cfg.meta.blurb);
+  setMeta(store, "titleEs", cfg.meta.titleEs || "");
+  setMeta(store, "blurbEs", cfg.meta.blurbEs || "");
   setSystemPrompt(store, cfg.systemPrompt);
   for (const f of cfg.fields) putField(store, f);
   setFieldOrder(store, cfg.fields.map((f) => f.path));
@@ -1964,20 +2165,30 @@ function ensureSeeded(store, cfg = DEFAULT_CONFIG) {
 // operator into the store. Progress is the room timeline, so the flow is
 // resumable for free — reopen the room and fold tells you where you stopped.
 //
-// The model contract is a small JSON envelope, so even a 1B local model stays
-// on the rails:
-//   { reply, support?: bool, ready?: bool, extracted?: string|null }
-//     reply     — what to say to the person (always)
+// The model contract is a small JSON envelope, so even a very small local
+// model stays on the rails — and note it has no "reply" field. The model
+// only classifies; it never authors what the person reads (see
+// vendor/steer.js — Steer.pickReply picks that from a fixed, bilingual,
+// hand-written table, keyed by what the classification below implies):
+//   { support?: bool, ready?: bool, extracted?: string|null, distress?: bool }
 //     support   — true when this turn is help/clarification, not an answer
-//     ready      — true when `extracted` is a clean value awaiting confirmation
+//     ready     — true when `extracted` is a clean value awaiting confirmation
 //     extracted — the normalized value to store on confirm
+//     distress  — true only for an active crisis/safety signal, not general hardship
 
 
 class Intake {
-  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM }) {
+  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM, lang = "en" }) {
     this.schema = schema; this.store = store; this.model = model;
     this.knowledge = knowledge; this.anchor = anchor;
     this.systemPrompt = systemPrompt; // editable base instructions; folded in each turn
+    this.lang = lang;
+    // The physics-steered discourse state (vendor/steer.js): `opening`
+    // climbs as the person shares more, decays otherwise; `distress`
+    // spikes on a crisis signal and overrides everything else. Persists
+    // for the life of this Intake so a person doesn't have to "re-earn"
+    // trust every single field.
+    this.steer = Steer.createState();
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
@@ -1986,6 +2197,15 @@ class Intake {
 
   on(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
   _emit(kind, data) { for (const fn of this._listeners) fn(kind, data); }
+
+  setLang(lang) { this.lang = lang === "es" ? "es" : "en"; this._emitContext(); }
+
+  // Every word the person reads comes from here — the fixed, bilingual,
+  // hand-written table in vendor/steer.js, keyed by `focus`. Never the
+  // model's own words, no matter which backend is active.
+  _reply(focus, extra = {}) {
+    return Steer.pickReply({ lang: this.lang, focus, ...extra });
+  }
 
   // Live-edit the base instructions. Takes effect on the next fold; we re-emit
   // context so an open inspector reflects the change immediately.
@@ -2031,10 +2251,8 @@ class Intake {
   async begin() {
     if (this.history.length === 0) {
       const done = this.progress().filter((p) => p.done).length;
-      this._say("assistant",
-        done > 0
-          ? `Welcome back. You've got ${done} of ${this.schema.fields.length} answered — let's pick up where you left off.`
-          : this.schema.blurb);
+      const blurb = (this.lang === "es" && this.schema.blurbEs) ? this.schema.blurbEs : this.schema.blurb;
+      this._say("assistant", done > 0 ? this._reply("welcomeBack", { meta: { done, total: this.schema.fields.length } }) : blurb);
     }
     await this._askNext();
   }
@@ -2042,30 +2260,63 @@ class Intake {
   async _askNext() {
     this.pending = null;
     const f = this.nextField();
-    if (!f) { this._say("assistant", "That's everything I need. Your answers are all saved — you can review or edit any of them from the checklist."); this._emit("complete", this.answers()); return; }
+    if (!f) {
+      // The mandatory Rep. Behn's-office closing only applies to the OCR
+      // intake this schema was built for — a differently-repurposed schema
+      // (via the admin's "Author questions" panel) falls back to Steer's
+      // generic closing line instead of inheriting text that names an
+      // office it has nothing to do with.
+      const closing = this.schema.id === "ocr-complaint-tn-dcs"
+        ? (this.lang === "es" ? CLOSING_MESSAGE_ES : CLOSING_MESSAGE_EN)
+        : this._reply("closing");
+      this._say("assistant", closing, { banner: true });
+      this._emit("complete", this.answers());
+      return;
+    }
     this._emit("field", f);
     this._emitContext();  // the fold changed with the field — refresh any open inspector
-    this._say("assistant", f.prompt, { field: f.path });
+    this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
   }
 
-  // The person sent a message. Route it through the model, then act.
+  // The person sent a message. This is where the physics-steered,
+  // mechanical-only conversation actually happens:
+  //   1. A crisis signal ALWAYS wins, immediately, before anything else —
+  //      checked locally so it can't be delayed by a slow or overloaded model.
+  //   2. A pending yes/no confirmation is read locally too (cheap, instant,
+  //      and doesn't need a model round trip).
+  //   3. An explicit "help"/"what does that mean" is answered from the
+  //      field's own bilingual help text — again, no model call needed.
+  //   4. Only a genuine free-text candidate answer goes to the model, and
+  //      even then the model only classifies it (see CLASSIFY_SCHEMA) —
+  //      the reply the person sees always comes from Steer.pickReply().
   async submit(text) {
     this._say("user", text);
     const f = this.nextField();
     if (!f) return;
 
-    // If we're awaiting confirmation, interpret yes/no locally (cheap + reliable).
+    const intent = Steer.classifyIntent(text, this.lang);
+
+    if (intent.distress) {
+      Steer.applyForce(this.steer, { distress: true });
+      this._say("assistant", this._reply("safety"), { support: true });
+      return;
+    }
+
     if (this.pending) {
-      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good|👍)/i.test(text.trim())) {
-        return this._confirm();
-      }
-      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(text.trim())) {
+      if (intent.yes) return this._confirm();
+      if (intent.no) {
         this.pending = null;
-        this._say("assistant", "No problem — go ahead and tell me the right version.");
+        this._say("assistant", this._reply("denied"));
         return;
       }
       // Anything else: treat as a fresh answer to the same field (fall through).
       this.pending = null;
+    }
+
+    if (intent.help) {
+      Steer.applyForce(this.steer, { deflects: true });
+      this._say("assistant", this._reply("clarifying", { field: f }), { support: true });
+      return;
     }
 
     // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
@@ -2073,31 +2324,58 @@ class Intake {
     const assembled = this._assemble(f);
     const { messages } = assembled;
     this._emit("context", { field: f, ...assembled });
+    // Empty text (not "…") matters here: onIntake's renderer only shows the
+    // typing-dots placeholder when a streaming message arrives with no text
+    // yet — anything non-empty renders as a real bubble immediately, which
+    // would leave a stray "thinking" bubble stuck once the real mechanical
+    // reply lands in a second bubble right after it.
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
-    try {
-      // onToken hands us only the latest delta, not the running total — the
-      // model.stream() call itself resolves to the full text, but only once
-      // the whole thing is done, so track it ourselves for the live display.
-      let acc = "";
-      raw = await this.model.stream(messages, (chunk) => {
-        acc += chunk;
-        thinking.text = extractPartialReply(acc) || "…";
-        this._emit("token", thinking);
-      });
+    try { raw = await this.model.chat(messages); }
+    catch (e) {
+      thinking.text = this.lang === "es"
+        ? "El modelo no responde — puedes seguir escribiendo y guardaré tus respuestas directamente."
+        : "The model isn't responding — you can keep typing and I'll store your answers directly.";
+      thinking.streaming = false; this._emit("message", thinking); return;
     }
-    catch (e) { thinking.text = "The model isn't responding — you can keep typing and I'll store your answers directly."; thinking.streaming = false; this._emit("message", thinking); return; }
 
-    const parsed = this._parse(raw, f, text);
-    thinking.text = parsed.reply; thinking.streaming = false; thinking.support = parsed.support; this._emit("message", thinking);
+    const parsed = this._parseClassification(raw, f, text);
+    // Belt and suspenders: the model's own distress judgment can catch
+    // subtler phrasing the local keyword scan missed. Either source firing
+    // routes to the same safety branch.
+    if (parsed.distress) {
+      Steer.applyForce(this.steer, { distress: true });
+      thinking.text = this._reply("safety"); thinking.streaming = false; thinking.support = true;
+      this._emit("message", thinking);
+      return;
+    }
+
+    Steer.applyForce(this.steer, { opens: parsed.ready, deflects: !parsed.ready && parsed.support });
+    const tier = Steer.tierOf(this.steer);
 
     if (parsed.ready && parsed.extracted != null) {
-      const err = validate(f, parsed.extracted);
-      if (err) { this._say("assistant", err); return; }
+      // Conservative, deterministic cleanup (whitespace, obvious missing
+      // apostrophes, sentence capitalization) — only for free text, never
+      // for structured values (dates/numbers/enum choices) where the same
+      // regex work has no benefit and only risk. The model's own
+      // normalization already ran to produce `extracted`; this is a second,
+      // cheap, model-independent pass on top of it. Either way, what
+      // reaches the person next is the "does this look right?" confirm
+      // step below — nothing here is ever stored without that yes.
+      if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang);
+      const err = validate(f, parsed.extracted, this.lang);
+      if (err) { thinking.text = err; thinking.streaming = false; this._emit("message", thinking); return; }
       this.pending = { field: f, value: parsed.extracted };
+      thinking.text = this._reply("confirming"); thinking.streaming = false; thinking.support = false;
+      this._emit("message", thinking);
       this._emit("pending", this.pending);
+      return;
     }
+
+    thinking.text = this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    thinking.streaming = false; thinking.support = true;
+    this._emit("message", thinking);
   }
 
   // Store the confirmed answer as one DEF operator, then advance. Bumping the
@@ -2108,14 +2386,29 @@ class Intake {
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path: field.path, value });
     this.pending = null;
     this.epoch++;
+    this._say("assistant", this._reply("confirmed"));
     this._emit("stored", { field, value, event: ev });
+    this._checkFilingDeadline(field, value);
     return this._askNext();
+  }
+
+  // "If someone uses the tool and the incident is past 180 days, the
+  // interview will continue but you should always tell them" — the
+  // interview must never stop here, only warn, once, right after the
+  // triggering date is confirmed.
+  _checkFilingDeadline(field, value) {
+    if (this.schema.id !== "ocr-complaint-tn-dcs" || field.path !== DEADLINE_CHECK_FIELD) return;
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return;
+    const daysSince = Math.floor((Date.now() - parsed.getTime()) / 86400000);
+    if (daysSince <= OCR_FILING_WINDOW_DAYS) return;
+    this._say("assistant", this.lang === "es" ? DEADLINE_WARNING_ES : DEADLINE_WARNING_EN, { banner: true, warn: true });
   }
 
   // Direct edit from the checklist (bypasses chat): also just a DEF.
   editField(path, value) {
     const field = this.schema.fields.find((f) => f.path === path);
-    const err = validate(field, value);
+    const err = validate(field, value, this.lang);
     if (err) return { ok: false, error: err };
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value });
     this.epoch++;
@@ -2136,21 +2429,23 @@ class Intake {
       anchor: this.anchor,
       system: this.systemPrompt,
       pending: this.pending,
+      lang: this.lang,
     });
   }
 
-  _parse(raw, field, userText) {
+  _parseClassification(raw, field, userText) {
     // Pull the first {...} block; tolerate models that wrap it in prose/fences.
-    const m = raw.match(/\{[\s\S]*\}/);
+    const m = (raw || "").match(/\{[\s\S]*\}/);
     if (m) { try {
       const j = JSON.parse(m[0]);
-      return { reply: j.reply || "Okay.", support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null };
+      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress };
     } catch {} }
-    // No parseable envelope: treat the reply as support, and if the user's raw
-    // text validates, offer it as the answer so the flow never dead-ends.
-    const err = validate(field, userText);
-    if (!err && userText.trim()) return { reply: `I'll record "${userText.trim()}" — does that look right?`, support: false, ready: true, extracted: userText.trim() };
-    return { reply: raw.trim() || "Tell me a little more?", support: true, ready: false, extracted: null };
+    // No parseable envelope: rather than dead-ending the conversation on a
+    // fallible small model, fall back to the person's own raw text if it
+    // already satisfies the field on its own.
+    const err = validate(field, userText, this.lang);
+    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false };
+    return { support: true, ready: false, extracted: null, distress: false };
   }
 }
 
@@ -2772,6 +3067,16 @@ function onIntake(kind, data) {
 
 function renderMessage(m) {
   const isUser = m.role === "user";
+  // Banner messages (the mandatory closing block, the 180-day filing
+  // warning) are vivid, standalone sections, not a normal chat bubble —
+  // required so they can't be skimmed past like an ordinary reply.
+  if (m.banner) {
+    const box = el("div", "msg-banner" + (m.warn ? " warn" : ""));
+    box.textContent = m.text;
+    $("stream").appendChild(box);
+    scrollChat();
+    return box;
+  }
   const group = el("div", "msg-group " + (isUser ? "end" : "start"));
   const avatar = el("span", "avatar " + (isUser ? "user" : "ai"));
   avatar.textContent = isUser ? "U" : "◈";
@@ -2813,9 +3118,11 @@ function renderTyping() {
   $("stream").appendChild(group); scrollChat(); return group;
 }
 
-// As stream tokens arrive, morph the typing-dots bubble into the live reply
-// text (see extractPartialReply() in model.js) instead of waiting for the
-// full completion before showing anything.
+// Unused by the current turn loop (the model only classifies now, so there's
+// no partial reply text to morph the typing-dots bubble into token by
+// token — the dots just wait for the one mechanical reply). Left in place
+// since "message"/"token" is still a documented Intake event pair a future
+// backend could use for genuine incremental output.
 function updateStreamingText(node, text) {
   const dots = node.querySelector(".typing");
   const streamText = node.querySelector(".stream-text");
@@ -2988,7 +3295,7 @@ function initUserWizard() {
   }, {
     steps: () => intake.schema.fields.map((f) => ({
       key: f.path, label: f.label, help: f.help, type: f.type, required: f.required, enum: f.enum,
-      validate: (v) => validate(f, v),
+      validate: (v) => validate(f, v, intake?.lang || "en"),
     })),
     onStep: (path, value) => {
       if (!String(value ?? "").trim()) return; // optional + left blank: nothing to store
@@ -3050,6 +3357,119 @@ function wireCompose() {
   input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px"; });
 }
 
+// ── Voice input (speak your answer) ──
+//
+// Whisper transcribes locally; the transcript lands in the compose box for
+// the person to read and edit before they send it, same as if they'd typed
+// it — voice never bypasses review. The raw recording is kept (encrypted)
+// so staff can later confirm the transcript matched what was actually said;
+// see saveVoiceClip(). Disclosed up front via #voiceNote, not buried.
+let voiceInstance = null;
+let voiceModelDownloaded = false;
+
+function voiceCopy(key) {
+  const es = intake?.lang === "es";
+  const C = {
+    consent: es
+      ? "Si usas el micrófono, tu grabación se guarda de forma segura para poder verificar que la transcripción sea correcta."
+      : "If you use the microphone, your recording is saved securely so we can double-check the transcript is accurate.",
+    recording: es ? "Grabando… toca de nuevo para detener." : "Recording… tap again to stop.",
+    downloading: es ? "Preparando el modelo de voz (descarga única)…" : "Preparing the speech model (one-time download)…",
+    transcribing: es ? "Transcribiendo…" : "Transcribing…",
+    micDenied: es ? "Se necesita permiso del micrófono para hablar tu respuesta." : "Microphone permission is needed to speak an answer.",
+    micFailed: es ? "No se pudo transcribir. Puedes escribir en su lugar." : "Couldn't transcribe — you can type instead.",
+  };
+  return C[key];
+}
+
+function setVoiceNote(text) {
+  const note = document.getElementById("voiceNote");
+  if (!note) return;
+  if (!text) { note.classList.add("hidden"); note.textContent = ""; return; }
+  note.textContent = text;
+  note.classList.remove("hidden");
+}
+
+function wireVoice() {
+  const btn = document.getElementById("micBtn");
+  if (!btn) return;
+  if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
+  btn.hidden = false;
+  setVoiceNote(voiceCopy("consent"));
+
+  btn.onclick = async () => {
+    if (!voiceInstance || voiceInstance.state === "idle") {
+      voiceInstance = Voice.createVoice({
+        lang: intake?.lang || "en",
+        onState: (s) => {
+          btn.classList.toggle("recording", s === "recording");
+          btn.classList.toggle("busy", s === "transcribing");
+          btn.disabled = s === "transcribing";
+          if (s === "recording") setVoiceNote(voiceCopy("recording"));
+          else if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
+          else setVoiceNote(voiceCopy("consent"));
+        },
+        onProgress: (frac) => {
+          voiceModelDownloaded = frac >= 1;
+          if (frac < 1) setVoiceNote(`${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+        },
+      });
+      try { await voiceInstance.start(); }
+      catch (e) { setVoiceNote(voiceCopy(e && e.name === "NotAllowedError" ? "micDenied" : "micFailed")); }
+      return;
+    }
+    if (voiceInstance.state === "recording") {
+      try {
+        const { text, blob } = await voiceInstance.stop();
+        setVoiceNote(voiceCopy("consent"));
+        if (text) {
+          const input = document.getElementById("input");
+          input.value = input.value.trim() ? input.value.trim() + " " + text : text;
+          input.dispatchEvent(new Event("input"));
+          input.focus();
+        }
+        if (blob) await saveVoiceClip(blob, text);
+      } catch (e) {
+        setVoiceNote(voiceCopy("micFailed"));
+      }
+    }
+  };
+
+  document.getElementById("input").addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && voiceInstance && voiceInstance.state === "recording") {
+      voiceInstance.cancel();
+      setVoiceNote(voiceCopy("consent"));
+    }
+  });
+}
+
+// Encrypted, same pipeline as an uploaded document (encryptBytes + the
+// current media backend) — a voice clip is just another piece of encrypted
+// media, tagged with which field it answered and what it was transcribed
+// as, for a later side-by-side accuracy check.
+async function saveVoiceClip(blob, transcript) {
+  if (!store || !intake) return;
+  try {
+    const buf = await blob.arrayBuffer();
+    const { ciphertext, key, iv, hash } = await encryptBytes(buf);
+    const id = newId("voice");
+    const url = await mediaBackend().put(id, ciphertext);
+    const field = intake.nextField();
+    store.emit(OP.INS, {
+      entity: "voice_clip", id,
+      attrs: {
+        fieldPath: field ? field.path : null,
+        transcript, mimetype: blob.type || "audio/webm", size: blob.size,
+        url, key, iv, hash, lang: intake.lang,
+      },
+    });
+  } catch (e) {
+    // Never block the person's answer on this — the transcript is already
+    // in the composer either way, and they can keep going regardless.
+    console.warn("Couldn't save voice recording for audit:", e);
+  }
+}
+
 // ── Context inspector ──
 function renderFold(data) {
   if (!data) return;
@@ -3106,6 +3526,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx()
 
 // ── Controls ──
 $("modelSel").onchange = boot;
+$("langSel").onchange = boot;
 $("resetBtn")?.addEventListener("click", async () => {
   if (!confirm("Clear all stored answers?")) return;
   if (store.reset) await store.reset();
@@ -3116,6 +3537,205 @@ $("resetBtn")?.addEventListener("click", async () => {
 
 // ── Login state ──
 let loginState = null;
+
+// ── Silent account provisioning ──
+//
+// "Do not require them to knowingly create an account." A constituent never
+// sees a sign-up form: they pick a language, and a private hyphae.social
+// account is registered for them underneath, using the exact same
+// Matrix User-Interactive Auth flow the visible sign-up wizard below uses —
+// just driven by code instead of a person clicking through four steps.
+// This only works because hyphae.social's registration flow is a single
+// m.login.dummy stage (verified: POSTing {} to its /register endpoint
+// returns {"flows":[{"stages":["m.login.dummy"]}]} — no captcha, no email
+// verification). If that ever changes to a flow with a human-only stage
+// (recaptcha, terms-click), registerSilentAccount() throws and the caller
+// falls back to local-only (in-browser) storage rather than get stuck.
+const HYPHAE_HS = "https://hyphae.social";
+const SILENT_ACCOUNT_KEY = "eo.silentAccount";
+const LANG_CHOICE_KEY = "eo.lang";
+const SILENT_STAGES = new Set(["m.login.dummy", "m.login.terms"]);
+
+function randomStrongPassword() {
+  const charset = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  let pw = "";
+  for (let i = 0; i < bytes.length; i++) pw += charset.charAt(bytes[i] % charset.length);
+  return pw;
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), ms)),
+  ]);
+}
+
+// Same UIA request/response shape as suCreateAccount() below, generalized to
+// any homeserver and driven without a human clicking through steps. Retries
+// automatically on a username collision (there's no one to ask to pick a
+// different one) instead of surfacing that as a failure.
+async function registerSilentAccount(homeserver) {
+  const startRes = await fetch(`${homeserver}/_matrix/client/v3/register`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+  });
+  const startData = await startRes.json();
+  if (startRes.status !== 401 || !startData.session) throw new Error(startData.error || "Could not start registration");
+  const flow = (startData.flows && startData.flows[0] && startData.flows[0].stages) || [];
+  if (!flow.every((s) => SILENT_STAGES.has(s))) throw new Error("This homeserver's sign-up needs a human step — can't provision silently.");
+
+  const password = randomStrongPassword();
+  let session = startData.session;
+  let completed = [];
+  let username = suRandomUsername();
+  let usernameRetries = 0;
+
+  for (let guard = 0; guard < flow.length + 6; guard++) {
+    const stage = flow.find((s) => !completed.includes(s));
+    if (!stage) break;
+    const res = await fetch(`${homeserver}/_matrix/client/v3/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, initial_device_display_name: "Intake (private session)", auth: { type: stage, session } }),
+    });
+    const data = await res.json();
+    if (res.ok) return { ...data, password };
+    if (data.errcode === "M_USER_IN_USE" && usernameRetries++ < 5) { username = suRandomUsername(); continue; }
+    if (!data.session) throw new Error(data.error || "Registration failed.");
+    session = data.session;
+    completed = data.completed || [...completed, stage];
+  }
+  throw new Error("Registration didn't complete.");
+}
+
+// Mirrors suSetupClientFromRegistration() below but parameterized by
+// homeserver, since this runs before any wizard state exists.
+async function setupSilentClient(homeserver, registered) {
+  const sdk = window.matrixcs;
+  const client = sdk.createClient({
+    baseUrl: homeserver, accessToken: registered.access_token,
+    userId: registered.user_id, deviceId: registered.device_id,
+  });
+  await initClientCrypto(client);
+  client.startClient({ initialSyncLimit: 50 });
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
+    client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
+  });
+  return client;
+}
+
+function saveSilentAccount(homeserver, registered) {
+  try {
+    localStorage.setItem(SILENT_ACCOUNT_KEY, JSON.stringify({
+      homeserver, userId: registered.user_id, password: registered.password,
+      deviceId: registered.device_id, accessToken: registered.access_token,
+    }));
+  } catch {}
+}
+
+function loadSilentAccount() {
+  try { return JSON.parse(localStorage.getItem(SILENT_ACCOUNT_KEY) || "null"); } catch { return null; }
+}
+
+// Resume a previously auto-created account. Tries the saved access token
+// first (fast path — no network round trip to re-authenticate); if that's
+// expired, falls back to a fresh password login with the saved password
+// before giving up. The person never sees any of this — they either land
+// straight back in their conversation, or (rarely) a new account gets
+// quietly created and today becomes a fresh start.
+async function tryResumeSilentAccount(saved) {
+  const sdk = window.matrixcs;
+  if (!sdk) return null;
+  try {
+    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId });
+    await initClientCrypto(client);
+    client.startClient({ initialSyncLimit: 50 });
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timeout")), 15000);
+      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
+    });
+    return client;
+  } catch {
+    try {
+      const tmp = sdk.createClient({ baseUrl: saved.homeserver });
+      const res = await tmp.loginWithPassword(saved.userId, saved.password);
+      const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: res.access_token, userId: res.user_id, deviceId: res.device_id });
+      await initClientCrypto(client);
+      client.startClient({ initialSyncLimit: 50 });
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("timeout")), 15000);
+        client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
+      });
+      saveSilentAccount(saved.homeserver, { user_id: res.user_id, password: saved.password, device_id: res.device_id, access_token: res.access_token });
+      return client;
+    } catch { return null; }
+  }
+}
+
+// ── Entry: language gate → straight into the conversation ──
+//
+// Replaces showLogin() as the cold-boot default. Staff still reach the
+// original account-first loginScreen via the small "Staff sign-in" link.
+function showLangGate() { document.getElementById("langGate").classList.remove("hidden"); }
+function hideLangGate() { document.getElementById("langGate").classList.add("hidden"); }
+function showEntryLoader(text) { document.getElementById("entryLoaderText").textContent = text; document.getElementById("entryLoader").classList.remove("hidden"); }
+function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
+
+async function initEntry() {
+  const saved = loadSilentAccount();
+  if (saved) {
+    showEntryLoader("Welcome back — reconnecting…");
+    const client = await tryResumeSilentAccount(saved).catch(() => null);
+    hideEntryLoader();
+    if (client) {
+      loginState = { kind: "matrix", client, userId: saved.userId };
+      const savedLang = (() => { try { return localStorage.getItem(LANG_CHOICE_KEY); } catch { return null; } })();
+      if (savedLang) document.getElementById("langSel").value = savedLang;
+      hideLogin();
+      boot();
+      return;
+    }
+    // Saved credentials no longer work (account deleted server-side, etc.) —
+    // fall through to a normal fresh start rather than get stuck.
+  }
+  showLangGate();
+}
+
+function wireLangGate() {
+  document.getElementById("langEnBtn").onclick = () => chooseLang("en");
+  document.getElementById("langEsBtn").onclick = () => chooseLang("es");
+  document.getElementById("langStaffLink").onclick = () => { hideLangGate(); showLogin(); };
+}
+
+async function chooseLang(lang) {
+  try { localStorage.setItem(LANG_CHOICE_KEY, lang); } catch {}
+  document.getElementById("langSel").value = lang;
+  hideLangGate();
+  await startConstituentSession(lang);
+}
+
+// Tries a quick (4s-capped) silent registration before first paint so the
+// chat never has to reboot mid-conversation to switch storage backends. If
+// hyphae.social is slow or unreachable, falls back to local-only (in-browser)
+// storage immediately rather than make anyone wait on it — their answers are
+// never lost, they just aren't synced to an account yet this session.
+async function startConstituentSession(lang) {
+  showEntryLoader(lang === "es" ? "Preparando tu sesión privada…" : "Setting up your private session…");
+  let ready = false;
+  try {
+    const registered = await withTimeout(registerSilentAccount(HYPHAE_HS), 4000);
+    const client = await withTimeout(setupSilentClient(HYPHAE_HS, registered), 6000);
+    saveSilentAccount(HYPHAE_HS, registered);
+    loginState = { kind: "matrix", client, userId: registered.user_id };
+    ready = true;
+  } catch (e) {
+    console.warn("Silent account provisioning skipped for now — continuing on local storage:", e);
+  }
+  if (!ready) loginState = { kind: "demo", userId: "@demo:local" };
+  hideEntryLoader();
+  hideLogin();
+  await boot();
+}
 
 // ── Chat system (E2EE via Matrix) ──
 let chatMessages = [];
@@ -3175,38 +3795,85 @@ function listenForChatMessages(client, roomId) {
 }
 
 // ── Submission view ──
+// The submitted flag rides the same event log as every answer (a DEF under
+// a reserved, non-schema path) rather than a separate mechanism — it's
+// metadata about the intake, not a new kind of thing the store has to know
+// about. nextField()/progress() only ever scan schema.fields, so this extra
+// key in answers() is invisible to them.
+const SUBMITTED_FLAG_PATH = "_submitted";
+function isSubmitted() { return !!intake?.answers()?.[SUBMITTED_FLAG_PATH]; }
+function markSubmitted() { intake.store.emit(OP.DEF, { anchor: intake.anchor, path: SUBMITTED_FLAG_PATH, value: true }); }
+
+// This view is the person's own review of their own answers — never a
+// formatted complaint letter. Nothing here, or anywhere in this app, renders
+// the actual drafted document; that's assembled from these answers later,
+// by staff, and reviewed with Representative Behn's office before anything
+// is filed. Every field is directly editable right up until submit, and
+// still editable afterward (re-submitting just clears the flag).
 function renderSubmission() {
   const pane = document.getElementById("submissionPane");
   if (!pane || !intake) return;
   const answers = intake.answers();
   const schema = intake.schema;
+  const submitted = isSubmitted();
+  const complete = intake.isComplete();
+  const es = intake.lang === "es";
   pane.innerHTML = `
     <div style="max-width:720px;margin:0 auto;padding:20px 24px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <button onclick="document.getElementById('submissionPane').classList.add('hidden');document.getElementById('appWrap').classList.remove('hidden')" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">← Back</button>
-        <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">Your submission</h2>
-        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).length} fields completed</span>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <button id="subBackBtn" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">${es ? "← Volver" : "← Back"}</button>
+        <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">${es ? "Revisa tus respuestas" : "Review your answers"}</h2>
+        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH).length}/${schema.fields.length}</span>
       </div>
+      <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5">${es
+        ? "Estas son tus respuestas, no el documento final. El personal usará esto para preparar un borrador, y nunca se te mostrará ese borrador aquí. Puedes corregir cualquier respuesta ahora, o después."
+        : "These are your answers, not the final document. Staff will use this to prepare a draft, and that draft is never shown to you here. You can fix any answer now, or later."}</p>
+      ${submitted ? `<div class="msg-banner" style="margin:0 0 16px">${es ? "Enviado para revisión. Aún puedes corregir cualquier respuesta." : "Submitted for review. You can still fix any answer."}</div>` : ""}
       ${currentStoreKind === "demo" ? `
         <div class="demo-bar" style="margin:0 0 16px">
-          <span class="txt"><b>This submission isn't filed anywhere.</b> Demo answers stay in this browser. Create a free account and sign in to store it encrypted under your own login, then submit it for real.</span>
-          <button class="go" id="subSignup">Create account</button>
+          <span class="txt"><b>${es ? "Esto aún no está guardado de forma segura." : "This isn't saved securely yet."}</b> ${es ? "Tus respuestas viven solo en este navegador por ahora." : "Your answers live only in this browser for now."}</span>
         </div>` : ""}
-      ${schema.fields.map(f => {
+      ${schema.fields.map((f) => {
         const val = answers[f.path];
-        return `<div style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
-          <div style="font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:2px">${f.label}</div>
-          <div style="font-size:13.5px">${val != null && val !== "" ? val : '<span style="color:var(--muted);font-style:italic">Not provided</span>'}</div>
+        const label = (es && f.labelEs) ? f.labelEs : f.label;
+        return `<div class="sub-field" data-path="${escAttr(f.path)}" style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px">
+            <span style="font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)">${escAttr(label)}</span>
+            <button class="sub-edit iconbtn" style="font-size:10.5px">${es ? "Editar" : "Edit"}</button>
+          </div>
+          <div style="font-size:13.5px;white-space:pre-wrap">${val != null && val !== "" ? escAttr(val) : `<span style="color:var(--muted);font-style:italic">${es ? "No proporcionado" : "Not provided"}</span>`}</div>
         </div>`;
       }).join("")}
       ${(store?.timeline?.() || []).filter(e => e.op==="INS" && e.payload?.entity==="document").length > 0 ? `
-        <h3 style="font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:16px 0 8px">Uploaded documents</h3>
+        <h3 style="font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:16px 0 8px">${es ? "Documentos subidos" : "Uploaded documents"}</h3>
         ${store.timeline().filter(e => e.op==="INS" && e.payload?.entity==="document").map(e => `
-          <div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">${e.payload.attrs.filename} (${(e.payload.attrs.size/1024).toFixed(1)} KB)</div>
+          <div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">${escAttr(e.payload.attrs.filename)} (${(e.payload.attrs.size/1024).toFixed(1)} KB)</div>
         `).join("")}` : ""}
+      <div style="margin-top:18px">
+        <button id="subSubmitBtn" class="login-btn primary" ${complete ? "" : "disabled"}>${submitted ? (es ? "Enviado ✓" : "Submitted ✓") : (es ? "Enviar para revisión" : "Submit for review")}</button>
+        ${!complete ? `<p style="color:var(--muted);font-size:12px;margin-top:6px">${es ? "Responde todo lo obligatorio antes de enviar." : "Finish the required questions before submitting."}</p>` : ""}
+      </div>
     </div>`;
-  const subSignup = document.getElementById("subSignup");
-  if (subSignup) subSignup.onclick = openSignupWizard;
+  document.getElementById("subBackBtn").onclick = () => {
+    document.getElementById("submissionPane").classList.add("hidden");
+    document.getElementById("appWrap").classList.remove("hidden");
+  };
+  pane.querySelectorAll(".sub-edit").forEach((btn) => {
+    btn.onclick = async () => {
+      const path = btn.closest(".sub-field").dataset.path;
+      const field = schema.fields.find((f) => f.path === path);
+      const cur = intake.answers()[path] ?? "";
+      const next = await openInlineEditor(field, cur);
+      if (next == null) return;
+      const r = intake.editField(path, next);
+      if (!r.ok) { toast(r.error, "error"); return; }
+      renderSubmission();
+    };
+  });
+  const submitBtn = document.getElementById("subSubmitBtn");
+  if (submitBtn && complete && !submitted) {
+    submitBtn.onclick = () => { markSubmitted(); toast(es ? "Enviado para revisión" : "Submitted for review", "success"); renderSubmission(); };
+  }
 }
 
 // ── Login flow ──
@@ -3882,12 +4549,18 @@ async function _bootAfterStore() {
   // in to create the shared config room — configStore.roomId is null in that
   // case. Read-only defaults are fine; only the admin's session seeds the room.
   const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
-  const schema = { id:cfg.schema.id, title:cfg.schema.title, blurb:cfg.schema.blurb||"", fields:cfg.schema.fields.length?cfg.schema.fields:[] };
+  const schema = {
+    id: cfg.schema.id, title: cfg.schema.title, blurb: cfg.schema.blurb || "",
+    titleEs: cfg.schema.titleEs || "", blurbEs: cfg.schema.blurbEs || "",
+    fields: cfg.schema.fields.length ? cfg.schema.fields : [],
+  };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
-  intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM });
-  document.getElementById("docTitle").textContent = schema.title;
-  document.getElementById("wizTitle").textContent = schema.title;
+  const lang = document.getElementById("langSel").value === "es" ? "es" : "en";
+  intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM, lang });
+  const displayTitle = (lang === "es" && schema.titleEs) ? schema.titleEs : schema.title;
+  document.getElementById("docTitle").textContent = displayTitle;
+  document.getElementById("wizTitle").textContent = displayTitle;
   document.getElementById("stream").innerHTML = ""; document.getElementById("ledger").innerHTML = "";
 
   intake.on(onIntake);
@@ -4021,9 +4694,11 @@ function renderQPanel() {
     <div class="q-grid">
       <div class="q-col">
         <div class="q-card"><div class="qh">Branding</div>
-          <div class="body"><p class="note">The document title and intro message every applicant sees first.</p>
-            <div class="fieldgrp"><label class="lab">Title</label><input class="f" id="brandTitle" value="${escAttr(cfg.schema.title)}"></div>
-            <div class="fieldgrp"><label class="lab">Intro / blurb</label><textarea class="f" id="brandBlurb" rows="3">${escAttr(cfg.schema.blurb)}</textarea></div>
+          <div class="body"><p class="note">The document title and intro message every applicant sees first, in both languages the conversation supports.</p>
+            <div class="fieldgrp"><label class="lab">Title (English)</label><input class="f" id="brandTitle" value="${escAttr(cfg.schema.title)}"></div>
+            <div class="fieldgrp"><label class="lab">Título (Español)</label><input class="f" id="brandTitleEs" value="${escAttr(cfg.schema.titleEs || "")}"></div>
+            <div class="fieldgrp"><label class="lab">Intro / blurb (English)</label><textarea class="f" id="brandBlurb" rows="3">${escAttr(cfg.schema.blurb)}</textarea></div>
+            <div class="fieldgrp"><label class="lab">Introducción (Español)</label><textarea class="f" id="brandBlurbEs" rows="3">${escAttr(cfg.schema.blurbEs || "")}</textarea></div>
             <div class="btns"><button class="primary" id="brandSaveBtn">Save branding</button></div>
           </div>
         </div>
@@ -4056,6 +4731,8 @@ function renderQPanel() {
   document.getElementById("brandSaveBtn").onclick = (e) => {
     setMeta(configStore, "title", document.getElementById("brandTitle").value.trim() || "Feedback Platform");
     setMeta(configStore, "blurb", document.getElementById("brandBlurb").value.trim());
+    setMeta(configStore, "titleEs", document.getElementById("brandTitleEs").value.trim());
+    setMeta(configStore, "blurbEs", document.getElementById("brandBlurbEs").value.trim());
     e.target.closest(".q-card").classList.remove("dirty"); updateQStatus();
     toast("Branding saved");
   };
@@ -4092,8 +4769,10 @@ function renderQPanel() {
     card.appendChild(head);
     const b = document.createElement("div"); b.className = "qbody";
     b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${escAttr(f.label)}"></div>
-      <div class="fieldgrp"><label class="lab">Prompt</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
-      <div class="fieldgrp"><label class="lab">Help</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Prompt (English)</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help (English)</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Prompt (Español)</label><textarea class="f" id="qpEs_${f.path}" rows="2">${escAttr(f.promptEs || "")}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help (Español)</label><textarea class="f" id="qhEs_${f.path}" rows="2">${escAttr(f.helpEs || "")}</textarea></div>
       <div class="btns"><button class="primary" data-path="${f.path}" onclick="saveFieldQ(this)">Save</button><button class="danger" data-path="${f.path}" onclick="deleteFieldQ(this)">Delete</button></div>`;
     card.appendChild(b);
     head.onclick = () => { const d=b.style.display; b.style.display=d==="none"?"block":"none"; };
@@ -4152,7 +4831,20 @@ function renderQPanel() {
 
 function saveFieldQ(btn) {
   const path = btn.dataset.path;
-  putField(configStore, { path, label: (document.getElementById("ql_"+path)?.value||path).trim(), type:"text", required:false, prompt: (document.getElementById("qp_"+path)?.value||"").trim(), help: (document.getElementById("qh_"+path)?.value||"").trim() });
+  // Preserve type/required/enum from the existing field — this editor only
+  // touches wording. Previously it silently overwrote them with
+  // type:"text", required:false, which downgraded (and lost the enum
+  // options of) any non-text field the moment its prompt was edited.
+  const existing = foldConfig(configStore.timeline()).schema.fields.find((f) => f.path === path) || {};
+  putField(configStore, {
+    ...existing,
+    path,
+    label: (document.getElementById("ql_"+path)?.value || path).trim(),
+    prompt: (document.getElementById("qp_"+path)?.value || "").trim(),
+    help: (document.getElementById("qh_"+path)?.value || "").trim(),
+    promptEs: (document.getElementById("qpEs_"+path)?.value || "").trim(),
+    helpEs: (document.getElementById("qhEs_"+path)?.value || "").trim(),
+  });
   btn.closest(".q")?.classList.remove("dirty");
   updateQStatus();
   toast("Saved");
@@ -4243,6 +4935,10 @@ function questionWizardSteps(values) {
       help: "The question as shown/spoken to the applicant." },
     { key: "help", label: "Any extra guidance?", type: "textarea", required: false,
       help: "Shown alongside the question to help the applicant answer." },
+    { key: "promptEs", label: "Spanish version of the question (optional)", type: "textarea", required: false,
+      help: "Shown when the applicant is using the app in Spanish. Leave blank to fall back to the English prompt." },
+    { key: "helpEs", label: "Spanish version of the guidance (optional)", type: "textarea", required: false,
+      help: "Leave blank to fall back to the English guidance." },
     { key: "required", label: "Is answering this required to finish the intake?", type: "boolean", required: true, initial: true },
   );
   return steps;
@@ -4263,6 +4959,8 @@ function initQuestionWizard() {
         path, label: values.label.trim(), type: values.type, required: values.required !== false,
         prompt: (values.prompt || "").trim() || values.label.trim() + "?",
         help: (values.help || "").trim(),
+        promptEs: (values.promptEs || "").trim(),
+        helpEs: (values.helpEs || "").trim(),
       };
       if (values.type === "enum") field.enum = String(values.enumOptions).split("\n").map((s) => s.trim()).filter(Boolean);
       putField(configStore, field);
@@ -4290,14 +4988,16 @@ function closeQuestionWizard() {
 // ── Init ──
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
+  wireLangGate();
   wireCompose();
+  wireVoice();
   wireDocs();
   wireChat();
   wireNewNav();
   wireQPanelDirtyTracking();
   initUserWizard();
   initQuestionWizard();
-  showLogin();
+  initEntry();
 });
 
 </script></body></html>
