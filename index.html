@@ -4570,10 +4570,12 @@ async function _bootAfterStore() {
   renderLedgerFromTimeline();
   renderSide(); renderDocs();
 
-  // "Demo" carries no model at all, so it gets the plain step-by-step form
-  // wizard instead of a scripted chat; a real local model (Llama/Ollama)
-  // gets the interactive chat.
-  flowMode = modelKind === "echo";
+  // EchoModel (the "Demo" backend) classifies turns just like a real model
+  // does now (see vendor/steer.js) — it needs no GPU download or Ollama
+  // server, so the interactive chat can start immediately regardless of
+  // which backend is selected. The step-by-step form wizard is legacy and
+  // no longer wired up as the default.
+  flowMode = false;
   document.querySelector(".chat").classList.toggle("hidden", flowMode);
   document.getElementById("wizardPane").classList.toggle("hidden", !flowMode);
   // "View folded context" shows AI prompt-assembly internals — irrelevant
