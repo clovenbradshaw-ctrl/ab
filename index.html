@@ -13,6 +13,7 @@
      vendor/README.md to rebuild/upgrade it) that includes the Rust crypto
      backend needed for real E2EE. -->
 <script src="vendor/matrix-sdk-bundle.js"></script>
+<script src="vendor/steer.js"></script>
 <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
@@ -624,7 +625,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>Feedback Platform</h1><span class="sub">agency service complaint</span></a>
     <span class="spacer"></span>
     <div class="setup">
-      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Llama 3.2 1B</option><option value="ollama">☀ Ollama</option></select>
+      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Qwen2.5 0.5B (smallest)</option><option value="ollama">☀ Ollama</option></select>
+      <select id="langSel" title="Conversation language"><option value="en" selected>English</option><option value="es">Español</option></select>
       <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
       <button id="ctxBtn" class="icon-btn" title="View folded context">⊡</button>
       <button id="submissionBtn" title="View my submission" style="display:none">📋</button>
@@ -858,10 +860,16 @@ function isEncrypted(value) {
 }
 
 
+// Every field carries an English prompt/help and its Spanish counterpart
+// (promptEs/helpEs). These are schema-authored text — same trust level as
+// the English versions — never generated. Steer.pickReply() falls back to
+// English if a custom admin-authored field skips the Es variant.
 const SCHEMA = {
   id: "agency-complaint",
   title: "Agency service complaint",
+  titleEs: "Queja sobre servicio de una agencia",
   blurb: "We'll walk through the details of your experience with the government agency. Nothing is saved until you confirm it, and you can stop and come back anytime.",
+  blurbEs: "Repasaremos juntos los detalles de tu experiencia con la agencia gubernamental. No se guarda nada hasta que lo confirmes, y puedes detenerte y volver cuando quieras.",
   fields: [
     {
       path: "full_name",
@@ -869,7 +877,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "Let's start. What's your full name so we know who's filing this?",
+      promptEs: "Empecemos. ¿Cuál es tu nombre completo, para saber quién presenta esto?",
       help: "First and last name is fine. If you'd prefer to remain anonymous, you can say 'anonymous' and we'll note it.",
+      helpEs: "Basta con tu nombre y apellido. Si prefieres quedar en el anonimato, puedes decir 'anónimo' y lo anotaremos.",
     },
     {
       path: "contact_email",
@@ -877,7 +887,9 @@ const SCHEMA = {
       type: "email",
       required: false,
       prompt: "What email address should we use to follow up with you?",
+      promptEs: "¿Qué dirección de correo electrónico debemos usar para dar seguimiento contigo?",
       help: "We'll only use this to communicate about your complaint. If you'd rather not share it, just say so.",
+      helpEs: "Solo la usaremos para hablar sobre tu queja. Si prefieres no compartirla, solo dilo.",
     },
     {
       path: "agency_name",
@@ -885,7 +897,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "Which government agency or department are you filing a complaint about?",
+      promptEs: "¿Sobre qué agencia o departamento del gobierno es tu queja?",
       help: "The full name if you know it — e.g. 'Department of Motor Vehicles', 'Social Security Administration', 'City Housing Authority'. An acronym is fine if that's what you know it by.",
+      helpEs: "El nombre completo si lo sabes — por ejemplo, 'Departamento de Vehículos Motorizados', 'Administración del Seguro Social', 'Autoridad de Vivienda de la Ciudad'. Un acrónimo está bien si así lo conoces.",
     },
     {
       path: "agency_level",
@@ -894,7 +908,9 @@ const SCHEMA = {
       enum: ["Federal", "State", "County / City / Local", "Tribal", "Not sure"],
       required: true,
       prompt: "Is this a federal, state, or local agency?",
+      promptEs: "¿Es una agencia federal, estatal o local?",
       help: "Federal agencies include things like the IRS, SSA, USCIS, VA. State includes DMV, state health departments. Local includes city hall, county clerk, school boards.",
+      helpEs: "Las agencias federales incluyen cosas como el IRS, el Seguro Social, USCIS, VA. Las estatales incluyen el DMV o los departamentos de salud estatales. Las locales incluyen el ayuntamiento, la secretaría del condado, las juntas escolares.",
     },
     {
       path: "service_sought",
@@ -902,7 +918,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "What service, benefit, or assistance were you trying to get from this agency?",
+      promptEs: "¿Qué servicio, beneficio o ayuda intentabas obtener de esta agencia?",
       help: "Be as specific as you're comfortable with — e.g. 'a driver's license renewal', 'food stamp benefits', 'a building permit', 'my tax refund'. If this has been going on a while, tell us what it started as.",
+      helpEs: "Sé tan específico/a como te sientas cómodo/a — por ejemplo, 'la renovación de una licencia de conducir', 'beneficios de cupones de alimentos', 'un permiso de construcción', 'mi reembolso de impuestos'. Si esto lleva tiempo pasando, cuéntanos cómo empezó.",
     },
     {
       path: "incident_date",
@@ -910,7 +928,9 @@ const SCHEMA = {
       type: "date",
       required: true,
       prompt: "When did you first try to get this service or first experience the problem?",
+      promptEs: "¿Cuándo intentaste por primera vez obtener este servicio, o cuándo empezó el problema?",
       help: "An approximate date is fine if you don't remember the exact day. We just need a general timeframe.",
+      helpEs: "Una fecha aproximada está bien si no recuerdas el día exacto. Solo necesitamos una idea general del momento.",
     },
     {
       path: "communication_failures",
@@ -918,7 +938,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "Tell us about how the agency communicated with you — or didn't. Were calls returned? Did you get conflicting information? Were you left waiting without updates?",
+      promptEs: "Cuéntanos cómo se comunicó la agencia contigo — o cómo no lo hizo. ¿Te devolvían las llamadas? ¿Recibiste información contradictoria? ¿Te dejaron esperando sin noticias?",
       help: "Common issues: no response to calls or emails, long hold times, being transferred between departments, getting different answers from different staff, not being told about delays, language barriers, no accommodation for disabilities.",
+      helpEs: "Problemas comunes: no responder llamadas ni correos, largas esperas, transferencias entre departamentos, respuestas distintas según quién atienda, no avisar de retrasos, barreras de idioma, falta de adaptación para personas con discapacidad.",
     },
     {
       path: "service_failure",
@@ -926,7 +948,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "What specifically did the agency fail to do or provide? What should have happened that didn't?",
+      promptEs: "¿Qué fue exactamente lo que la agencia no hizo o no te dio? ¿Qué debía pasar y no pasó?",
       help: "Examples: never processed an application past the deadline, denied a benefit you believe you qualify for, lost your paperwork, refused to provide a service available to others, didn't make reasonable accommodations.",
+      helpEs: "Ejemplos: nunca procesaron una solicitud dentro del plazo, negaron un beneficio que crees merecer, perdieron tu papeleo, se negaron a dar un servicio disponible para otros, no hicieron ajustes razonables.",
     },
     {
       path: "attempts_to_resolve",
@@ -934,7 +958,9 @@ const SCHEMA = {
       type: "text",
       required: false,
       prompt: "Have you tried to resolve this already? If so, what steps have you taken and what happened?",
+      promptEs: "¿Ya intentaste resolver esto? Si es así, ¿qué pasos diste y qué pasó?",
       help: "Include any complaints you've already filed, supervisors you've spoken to, appeals you've submitted, or elected officials you've contacted. Even if nothing came of it, it helps to know what's been tried.",
+      helpEs: "Incluye cualquier queja que ya hayas presentado, con qué supervisores hablaste, apelaciones que hayas hecho, o funcionarios electos que hayas contactado. Aunque no haya servido de nada, ayuda saber qué ya se intentó.",
     },
     {
       path: "impact",
@@ -942,7 +968,9 @@ const SCHEMA = {
       type: "text",
       required: true,
       prompt: "How has this agency's failure affected you or your household?",
+      promptEs: "¿Cómo te ha afectado a ti, o a tu hogar, esta falla de la agencia?",
       help: "This can include financial harm, health impacts, lost work, stress, inability to access necessities, missed opportunities. Everything you share helps document the real cost of the service failure.",
+      helpEs: "Puede incluir daño económico, efectos en la salud, pérdida de trabajo, estrés, no poder cubrir necesidades básicas, oportunidades perdidas. Todo lo que compartas ayuda a documentar el costo real de esta falla.",
     },
     {
       path: "desired_outcome",
@@ -950,7 +978,9 @@ const SCHEMA = {
       type: "text",
       required: false,
       prompt: "What would a good outcome look like from your perspective?",
+      promptEs: "¿Cómo se vería un buen resultado, desde tu punto de vista?",
       help: "The service you originally asked for? An apology? A policy change? Compensation? Reimbursement for costs incurred? There's no wrong answer — this is about what would make things right for you.",
+      helpEs: "¿El servicio que pediste originalmente? ¿Una disculpa? ¿Un cambio de política? ¿Una compensación? ¿El reembolso de gastos? No hay una respuesta incorrecta — se trata de lo que sentirías como justo para ti.",
     },
   ],
 };
@@ -1144,28 +1174,29 @@ function jaccard(a, b) {
   return inter / union.size;
 }
 
-function classifyTerrainStance(field, pending, discourse) {
-  const kws = keywords((field?.label || "") + " " + (field?.help || ""));
-  const userKws = keywords(discourse.filter((m) => m.role === "user").map((m) => m.text || "").join(" "));
-
-  const supportKws = new Set(["help", "what", "why", "explain", "mean", "unsure", "stuck", "dont", "doubt", "clarify"]);
-  const confirmKws = new Set(["confirm", "looks good", "correct", "right", "okay", "yes", "yes", "done", "finished"]);
-  const answerKws = new Set(["answer", "reply", "say", "tell", "provide", "fill", "enter", "type"]);
-
+// Typo-tolerant, bilingual: uses the same Steer.classifyIntent() the
+// confirmation step uses, so "does this look like a help request or a
+// confirmation" is answered identically everywhere in the app rather than
+// by a second, separately-tuned heuristic.
+function classifyTerrainStance(field, pending, discourse, lang = "en") {
   let active = discourse.filter((m) => m.epoch === Math.max(0, ...discourse.map((x) => x.epoch || 0)));
   const lastUser = [...active].reverse().find((m) => m.role === "user")?.text || "";
   const lastAssistant = [...active].reverse().find((m) => m.role === "assistant")?.text || "";
+  const intent = Steer.classifyIntent(lastUser, lang);
 
   if (pending) return { operator: OPERATORS.DEF, focus: "confirming" };
-  if (jaccard(userKws, supportKws) > 0.15) return { operator: OPERATORS.NUL, focus: "supporting" };
-  if (jaccard(userKws, confirmKws) > 0.15) return { operator: OPERATORS.EVA, focus: "evaluating" };
+  if (intent.help) return { operator: OPERATORS.NUL, focus: "supporting" };
+  if (intent.yes) return { operator: OPERATORS.EVA, focus: "evaluating" };
   if (field && lastAssistant && !lastUser) return { operator: OPERATORS.SEG, focus: "asking" };
   if (field && lastUser && !active.some((m) => m.support)) return { operator: OPERATORS.DEF, focus: "extracting" };
   return { operator: OPERATORS.NUL, focus: "listening" };
 }
 
-function classifyFocus({ field, pending, discourse = [] }) {
-  const { operator, focus } = classifyTerrainStance(field, pending, discourse);
+// The FOCUS block below is informational context for the model's
+// classification, not a style instruction — the model writes nothing, so
+// there's no "respond in a way that matches this mode" left to say.
+function classifyFocus({ field, pending, discourse = [], lang = "en" }) {
+  const { operator, focus } = classifyTerrainStance(field, pending, discourse, lang);
   return {
     operator,
     terrain: operator.terrain,
@@ -1173,12 +1204,11 @@ function classifyFocus({ field, pending, discourse = [] }) {
     focus,
     label: `${operator.terrain}/${operator.stance} · ${focus}`,
     system: `FOCUS: ${operator.terrain} / ${operator.stance} — ${focus}
-You are currently ${focus} the applicant about "${field?.label || "the intake"}". Respond in a way that matches this mode:
-- asking: present the question clearly, one at a time
-- supporting: explain, reassure, give examples
-- extracting: listen for the answer, normalize it
-- confirming: verify the extracted value before storing
-- evaluating: confirm the answer looks correct`,
+The person is in the "${focus}" phase of being asked about "${field?.label || "the intake"}". This shapes only how you classify — you write nothing the person will see:
+- supporting: they're asking a question or seem stuck; classify support=true, ready=false.
+- extracting: read their latest message as a candidate answer; if it's usable, set ready=true with the normalized value in extracted.
+- confirming / evaluating: they're responding to a yes/no confirmation of a value already extracted; a bare yes/no is enough to decide ready.
+- asking / listening: nothing to classify yet.`,
   };
 }
 
@@ -1299,16 +1329,28 @@ const DEMO_KNOWLEDGE = new KnowledgeStore([
 
 
 
+// This is the ENTIRE instruction the model ever gets, and note what it is
+// NOT asked to do: write anything. A fixed, hand-written script (see
+// vendor/steer.js — Steer.pickReply) is the only source of text the
+// person ever reads. The model's one job is to classify the latest
+// message about the current field, in whichever of the two supported
+// languages (or mix — code-switching is common) the person is using, and
+// however typo-ridden it is.
 const MINIMAL_SYSTEM =
-`You are a calm intake companion helping someone fill a sensitive document one field at a time. You are not a lawyer and give no legal advice.
-Work only on the current field. If they seem stuck or ask a question, help briefly (support=true, ready=false). When their message contains a usable answer, normalize it, set ready=true and extracted to the clean value, and ask them to confirm. Never invent facts; if unsure, ask one short question.
-Reply with ONLY a JSON object: {"reply":string,"support":boolean,"ready":boolean,"extracted":string|null}`;
+`You are the classification step behind a trauma-informed intake conversation. You never write a reply — a separate fixed script shows the person text, never you. Your only job is to read their latest message about CURRENT FIELD and classify it.
+The person may write in English or Spanish, sometimes both, often with typos or informal grammar — read past all of that for meaning.
+- support: true only if this message is a question, confusion, or a request for help rather than an attempt to answer.
+- distress: true only if the message itself signals the person may be in crisis or in immediate danger right now — not merely for describing past hardship, abuse, or trauma, which is expected and should NOT set this true.
+- ready: true once the message contains a usable answer for CURRENT FIELD.
+- extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
+Never invent facts about the person. When uncertain, leave ready false rather than guessing.
+Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean}`;
 
-function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null }) {
+function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null, lang = "en" }) {
   const B = { knowledge: 700, digest: 400, liveTurns: 6, ...budget };
   const answers = answersOf(fold(timeline), anchor);
 
-  const focus = classifyFocus({ field, pending, discourse });
+  const focus = classifyFocus({ field, pending, discourse, lang });
 
   const seed = field.help ? [{ topic: field.label, text: field.help }] : [];
   const know = knowledge
@@ -1337,6 +1379,7 @@ function assemble({ field, discourse = [], timeline = [], knowledge = null, sche
     { kind: "system", label: "Instructions", text: system },
     { kind: "focus", label: "Focus — how to steer", text: focus.system },
     { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}` },
+    { kind: "language", label: "Language", text: `LANGUAGE: ${lang}` },
   ];
   if (know.text) parts.push({ kind: "memory", label: `Reference — memory folded for this field (${know.items.length})`, text: `REFERENCE (folded for this field):\n${know.text}` });
   parts.push({ kind: "progress", label: "Progress + answer digest", text: `PROGRESS: ${done}/${total} captured.` + (digest ? `\nAlready recorded — do not re-ask:\n${digest}` : "") });
@@ -1400,39 +1443,40 @@ function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 // asking for it in the system prompt, we hand backends that support grammar-
 // constrained decoding this schema directly — output can't structurally be
 // anything else, and generation halts the instant it's satisfied. That's what
-// keeps a 1B model "on the rails": fast (no wasted tokens rambling past the
-// envelope, bounded by max_tokens/num_predict below) and reliable (no
+// keeps a small model "on the rails": fast (no wasted tokens rambling past
+// the envelope, bounded by max_tokens/num_predict below) and reliable (no
 // malformed-JSON fallback needed on the happy path).
-const REPLY_SCHEMA = {
+//
+// Note there is no "reply" field. Earlier this schema had the model write
+// the text the person reads; it no longer does. What the person sees comes
+// exclusively from Steer.pickReply()'s fixed, bilingual, hand-written
+// table (see intake.js's submit() below) — the model only classifies the
+// turn. That's a smaller, easier task, which is what let the default
+// model shrink (see WebLLMModel above) without losing quality: a tiny
+// model has to get four small judgments right, not compose good prose.
+const CLASSIFY_SCHEMA = {
   type: "object",
   properties: {
-    reply: { type: "string" },
     support: { type: "boolean" },
     ready: { type: "boolean" },
     extracted: { anyOf: [{ type: "string" }, { type: "null" }] },
+    distress: { type: "boolean" },
   },
-  required: ["reply", "support", "ready", "extracted"],
+  required: ["support", "ready", "extracted", "distress"],
 };
-const REPLY_SCHEMA_STR = JSON.stringify(REPLY_SCHEMA);
-const MAX_REPLY_TOKENS = 200; // one short conversational turn — keeps a small model snappy
-
-// The model's output is the REPLY_SCHEMA envelope, not raw prose — so naively
-// streaming raw tokens would render literal JSON syntax character-by-character
-// (`{"reply": "Got` `it` `\u2014`...) before the final parse swaps it for the
-// real text. Since "reply" is both the schema's first required property and
-// (under constrained decoding) reliably the first key generated, this pulls
-// out just its still-growing string value on every chunk, so the chat bubble
-// shows the actual reply typing out live instead of raw envelope syntax.
-function extractPartialReply(raw) {
-  const m = raw.match(/"reply"\s*:\s*"((?:\\.|[^"\\])*)/);
-  if (!m) return "";
-  try { return JSON.parse('"' + m[1] + '"'); }
-  catch { return m[1].replace(/\\"/g, '"').replace(/\\n/g, "\n"); }
-}
+const CLASSIFY_SCHEMA_STR = JSON.stringify(CLASSIFY_SCHEMA);
+const MAX_REPLY_TOKENS = 60; // classification only, not prose — small and fast
 
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 class WebLLMModel {
-  constructor(modelId = "Llama-3.2-1B-Instruct-q4f16_1-MLC") {
+  // Qwen2.5-0.5B is the smallest WebLLM-prebuilt instruct model that still
+  // classifies reliably in both English and Spanish. It's viable at this
+  // size specifically because its job shrank: it no longer authors any
+  // text the person reads (see CLASSIFY_SCHEMA below) — it only has to
+  // output four small classification fields, not compose a reply. That's
+  // a much easier task than free generation, so the smallest model that
+  // gets it right is smaller than the one free-text generation needed.
+  constructor(modelId = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC") {
     this.modelId = modelId; this.engine = null;
   }
   async ready(onProgress) {
@@ -1445,7 +1489,7 @@ class WebLLMModel {
   async chat(messages) {
     const r = await this.engine.chat.completions.create({
       messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS,
-      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+      response_format: { type: "json_object", schema: CLASSIFY_SCHEMA_STR },
     });
     return r.choices[0].message.content;
   }
@@ -1453,7 +1497,7 @@ class WebLLMModel {
     let full = "";
     const it = await this.engine.chat.completions.create({
       messages, temperature: 0.3, max_tokens: MAX_REPLY_TOKENS, stream: true,
-      response_format: { type: "json_object", schema: REPLY_SCHEMA_STR },
+      response_format: { type: "json_object", schema: CLASSIFY_SCHEMA_STR },
     });
     for await (const chunk of it) {
       const t = chunk.choices[0]?.delta?.content || "";
@@ -1475,7 +1519,7 @@ class OllamaModel {
   async chat(messages) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: false, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+      body: JSON.stringify({ model: this.model, messages, stream: false, format: CLASSIFY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const d = await r.json();
     return d.message.content;
@@ -1483,7 +1527,7 @@ class OllamaModel {
   async stream(messages, onToken) {
     const r = await fetch(this.host + "/api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, messages, stream: true, format: REPLY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
+      body: JSON.stringify({ model: this.model, messages, stream: true, format: CLASSIFY_SCHEMA, options: { temperature: 0.3, num_predict: MAX_REPLY_TOKENS } }),
     });
     const reader = r.body.getReader(); const dec = new TextDecoder(); let full = "";
     for (;;) {
@@ -1499,9 +1543,12 @@ class OllamaModel {
 
 // ---- Echo: no model, deterministic ----------------------------------------
 // Not an LLM. It reads the same system contract the real backends get, finds
-// the "CURRENT FIELD" block the controller injects, and returns the structured
-// JSON the controller parses — so you can walk the entire intake with zero
-// setup, then swap in WebLLM/Ollama without touching the controller.
+// the "CURRENT FIELD" block the controller injects, and returns the
+// classify-only envelope the controller parses — so you can walk the
+// entire intake with zero setup, then swap in WebLLM/Ollama without
+// touching the controller. Uses the exact same Steer.classifyIntent() and
+// Steer.validate() the real backends' output is checked against, so Echo
+// is a faithful stand-in rather than a separately-tuned approximation.
 class EchoModel {
   async ready() {}
   async chat(messages) {
@@ -1509,37 +1556,20 @@ class EchoModel {
     const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content?.trim() || "";
     const field = this._field(sys);
     const focus = this._focus(sys);
+    const lang = this._lang(sys);
+    const intent = Steer.classifyIntent(lastUser, lang);
 
-    if (/^\??$|help|what|why|explain|mean|unsure|don't know|dont know/i.test(lastUser) && lastUser.length < 40) {
-      if (focus?.includes("confirming")) {
-        return JSON.stringify({
-          reply: "Does that look right? You can say yes to confirm, or no to change it.",
-          support: true, ready: false, extracted: null,
-        });
-      }
-      return JSON.stringify({
-        reply: this._reference(sys) || field?.help || "Take your time — answer in whatever words feel natural and I'll tidy it up.",
-        support: true, ready: false, extracted: null,
-      });
+    if (intent.distress) return JSON.stringify({ support: true, ready: false, extracted: null, distress: true });
+    if (intent.help) return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
+
+    if (focus?.includes("confirming") || focus?.includes("evaluating")) {
+      if (intent.yes) return JSON.stringify({ support: false, ready: true, extracted: lastUser, distress: false });
+      return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
     }
 
-    if (focus?.includes("confirming")) {
-      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good)/i.test(lastUser)) {
-        return JSON.stringify({ reply: "Got it — I'll save that.", support: false, ready: true, extracted: lastUser });
-      }
-      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(lastUser)) {
-        return JSON.stringify({ reply: "No problem — tell me the right version.", support: true, ready: false, extracted: null });
-      }
-      return JSON.stringify({ reply: "Is this the answer you want to save? Say yes to confirm or no to edit.", support: true, ready: false, extracted: null });
-    }
-
-    const value = lastUser;
-    const err = field ? validate(field, value) : null;
-    if (err) return JSON.stringify({ reply: err, support: true, ready: false, extracted: null });
-    return JSON.stringify({
-      reply: `Got it — I'll record "${value}". Does that look right?`,
-      support: false, ready: true, extracted: value,
-    });
+    const err = field ? Steer.validate(field, lastUser, lang) : null;
+    if (err) return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
+    return JSON.stringify({ support: false, ready: true, extracted: lastUser, distress: false });
   }
   stream(messages, onToken) { return this.chat(messages).then((s) => { onToken?.(s); return s; }); }
 
@@ -1549,32 +1579,22 @@ class EchoModel {
     try { return JSON.parse(m[1]); } catch { return null; }
   }
 
-  // Pull the first line of the folded REFERENCE block (the field's own help is
-  // seeded first), stripped of its "• Topic: " prefix — Echo's stand-in for the
-  // reasoning a real model would do over the retrieved reference.
-  _reference(sys) {
-    const m = sys.match(/REFERENCE \(folded for this field\):\n([\s\S]*?)(?:\n\n|$)/);
-    if (!m) return "";
-    return (m[1].split("\n")[0] || "").replace(/^•\s*[^:]*:\s*/, "").trim();
-  }
-
   _focus(sys) {
     const m = sys.match(/FOCUS:\s*([^\n]+)/);
     return m ? m[1].trim() : null;
   }
+
+  _lang(sys) {
+    const m = sys.match(/LANGUAGE:\s*(\w+)/);
+    return m ? m[1].trim() : "en";
+  }
 }
 
-// Shared lightweight validation, used by Echo and re-exported for the controller.
-function validate(field, value) {
-  const v = (value ?? "").toString().trim();
-  if (field.required && !v) return "This one's required — even a rough answer is fine to start.";
-  if (field.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "That doesn't look like an email address — mind checking it?";
-  if (field.type === "date" && v && isNaN(Date.parse(v))) return "I couldn't read that as a date. A format like 1990-04-23 works well.";
-  if (field.type === "number" && v && isNaN(Number(v))) return "That should be a number.";
-  if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase()))
-    return `Please pick one of: ${field.enum.join(", ")}.`;
-  return null;
-}
+// Thin bridge to the shared, bilingual, tested validator in vendor/steer.js
+// — kept as a same-named local function since it's threaded through a lot
+// of call sites (the no-model wizard, the admin field editor) that don't
+// all have a `lang` in scope yet.
+function validate(field, value, lang = "en") { return Steer.validate(field, value, lang); }
 
 function makeModel(kind, opts = {}) {
   if (kind === "webllm") return new WebLLMModel(opts.model);
@@ -1891,7 +1911,11 @@ function foldConfig(events) {
 
   return {
     meta,
-    schema: { id: meta.id || "custom", title: meta.title || "Feedback Platform", blurb: meta.blurb || "", fields: ordered },
+    schema: {
+      id: meta.id || "custom", title: meta.title || "Feedback Platform", blurb: meta.blurb || "",
+      titleEs: meta.titleEs || "", blurbEs: meta.blurbEs || "",
+      fields: ordered,
+    },
     systemPrompt,
     knowledge,
   };
@@ -1930,7 +1954,7 @@ function deleteKnowledge(store, id) {
 // config room opens onto a working intake with zero setup — same ethos as the
 // demo store. Everything below is editable from the admin surface afterward.
 const DEFAULT_CONFIG = {
-  meta: { id: SCHEMA.id, title: SCHEMA.title, blurb: SCHEMA.blurb },
+  meta: { id: SCHEMA.id, title: SCHEMA.title, blurb: SCHEMA.blurb, titleEs: SCHEMA.titleEs, blurbEs: SCHEMA.blurbEs },
   fields: SCHEMA.fields,
   systemPrompt: MINIMAL_SYSTEM,
   knowledge: DEMO_KNOWLEDGE.toJSON(),
@@ -1940,6 +1964,8 @@ function seedConfig(store, cfg = DEFAULT_CONFIG) {
   setMeta(store, "id", cfg.meta.id);
   setMeta(store, "title", cfg.meta.title);
   setMeta(store, "blurb", cfg.meta.blurb);
+  setMeta(store, "titleEs", cfg.meta.titleEs || "");
+  setMeta(store, "blurbEs", cfg.meta.blurbEs || "");
   setSystemPrompt(store, cfg.systemPrompt);
   for (const f of cfg.fields) putField(store, f);
   setFieldOrder(store, cfg.fields.map((f) => f.path));
@@ -1964,20 +1990,30 @@ function ensureSeeded(store, cfg = DEFAULT_CONFIG) {
 // operator into the store. Progress is the room timeline, so the flow is
 // resumable for free — reopen the room and fold tells you where you stopped.
 //
-// The model contract is a small JSON envelope, so even a 1B local model stays
-// on the rails:
-//   { reply, support?: bool, ready?: bool, extracted?: string|null }
-//     reply     — what to say to the person (always)
+// The model contract is a small JSON envelope, so even a very small local
+// model stays on the rails — and note it has no "reply" field. The model
+// only classifies; it never authors what the person reads (see
+// vendor/steer.js — Steer.pickReply picks that from a fixed, bilingual,
+// hand-written table, keyed by what the classification below implies):
+//   { support?: bool, ready?: bool, extracted?: string|null, distress?: bool }
 //     support   — true when this turn is help/clarification, not an answer
-//     ready      — true when `extracted` is a clean value awaiting confirmation
+//     ready     — true when `extracted` is a clean value awaiting confirmation
 //     extracted — the normalized value to store on confirm
+//     distress  — true only for an active crisis/safety signal, not general hardship
 
 
 class Intake {
-  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM }) {
+  constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM, lang = "en" }) {
     this.schema = schema; this.store = store; this.model = model;
     this.knowledge = knowledge; this.anchor = anchor;
     this.systemPrompt = systemPrompt; // editable base instructions; folded in each turn
+    this.lang = lang;
+    // The physics-steered discourse state (vendor/steer.js): `opening`
+    // climbs as the person shares more, decays otherwise; `distress`
+    // spikes on a crisis signal and overrides everything else. Persists
+    // for the life of this Intake so a person doesn't have to "re-earn"
+    // trust every single field.
+    this.steer = Steer.createState();
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
@@ -1986,6 +2022,15 @@ class Intake {
 
   on(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
   _emit(kind, data) { for (const fn of this._listeners) fn(kind, data); }
+
+  setLang(lang) { this.lang = lang === "es" ? "es" : "en"; this._emitContext(); }
+
+  // Every word the person reads comes from here — the fixed, bilingual,
+  // hand-written table in vendor/steer.js, keyed by `focus`. Never the
+  // model's own words, no matter which backend is active.
+  _reply(focus, extra = {}) {
+    return Steer.pickReply({ lang: this.lang, focus, ...extra });
+  }
 
   // Live-edit the base instructions. Takes effect on the next fold; we re-emit
   // context so an open inspector reflects the change immediately.
@@ -2031,10 +2076,8 @@ class Intake {
   async begin() {
     if (this.history.length === 0) {
       const done = this.progress().filter((p) => p.done).length;
-      this._say("assistant",
-        done > 0
-          ? `Welcome back. You've got ${done} of ${this.schema.fields.length} answered — let's pick up where you left off.`
-          : this.schema.blurb);
+      const blurb = (this.lang === "es" && this.schema.blurbEs) ? this.schema.blurbEs : this.schema.blurb;
+      this._say("assistant", done > 0 ? this._reply("welcomeBack", { meta: { done, total: this.schema.fields.length } }) : blurb);
     }
     await this._askNext();
   }
@@ -2042,30 +2085,51 @@ class Intake {
   async _askNext() {
     this.pending = null;
     const f = this.nextField();
-    if (!f) { this._say("assistant", "That's everything I need. Your answers are all saved — you can review or edit any of them from the checklist."); this._emit("complete", this.answers()); return; }
+    if (!f) { this._say("assistant", this._reply("closing")); this._emit("complete", this.answers()); return; }
     this._emit("field", f);
     this._emitContext();  // the fold changed with the field — refresh any open inspector
-    this._say("assistant", f.prompt, { field: f.path });
+    this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
   }
 
-  // The person sent a message. Route it through the model, then act.
+  // The person sent a message. This is where the physics-steered,
+  // mechanical-only conversation actually happens:
+  //   1. A crisis signal ALWAYS wins, immediately, before anything else —
+  //      checked locally so it can't be delayed by a slow or overloaded model.
+  //   2. A pending yes/no confirmation is read locally too (cheap, instant,
+  //      and doesn't need a model round trip).
+  //   3. An explicit "help"/"what does that mean" is answered from the
+  //      field's own bilingual help text — again, no model call needed.
+  //   4. Only a genuine free-text candidate answer goes to the model, and
+  //      even then the model only classifies it (see CLASSIFY_SCHEMA) —
+  //      the reply the person sees always comes from Steer.pickReply().
   async submit(text) {
     this._say("user", text);
     const f = this.nextField();
     if (!f) return;
 
-    // If we're awaiting confirmation, interpret yes/no locally (cheap + reliable).
+    const intent = Steer.classifyIntent(text, this.lang);
+
+    if (intent.distress) {
+      Steer.applyForce(this.steer, { distress: true });
+      this._say("assistant", this._reply("safety"), { support: true });
+      return;
+    }
+
     if (this.pending) {
-      if (/^(y|yes|yep|yeah|correct|right|ok|okay|confirm|looks good|👍)/i.test(text.trim())) {
-        return this._confirm();
-      }
-      if (/^(n|no|nope|wrong|edit|change|redo)/i.test(text.trim())) {
+      if (intent.yes) return this._confirm();
+      if (intent.no) {
         this.pending = null;
-        this._say("assistant", "No problem — go ahead and tell me the right version.");
+        this._say("assistant", this._reply("denied"));
         return;
       }
       // Anything else: treat as a fresh answer to the same field (fall through).
       this.pending = null;
+    }
+
+    if (intent.help) {
+      Steer.applyForce(this.steer, { deflects: true });
+      this._say("assistant", this._reply("clarifying", { field: f }), { support: true });
+      return;
     }
 
     // Fold the log into the prompt BEFORE the streaming placeholder is pushed,
@@ -2073,31 +2137,49 @@ class Intake {
     const assembled = this._assemble(f);
     const { messages } = assembled;
     this._emit("context", { field: f, ...assembled });
+    // Empty text (not "…") matters here: onIntake's renderer only shows the
+    // typing-dots placeholder when a streaming message arrives with no text
+    // yet — anything non-empty renders as a real bubble immediately, which
+    // would leave a stray "thinking" bubble stuck once the real mechanical
+    // reply lands in a second bubble right after it.
     const thinking = this._say("assistant", "", { streaming: true, field: f.path });
 
     let raw = "";
-    try {
-      // onToken hands us only the latest delta, not the running total — the
-      // model.stream() call itself resolves to the full text, but only once
-      // the whole thing is done, so track it ourselves for the live display.
-      let acc = "";
-      raw = await this.model.stream(messages, (chunk) => {
-        acc += chunk;
-        thinking.text = extractPartialReply(acc) || "…";
-        this._emit("token", thinking);
-      });
+    try { raw = await this.model.chat(messages); }
+    catch (e) {
+      thinking.text = this.lang === "es"
+        ? "El modelo no responde — puedes seguir escribiendo y guardaré tus respuestas directamente."
+        : "The model isn't responding — you can keep typing and I'll store your answers directly.";
+      thinking.streaming = false; this._emit("message", thinking); return;
     }
-    catch (e) { thinking.text = "The model isn't responding — you can keep typing and I'll store your answers directly."; thinking.streaming = false; this._emit("message", thinking); return; }
 
-    const parsed = this._parse(raw, f, text);
-    thinking.text = parsed.reply; thinking.streaming = false; thinking.support = parsed.support; this._emit("message", thinking);
+    const parsed = this._parseClassification(raw, f, text);
+    // Belt and suspenders: the model's own distress judgment can catch
+    // subtler phrasing the local keyword scan missed. Either source firing
+    // routes to the same safety branch.
+    if (parsed.distress) {
+      Steer.applyForce(this.steer, { distress: true });
+      thinking.text = this._reply("safety"); thinking.streaming = false; thinking.support = true;
+      this._emit("message", thinking);
+      return;
+    }
+
+    Steer.applyForce(this.steer, { opens: parsed.ready, deflects: !parsed.ready && parsed.support });
+    const tier = Steer.tierOf(this.steer);
 
     if (parsed.ready && parsed.extracted != null) {
-      const err = validate(f, parsed.extracted);
-      if (err) { this._say("assistant", err); return; }
+      const err = validate(f, parsed.extracted, this.lang);
+      if (err) { thinking.text = err; thinking.streaming = false; this._emit("message", thinking); return; }
       this.pending = { field: f, value: parsed.extracted };
+      thinking.text = this._reply("confirming"); thinking.streaming = false; thinking.support = false;
+      this._emit("message", thinking);
       this._emit("pending", this.pending);
+      return;
     }
+
+    thinking.text = this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    thinking.streaming = false; thinking.support = true;
+    this._emit("message", thinking);
   }
 
   // Store the confirmed answer as one DEF operator, then advance. Bumping the
@@ -2108,6 +2190,7 @@ class Intake {
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path: field.path, value });
     this.pending = null;
     this.epoch++;
+    this._say("assistant", this._reply("confirmed"));
     this._emit("stored", { field, value, event: ev });
     return this._askNext();
   }
@@ -2115,7 +2198,7 @@ class Intake {
   // Direct edit from the checklist (bypasses chat): also just a DEF.
   editField(path, value) {
     const field = this.schema.fields.find((f) => f.path === path);
-    const err = validate(field, value);
+    const err = validate(field, value, this.lang);
     if (err) return { ok: false, error: err };
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value });
     this.epoch++;
@@ -2136,21 +2219,23 @@ class Intake {
       anchor: this.anchor,
       system: this.systemPrompt,
       pending: this.pending,
+      lang: this.lang,
     });
   }
 
-  _parse(raw, field, userText) {
+  _parseClassification(raw, field, userText) {
     // Pull the first {...} block; tolerate models that wrap it in prose/fences.
-    const m = raw.match(/\{[\s\S]*\}/);
+    const m = (raw || "").match(/\{[\s\S]*\}/);
     if (m) { try {
       const j = JSON.parse(m[0]);
-      return { reply: j.reply || "Okay.", support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null };
+      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress };
     } catch {} }
-    // No parseable envelope: treat the reply as support, and if the user's raw
-    // text validates, offer it as the answer so the flow never dead-ends.
-    const err = validate(field, userText);
-    if (!err && userText.trim()) return { reply: `I'll record "${userText.trim()}" — does that look right?`, support: false, ready: true, extracted: userText.trim() };
-    return { reply: raw.trim() || "Tell me a little more?", support: true, ready: false, extracted: null };
+    // No parseable envelope: rather than dead-ending the conversation on a
+    // fallible small model, fall back to the person's own raw text if it
+    // already satisfies the field on its own.
+    const err = validate(field, userText, this.lang);
+    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false };
+    return { support: true, ready: false, extracted: null, distress: false };
   }
 }
 
@@ -2813,9 +2898,11 @@ function renderTyping() {
   $("stream").appendChild(group); scrollChat(); return group;
 }
 
-// As stream tokens arrive, morph the typing-dots bubble into the live reply
-// text (see extractPartialReply() in model.js) instead of waiting for the
-// full completion before showing anything.
+// Unused by the current turn loop (the model only classifies now, so there's
+// no partial reply text to morph the typing-dots bubble into token by
+// token — the dots just wait for the one mechanical reply). Left in place
+// since "message"/"token" is still a documented Intake event pair a future
+// backend could use for genuine incremental output.
 function updateStreamingText(node, text) {
   const dots = node.querySelector(".typing");
   const streamText = node.querySelector(".stream-text");
@@ -2988,7 +3075,7 @@ function initUserWizard() {
   }, {
     steps: () => intake.schema.fields.map((f) => ({
       key: f.path, label: f.label, help: f.help, type: f.type, required: f.required, enum: f.enum,
-      validate: (v) => validate(f, v),
+      validate: (v) => validate(f, v, intake?.lang || "en"),
     })),
     onStep: (path, value) => {
       if (!String(value ?? "").trim()) return; // optional + left blank: nothing to store
@@ -3106,6 +3193,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx()
 
 // ── Controls ──
 $("modelSel").onchange = boot;
+$("langSel").onchange = boot;
 $("resetBtn")?.addEventListener("click", async () => {
   if (!confirm("Clear all stored answers?")) return;
   if (store.reset) await store.reset();
@@ -3882,12 +3970,18 @@ async function _bootAfterStore() {
   // in to create the shared config room — configStore.roomId is null in that
   // case. Read-only defaults are fine; only the admin's session seeds the room.
   const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
-  const schema = { id:cfg.schema.id, title:cfg.schema.title, blurb:cfg.schema.blurb||"", fields:cfg.schema.fields.length?cfg.schema.fields:[] };
+  const schema = {
+    id: cfg.schema.id, title: cfg.schema.title, blurb: cfg.schema.blurb || "",
+    titleEs: cfg.schema.titleEs || "", blurbEs: cfg.schema.blurbEs || "",
+    fields: cfg.schema.fields.length ? cfg.schema.fields : [],
+  };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
-  intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM });
-  document.getElementById("docTitle").textContent = schema.title;
-  document.getElementById("wizTitle").textContent = schema.title;
+  const lang = document.getElementById("langSel").value === "es" ? "es" : "en";
+  intake = new Intake({ schema, store, model, knowledge, systemPrompt: cfg.systemPrompt || MINIMAL_SYSTEM, lang });
+  const displayTitle = (lang === "es" && schema.titleEs) ? schema.titleEs : schema.title;
+  document.getElementById("docTitle").textContent = displayTitle;
+  document.getElementById("wizTitle").textContent = displayTitle;
   document.getElementById("stream").innerHTML = ""; document.getElementById("ledger").innerHTML = "";
 
   intake.on(onIntake);
@@ -4021,9 +4115,11 @@ function renderQPanel() {
     <div class="q-grid">
       <div class="q-col">
         <div class="q-card"><div class="qh">Branding</div>
-          <div class="body"><p class="note">The document title and intro message every applicant sees first.</p>
-            <div class="fieldgrp"><label class="lab">Title</label><input class="f" id="brandTitle" value="${escAttr(cfg.schema.title)}"></div>
-            <div class="fieldgrp"><label class="lab">Intro / blurb</label><textarea class="f" id="brandBlurb" rows="3">${escAttr(cfg.schema.blurb)}</textarea></div>
+          <div class="body"><p class="note">The document title and intro message every applicant sees first, in both languages the conversation supports.</p>
+            <div class="fieldgrp"><label class="lab">Title (English)</label><input class="f" id="brandTitle" value="${escAttr(cfg.schema.title)}"></div>
+            <div class="fieldgrp"><label class="lab">Título (Español)</label><input class="f" id="brandTitleEs" value="${escAttr(cfg.schema.titleEs || "")}"></div>
+            <div class="fieldgrp"><label class="lab">Intro / blurb (English)</label><textarea class="f" id="brandBlurb" rows="3">${escAttr(cfg.schema.blurb)}</textarea></div>
+            <div class="fieldgrp"><label class="lab">Introducción (Español)</label><textarea class="f" id="brandBlurbEs" rows="3">${escAttr(cfg.schema.blurbEs || "")}</textarea></div>
             <div class="btns"><button class="primary" id="brandSaveBtn">Save branding</button></div>
           </div>
         </div>
@@ -4056,6 +4152,8 @@ function renderQPanel() {
   document.getElementById("brandSaveBtn").onclick = (e) => {
     setMeta(configStore, "title", document.getElementById("brandTitle").value.trim() || "Feedback Platform");
     setMeta(configStore, "blurb", document.getElementById("brandBlurb").value.trim());
+    setMeta(configStore, "titleEs", document.getElementById("brandTitleEs").value.trim());
+    setMeta(configStore, "blurbEs", document.getElementById("brandBlurbEs").value.trim());
     e.target.closest(".q-card").classList.remove("dirty"); updateQStatus();
     toast("Branding saved");
   };
@@ -4092,8 +4190,10 @@ function renderQPanel() {
     card.appendChild(head);
     const b = document.createElement("div"); b.className = "qbody";
     b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${escAttr(f.label)}"></div>
-      <div class="fieldgrp"><label class="lab">Prompt</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
-      <div class="fieldgrp"><label class="lab">Help</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Prompt (English)</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help (English)</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Prompt (Español)</label><textarea class="f" id="qpEs_${f.path}" rows="2">${escAttr(f.promptEs || "")}</textarea></div>
+      <div class="fieldgrp"><label class="lab">Help (Español)</label><textarea class="f" id="qhEs_${f.path}" rows="2">${escAttr(f.helpEs || "")}</textarea></div>
       <div class="btns"><button class="primary" data-path="${f.path}" onclick="saveFieldQ(this)">Save</button><button class="danger" data-path="${f.path}" onclick="deleteFieldQ(this)">Delete</button></div>`;
     card.appendChild(b);
     head.onclick = () => { const d=b.style.display; b.style.display=d==="none"?"block":"none"; };
@@ -4152,7 +4252,20 @@ function renderQPanel() {
 
 function saveFieldQ(btn) {
   const path = btn.dataset.path;
-  putField(configStore, { path, label: (document.getElementById("ql_"+path)?.value||path).trim(), type:"text", required:false, prompt: (document.getElementById("qp_"+path)?.value||"").trim(), help: (document.getElementById("qh_"+path)?.value||"").trim() });
+  // Preserve type/required/enum from the existing field — this editor only
+  // touches wording. Previously it silently overwrote them with
+  // type:"text", required:false, which downgraded (and lost the enum
+  // options of) any non-text field the moment its prompt was edited.
+  const existing = foldConfig(configStore.timeline()).schema.fields.find((f) => f.path === path) || {};
+  putField(configStore, {
+    ...existing,
+    path,
+    label: (document.getElementById("ql_"+path)?.value || path).trim(),
+    prompt: (document.getElementById("qp_"+path)?.value || "").trim(),
+    help: (document.getElementById("qh_"+path)?.value || "").trim(),
+    promptEs: (document.getElementById("qpEs_"+path)?.value || "").trim(),
+    helpEs: (document.getElementById("qhEs_"+path)?.value || "").trim(),
+  });
   btn.closest(".q")?.classList.remove("dirty");
   updateQStatus();
   toast("Saved");
@@ -4243,6 +4356,10 @@ function questionWizardSteps(values) {
       help: "The question as shown/spoken to the applicant." },
     { key: "help", label: "Any extra guidance?", type: "textarea", required: false,
       help: "Shown alongside the question to help the applicant answer." },
+    { key: "promptEs", label: "Spanish version of the question (optional)", type: "textarea", required: false,
+      help: "Shown when the applicant is using the app in Spanish. Leave blank to fall back to the English prompt." },
+    { key: "helpEs", label: "Spanish version of the guidance (optional)", type: "textarea", required: false,
+      help: "Leave blank to fall back to the English guidance." },
     { key: "required", label: "Is answering this required to finish the intake?", type: "boolean", required: true, initial: true },
   );
   return steps;
@@ -4263,6 +4380,8 @@ function initQuestionWizard() {
         path, label: values.label.trim(), type: values.type, required: values.required !== false,
         prompt: (values.prompt || "").trim() || values.label.trim() + "?",
         help: (values.help || "").trim(),
+        promptEs: (values.promptEs || "").trim(),
+        helpEs: (values.helpEs || "").trim(),
       };
       if (values.type === "enum") field.enum = String(values.enumOptions).split("\n").map((s) => s.trim()).filter(Boolean);
       putField(configStore, field);
