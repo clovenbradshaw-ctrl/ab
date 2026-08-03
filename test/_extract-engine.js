@@ -67,6 +67,12 @@ function loadEngine() {
     exports.OP = OP;
     exports.fold = fold;
     exports.answersOf = answersOf;
+    exports.DEADLINE_CHECK_FIELD = DEADLINE_CHECK_FIELD;
+    exports.OCR_FILING_WINDOW_DAYS = OCR_FILING_WINDOW_DAYS;
+    exports.DEADLINE_WARNING_EN = DEADLINE_WARNING_EN;
+    exports.DEADLINE_WARNING_ES = DEADLINE_WARNING_ES;
+    exports.CLOSING_MESSAGE_EN = CLOSING_MESSAGE_EN;
+    exports.CLOSING_MESSAGE_ES = CLOSING_MESSAGE_ES;
   `;
   vm.runInContext(exposer, sandbox, { filename: "index.html (extracted engine slice)" });
   return sandbox.exports;

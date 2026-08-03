@@ -127,6 +127,35 @@ test("mechanical replies: welcomeBack is bilingual and reports real progress num
   assert.match(es, /3 de 10/);
 });
 
+test("tidyText: fixes unambiguous missing-apostrophe contractions, preserving case", () => {
+  assert.equal(Steer.tidyText("i dont know what happened", "en"), "I dont know what happened".replace("dont", "don't"));
+  assert.equal(Steer.tidyText("Dont go there", "en"), "Don't go there");
+  assert.equal(Steer.tidyText("They said it wasnt her fault", "en"), "They said it wasnt her fault".replace("wasnt", "wasn't"));
+});
+
+test("tidyText: never touches ambiguous real words, even ones that look similar to a contraction typo", () => {
+  // "were" is a real word (past tense of "are") — must NOT become "we're",
+  // since that would change what a legal complaint says.
+  assert.equal(Steer.tidyText("we were at the hearing", "en"), "We were at the hearing");
+  // "ill" is a real word (sick) — must NOT become "I'll".
+  assert.equal(Steer.tidyText("my daughter was ill that week", "en"), "My daughter was ill that week");
+});
+
+test("tidyText: capitalizes sentence starts and cleans stray whitespace/punctuation spacing", () => {
+  assert.equal(Steer.tidyText("  he yelled at me .  then he left  ", "en"), "He yelled at me. Then he left");
+});
+
+test("tidyText: Spanish opening question/exclamation marks are restored when missing", () => {
+  assert.equal(Steer.tidyText("como se llama tu hijo?", "es"), "¿Como se llama tu hijo?");
+  assert.equal(Steer.tidyText("nunca me avisaron!", "es"), "¡Nunca me avisaron!");
+});
+
+test("tidyText: empty/whitespace-only input passes through safely", () => {
+  assert.equal(Steer.tidyText("", "en"), "");
+  assert.equal(Steer.tidyText("   ", "en"), "");
+  assert.equal(Steer.tidyText(null, "en"), null);
+});
+
 test("bilingual validation messages", () => {
   const field = { required: true, type: "email" };
   assert.match(Steer.validate(field, "", "en"), /required/i);

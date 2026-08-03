@@ -154,12 +154,20 @@
     en: {
       yes: ["yes", "yeah", "yep", "yup", "sure", "correct", "right", "ok", "okay", "confirm", "looks good", "sounds good"],
       no: ["no", "nope", "nah", "wrong", "incorrect", "edit", "change", "redo", "not right"],
-      help: ["help", "what", "why", "explain", "mean", "unsure", "confused", "stuck", "dont know", "don't know", "not sure"],
+      // Deliberately no bare "what"/"why"/"mean": those are ordinary
+      // sentence-openers in real narrative answers ("What DCS did was...",
+      // "Why they moved her is..."), not just clarification requests. Only
+      // multi-word phrases that are unambiguously a person asking THIS app
+      // something, not describing their own situation.
+      help: ["help", "what does", "what do you mean", "what does that mean", "why do you need that", "why is that", "explain", "unsure", "confused", "stuck", "dont know", "don't know", "not sure"],
     },
     es: {
       yes: ["si", "sí", "vale", "correcto", "claro", "asi es", "así es", "dale", "esta bien", "está bien"],
       no: ["no", "nel", "incorrecto", "mal", "cambiar", "corregir", "editar", "no es correcto"],
-      help: ["ayuda", "que", "qué", "porque", "por que", "por qué", "explicar", "no se", "no sé", "confundido", "confundida", "significa", "no entiendo"],
+      // Same reasoning as the English list: no bare "que"/"qué"/"porque" —
+      // "que" especially is one of the most common words in Spanish
+      // narration generally, not a help signal on its own.
+      help: ["ayuda", "que significa", "qué significa", "por que necesitas", "explicar", "no se", "no sé", "confundido", "confundida", "no entiendo"],
     },
   };
 
@@ -237,6 +245,72 @@
     return L.supporting[0];
   }
 
+  // ---- conservative text tidy ------------------------------------------------
+  // This is deliberately small: whitespace/punctuation cleanup, sentence
+  // capitalization, and a short list of contractions that have no
+  // legitimate alternate meaning without the apostrophe ("dont" is never
+  // intentionally a word; "were" is, so it's NOT on this list — changing it
+  // to "we're" could silently alter what a legal complaint says). This
+  // feeds a federal civil rights complaint, so the bar is "never risk
+  // changing meaning" over "catch everything" — anything ambiguous is left
+  // alone for the person to fix themselves, and whatever this produces is
+  // always shown back to them for an explicit yes/no before it's stored,
+  // never substituted silently.
+  //
+  // Note on scope: true UniMorph (a cross-lingual morphological inflection
+  // database) isn't realistically wireable into a single-file, no-build
+  // browser app — there's no lightweight runtime for it. This approximates
+  // the "basic spelling and grammar clean-up" goal with a compact,
+  // hand-reviewed correction table instead; a local-model pass (see
+  // Intake.submit's use of CLASSIFY_SCHEMA's `extracted`) does the more
+  // context-sensitive normalization on top of this.
+  const CONTRACTION_FIXES = {
+    en: {
+      dont: "don't", wont: "won't", cant: "can't", isnt: "isn't", wasnt: "wasn't",
+      werent: "weren't", didnt: "didn't", doesnt: "doesn't", couldnt: "couldn't",
+      shouldnt: "shouldn't", wouldnt: "wouldn't", hasnt: "hasn't", havent: "haven't",
+      arent: "aren't", thats: "that's", whats: "what's", theres: "there's",
+    },
+    es: {
+      // Spanish doesn't have an equivalent apostrophe-contraction class;
+      // the fixable, unambiguous gap is missing question/exclamation marks
+      // at the start, handled separately below, not via word substitution.
+    },
+  };
+
+  function fixContractions(text, lang) {
+    const table = CONTRACTION_FIXES[lang] || {};
+    return text.replace(/[A-Za-zÀ-ÿ']+/g, (word) => {
+      const key = word.toLowerCase();
+      const fix = table[key];
+      if (!fix) return word;
+      // Preserve the original's capitalization style (e.g. "Dont" -> "Don't").
+      return word[0] === word[0].toUpperCase() ? fix[0].toUpperCase() + fix.slice(1) : fix;
+    });
+  }
+
+  function capitalizeSentences(text) {
+    return text.replace(/(^\s*|[.!?]\s+)([a-záéíóúñ])/g, (m, sep, ch) => sep + ch.toUpperCase());
+  }
+
+  function tidyText(text, lang = "en") {
+    if (!text) return text;
+    let t = text.toString().replace(/\s+/g, " ").trim();
+    if (!t) return t;
+    t = t.replace(/\s+([,.!?;:])/g, "$1"); // no space before punctuation
+    t = fixContractions(t, lang);
+    t = capitalizeSentences(t);
+    // Opening Spanish question/exclamation marks are easy to miss when
+    // typing quickly (or transcribing speech) and cost nothing to add back
+    // when the sentence clearly ends with the closing mark but doesn't open
+    // with one.
+    if (lang === "es") {
+      if (/\?\s*$/.test(t) && !/^¿/.test(t)) t = "¿" + t;
+      if (/!\s*$/.test(t) && !/^¡/.test(t)) t = "¡" + t;
+    }
+    return t;
+  }
+
   // ---- bilingual field validation -------------------------------------------
   const VALIDATION_MESSAGES = {
     en: {
@@ -271,5 +345,6 @@
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
     VALIDATION_MESSAGES, validate,
+    tidyText,
   };
 });
