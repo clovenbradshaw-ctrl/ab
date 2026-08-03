@@ -67,6 +67,10 @@ function loadEngine() {
     exports.OP = OP;
     exports.fold = fold;
     exports.answersOf = answersOf;
+    exports.provenanceOf = provenanceOf;
+    exports.buildComplaintLetter = buildComplaintLetter;
+    exports.LETTER_REQUIRED_FIELDS = LETTER_REQUIRED_FIELDS;
+    exports.LETTER_PATHS = LETTER_PATHS;
     exports.DEADLINE_CHECK_FIELD = DEADLINE_CHECK_FIELD;
     exports.OCR_FILING_WINDOW_DAYS = OCR_FILING_WINDOW_DAYS;
     exports.DEADLINE_WARNING_EN = DEADLINE_WARNING_EN;
