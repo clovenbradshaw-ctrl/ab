@@ -48,7 +48,7 @@ async function converse(engine, lang, lines) {
   for (const line of lines) {
     await intake.submit(line);
     const last = intake.history[intake.history.length - 1];
-    turns.push({ said: line, reply: last.text, steer: { ...intake.steer } });
+    turns.push({ said: line, reply: last.text, value: last.value, steer: { ...intake.steer } });
   }
   return { intake, turns };
 }
@@ -68,6 +68,10 @@ test("English: the complainant-name field walked with typos, then confirmed with
   ]);
   // First reply must be the confirming line (mechanical, from the table).
   assert.equal(turns[0].reply, engine.Steer.REPLIES.en.confirming);
+  // The confirm bubble must carry the captured value itself, not just a
+  // bare "does that look right?" — otherwise there's nothing on screen to
+  // anchor what's being confirmed (see renderMessage()'s m.value badge).
+  assert.equal(turns[0].value, "Nroa Alvarez");
   // Second turn confirms despite the typo, and the answer is now stored.
   assert.equal(intake.answers()[engine.SCHEMA.fields[0].path], "Nroa Alvarez");
   // After confirming, the engine moved on to ask the next field mechanically
