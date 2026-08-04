@@ -4484,6 +4484,71 @@ function markSubmitted() { intake.store.emit(OP.DEF, { anchor: intake.anchor, pa
 // by staff, and reviewed with Representative Behn's office before anything
 // is filed. Every field is directly editable right up until submit, and
 // still editable afterward (re-submitting just clears the flag).
+function downloadAnswers(format) {
+  if (!intake) return;
+  const answers = intake.answers();
+  const schema = intake.schema;
+  const es = intake.lang === "es";
+  const ts = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const flag = answers[SUBMITTED_FLAG_PATH];
+  delete answers[SUBMITTED_FLAG_PATH];
+
+  let content, filename, mime;
+  if (format === "json") {
+    const obj = { _disclaimer: es
+      ? "ESTO NO ES EL DOCUMENTO FINAL. Estas son tus respuestas descargables. El personal las usará para preparar un borrador formal para presentar ante la OCR."
+      : "THIS IS NOT THE FINAL DOCUMENT. These are your downloadable answers. Staff will use them to prepare a formal draft for filing with the OCR.",
+      _generated: ts, _submitted: flag || null,
+      answers: {} };
+    for (const f of schema.fields) {
+      obj.answers[f.path] = answers[f.path] || null;
+    }
+    content = JSON.stringify(obj, null, 2);
+    filename = "eoai-answers-" + ts.replace(/[: ]/g, "-") + ".json";
+    mime = "application/json";
+  } else {
+    const lines = [];
+    lines.push("==============================================");
+    lines.push(es ? "  ⚠  ESTO NO ES EL DOCUMENTO FINAL" : "  ⚠  THIS IS NOT THE FINAL DOCUMENT");
+    lines.push("==============================================");
+    lines.push("");
+    lines.push(es
+      ? "Estas son tus respuestas descargables."
+      : "These are your downloadable answers.");
+    lines.push(es
+      ? "El personal las usará para preparar un borrador formal"
+      : "Staff will use them to prepare a formal draft");
+    lines.push(es
+      ? "para presentar ante la Oficina de Derechos Civiles (OCR)."
+      : "for filing with the Office for Civil Rights (OCR).");
+    lines.push("");
+    lines.push("  " + (es ? "Generado" : "Generated") + ": " + ts);
+    if (flag) lines.push("  " + (es ? "Enviado" : "Submitted") + ": " + flag);
+    lines.push("");
+    lines.push("----------------------------------------------");
+    lines.push("");
+    for (const f of schema.fields) {
+      const label = (es && f.labelEs) ? f.labelEs : f.label;
+      const val = answers[f.path];
+      lines.push("  " + label.toUpperCase());
+      lines.push("  " + (val || (es ? "(no proporcionado)" : "(not provided)")));
+      lines.push("");
+    }
+    lines.push("==============================================");
+    content = lines.join("\n");
+    filename = "eoai-answers-" + ts.replace(/[: ]/g, "-") + ".txt";
+    mime = "text/plain";
+  }
+
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast(es ? "Descargado" : "Downloaded", "success");
+}
+
 function renderSubmission() {
   const pane = document.getElementById("submissionPane");
   if (!pane || !intake) return;
@@ -4499,14 +4564,24 @@ function renderSubmission() {
         <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">${es ? "Revisa tus respuestas" : "Review your answers"}</h2>
         <span style="color:var(--muted);font-size:12px">${Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH).length}/${schema.fields.length}</span>
       </div>
+      <div style="background:var(--turn-soft);border:1px solid var(--turn);border-radius:9px;padding:10px 13px;margin:0 0 14px;font-size:12.5px;color:var(--ink);line-height:1.5">
+        <b>${es ? "⚠ Esto no es el documento final." : "⚠ This is not the final document."}</b>
+        ${es
+          ? "Estas son tus respuestas descargables. El personal las usará para preparar un borrador formal para presentar ante la OCR. El borrador final nunca se te mostrará aquí."
+          : "These are your downloadable answers. Staff will use them to prepare a formal draft for filing with the OCR. The final draft is never shown here."}
+      </div>
       <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5">${es
-        ? "Estas son tus respuestas, no el documento final. El personal usará esto para preparar un borrador, y nunca se te mostrará ese borrador aquí. Puedes corregir cualquier respuesta ahora, o después."
-        : "These are your answers, not the final document. Staff will use this to prepare a draft, and that draft is never shown to you here. You can fix any answer now, or later."}</p>
+        ? "Puedes corregir cualquier respuesta ahora, o después. Descarga una copia para tus registros."
+        : "You can fix any answer now, or later. Download a copy for your records."}</p>
       ${submitted ? `<div class="msg-banner" style="margin:0 0 16px">${es ? "Enviado para revisión. Aún puedes corregir cualquier respuesta." : "Submitted for review. You can still fix any answer."}</div>` : ""}
       ${currentStoreKind === "demo" ? `
         <div class="demo-bar" style="margin:0 0 16px">
           <span class="txt"><b>${es ? "Esto aún no está guardado de forma segura." : "This isn't saved securely yet."}</b> ${es ? "Tus respuestas viven solo en este navegador por ahora." : "Your answers live only in this browser for now."}</span>
         </div>` : ""}
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button id="subDownloadBtn" style="font:inherit;font-size:12.5px;padding:7px 14px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px">${es ? "⬇ Descargar respuestas" : "⬇ Download answers"}</button>
+        <button id="subDownloadJsonBtn" style="font:inherit;font-size:12.5px;padding:7px 14px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px">${es ? "⬇ Descargar JSON" : "⬇ Download JSON"}</button>
+      </div>
       ${schema.fields.map((f) => {
         const val = answers[f.path];
         const label = (es && f.labelEs) ? f.labelEs : f.label;
@@ -4548,6 +4623,12 @@ function renderSubmission() {
   if (submitBtn && complete && !submitted) {
     submitBtn.onclick = () => { markSubmitted(); toast(es ? "Enviado para revisión" : "Submitted for review", "success"); renderSubmission(); };
   }
+
+  // Download buttons
+  const dlTxtBtn = document.getElementById("subDownloadBtn");
+  const dlJsonBtn = document.getElementById("subDownloadJsonBtn");
+  if (dlTxtBtn) dlTxtBtn.onclick = () => downloadAnswers("txt");
+  if (dlJsonBtn) dlJsonBtn.onclick = () => downloadAnswers("json");
 }
 
 // ── Login flow ──
@@ -5261,7 +5342,10 @@ async function _bootAfterStore() {
   if (flowMode) startUserWizard();
   else await intake.begin();
 
-  if (intake.isComplete()) { document.getElementById("submissionBtn").style.display = ""; renderSubmission(); }
+  // Always show the review/download button — users can check their answers
+  // at any point, not just when the form is complete.
+  document.getElementById("submissionBtn").style.display = "";
+  renderSubmission();
 }
 
 // ── Override onIntake completion handler ──
