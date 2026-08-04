@@ -11,6 +11,19 @@
 // resolves { text, blob } — the transcript AND the raw recording, so the
 // caller can keep the audio (encrypted) for a transcription-accuracy audit
 // without this module knowing anything about encryption or storage.
+//
+// Two extras on top of that minimal contract:
+//   autoDownload()   — warms the model on page load instead of waiting for
+//                       the first mic tap, so by the time someone actually
+//                       wants to speak, the (large, one-time) download is
+//                       already done or well underway.
+//   onPartial (opt)  — while recording, a timer re-transcribes everything
+//                       heard so far and reports it, so the compose box
+//                       fills in as the person talks instead of staying
+//                       blank until they stop. Whisper has no incremental
+//                       mode, so each tick re-hears the whole clip-to-date;
+//                       stop() still re-runs the final, complete clip once
+//                       so a partial preview is never the answer of record.
 
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -76,15 +89,61 @@
       && !!(window.AudioContext || window.webkitAudioContext);
   }
 
+  // Start the model download as soon as the page can, not lazily on first
+  // mic tap — loadASR() caches on the same shared promise either way, so
+  // calling this early just means the download is already finished (or
+  // well underway) by the time someone actually wants to speak.
+  // onProgress(fraction) reports the same 0..1 download progress createVoice
+  // would. Never rejects: a failed pre-warm just means the first real
+  // recording retries the load and surfaces the failure there, same as
+  // before this existed. A no-op where voice input isn't usable at all —
+  // no sense pulling down a ~100MB model nobody can use.
+  function autoDownload(onProgress) {
+    if (!isSupported()) return Promise.resolve();
+    return loadASR(onProgress).catch(() => {});
+  }
+
   // A single recorder instance. onState(state) drives the button;
-  // onProgress(fraction) reports the first-load model download.
+  // onProgress(fraction) reports the first-load model download; onPartial
+  // (text) reports a growing live-preview transcript while recording is
+  // still in progress (see the file header note on how that works).
   // `lang`: "en" | "es" — passed through to Whisper as a language hint,
   // since guessing the wrong language on a short clip costs more accuracy
   // than a bilingual UI should have to pay for.
-  function createVoice({ onState = () => {}, onProgress = () => {}, lang = "en" } = {}) {
+  function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = () => {}, lang = "en", partialIntervalMs = 2500 } = {}) {
     let stream = null, rec = null, chunks = [];
     let state = "idle"; // idle | recording | transcribing
+    let streamTimer = null;
+    // Guards against a slow partial pass still running when the next tick
+    // (or the final stop()) fires — transcribe calls must never overlap,
+    // since two concurrent asr() calls would fight over the one pipeline.
+    let streamBusy = false;
     const set = (s) => { if (s !== state) { state = s; try { onState(s); } catch {} } };
+
+    function stopStreamTimer() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
+
+    // Re-transcribes everything heard so far. A snapshot of the chunks
+    // MediaRecorder has flushed to date is, for the codecs browsers actually
+    // use here (webm/opus), itself a valid decodable clip — that's what
+    // makes a "live" preview possible at all without a streaming-native
+    // model.
+    async function runPartial() {
+      if (streamBusy || state !== "recording" || !chunks.length) return;
+      streamBusy = true;
+      try {
+        const snapshot = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        const mono = await decodeMono(snapshot);
+        if (mono.length && state === "recording") {
+          const asr = await loadASR(onProgress);
+          const out = await asr(mono, {
+            chunk_length_s: 30, stride_length_s: 5, return_timestamps: false,
+            language: lang === "es" ? "spanish" : "english",
+          });
+          if (state === "recording") onPartial(String((out && out.text) || "").trim());
+        }
+      } catch (e) { /* a partial pass failing is never fatal — stop()'s final pass is authoritative */ }
+      streamBusy = false;
+    }
 
     async function start() {
       if (state !== "idle") return;
@@ -92,8 +151,12 @@
       chunks = [];
       rec = new MediaRecorder(stream);
       rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.start();
+      // A 1s timeslice — without one, MediaRecorder holds everything back
+      // until stop() and `chunks` never has anything in it for runPartial()
+      // to snapshot while the person is still talking.
+      rec.start(1000);
       set("recording");
+      streamTimer = setInterval(runPartial, partialIntervalMs);
     }
 
     function releaseMic() { try { stream && stream.getTracks().forEach((t) => t.stop()); } catch {} stream = null; }
@@ -103,6 +166,7 @@
     // failed transcription) so the caller can still keep it for review.
     function stop() {
       return new Promise((resolve, reject) => {
+        stopStreamTimer();
         if (state !== "recording" || !rec) return resolve({ text: "", blob: null });
         rec.onstop = async () => {
           releaseMic();
@@ -129,6 +193,7 @@
 
     // Abandon a recording without transcribing (e.g. the user pressed Escape).
     function cancel() {
+      stopStreamTimer();
       if (rec && state === "recording") { rec.onstop = () => {}; try { rec.stop(); } catch {} }
       releaseMic();
       chunks = [];
@@ -138,5 +203,5 @@
     return { start, stop, cancel, get state() { return state; } };
   }
 
-  return { isSupported, createVoice };
+  return { isSupported, createVoice, autoDownload };
 });
