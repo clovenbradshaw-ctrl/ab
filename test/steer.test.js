@@ -91,9 +91,16 @@ test("mechanical replies: every reply comes from the fixed table, never freeform
     Steer.REPLIES.en.confirming(""), Steer.REPLIES.en.confirmed, Steer.REPLIES.en.denied,
     Steer.REPLIES.en.safety, Steer.REPLIES.en.closing,
   ]);
-  for (const focus of ["confirming", "confirmed", "denied", "safety", "closing"]) {
+  for (const focus of ["confirmed", "denied", "safety", "closing"]) {
     assert.ok(allEn.has(Steer.pickReply({ lang: "en", focus })));
   }
+  // confirming is parameterized by the value about to be stored (it echoes
+  // the value back for the person to check) — a fixed template, not a fixed
+  // literal, is what's mechanical about it.
+  assert.equal(
+    Steer.pickReply({ lang: "en", focus: "confirming", meta: { value: "Nora Alvarez" } }),
+    Steer.REPLIES.en.confirming("Nora Alvarez")
+  );
   for (let tier = 0; tier < 5; tier++) {
     assert.ok(allEn.has(Steer.pickReply({ lang: "en", focus: "supporting", tier })));
   }
