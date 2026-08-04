@@ -169,8 +169,8 @@ body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui
 .su-fallback a{color:var(--seal);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
 
 /* Nav */
-.wrap{max-width:var(--max-w);margin:0 auto;min-height:100%;display:flex;flex-direction:column;padding:0 16px}
-.shell{flex:1;display:flex;flex-direction:column;min-height:0}
+.wrap{max-width:var(--max-w);margin:0 auto;height:100svh;display:flex;flex-direction:column;padding:0 16px;overflow:hidden}
+.shell{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 nav.top{display:flex;align-items:center;gap:10px;padding:10px 0;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:16px}
 nav.top .brand{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);cursor:pointer}
 nav.top .brand .logo{width:32px;height:32px;border-radius:8px;background:var(--seal);display:grid;place-items:center;font:700 16px Inter;color:#fff}
@@ -187,7 +187,7 @@ nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-
 .dot.live{background:var(--seal)}.dot.warn{background:var(--turn)}.dot.err{background:var(--red)}
 
 /* Grid */
-.grid{display:grid;grid-template-columns:1fr minmax(280px,var(--col-w));gap:18px;flex:1;padding-bottom:16px;min-height:0}
+.grid{display:grid;grid-template-columns:1fr minmax(280px,var(--col-w));gap:18px;flex:1;padding-bottom:16px;min-height:0;overflow:hidden}
 
 /* Chat */
 .chat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden;position:relative}
@@ -2724,7 +2724,7 @@ class Intake {
         inputKind: meta.inputKind === "voice" ? "voice" : "typed",
         voiceClipId: meta.voiceClipId || null,
       };
-      thinking.text = this._reply("confirming"); thinking.streaming = false; thinking.support = false;
+      thinking.text = this._reply("confirming", { meta: { value: parsed.extracted } }); thinking.streaming = false; thinking.support = false;
       this._emit("message", thinking);
       this._emit("pending", this.pending);
       return;
