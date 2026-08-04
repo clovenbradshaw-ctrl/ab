@@ -24,6 +24,15 @@
 //                       mode, so each tick re-hears the whole clip-to-date;
 //                       stop() still re-runs the final, complete clip once
 //                       so a partial preview is never the answer of record.
+//                       Only actually runs when a device looks capable
+//                       enough to absorb a repeated ASR pass without
+//                       janking the UI (see isCapableDevice()) — on a
+//                       constrained device this silently degrades to the
+//                       pre-streaming behavior: one pass, on stop().
+//
+// The model itself is requested in a quantized form (see dtypeFor()) —
+// smaller download, faster inference, on every device — rather than the
+// library's full-precision default.
 
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -47,6 +56,27 @@
     return _device;
   }
 
+  // Quantization to request per device: 8-bit on CPU/WASM shrinks the
+  // download to a fraction of full precision and runs far faster per pass
+  // — this model may run once every 2.5s while streaming, with no GPU to
+  // lean on, so that matters a lot more than it would for a one-shot call.
+  // WebGPU has real memory bandwidth to spare, so fp16 keeps quality high
+  // while still halving fp32's footprint. Either way this is strictly
+  // lighter than the library's own default, never heavier.
+  function dtypeFor(dev) { return dev === "webgpu" ? "fp16" : "q8"; }
+
+  // Roughly: is this a phone/low-power device, or a real desktop/laptop?
+  // hardwareConcurrency is universally available; deviceMemory is Chromium-
+  // only and omitted elsewhere by design (privacy), so it only vetoes when
+  // actually reported — never assumed absent-means-constrained.
+  function isCapableDevice() {
+    if (typeof navigator === "undefined") return true;
+    const cores = navigator.hardwareConcurrency || 4;
+    if (cores < 4) return false;
+    if (typeof navigator.deviceMemory === "number" && navigator.deviceMemory < 4) return false;
+    return true;
+  }
+
   // Load (and cache) the speech model. onProgress(fraction) fires during
   // the one-time download so the UI can show it filling in.
   function loadASR(onProgress) {
@@ -54,13 +84,18 @@
       _asr = (async () => {
         const dev = await device();
         const { pipeline } = await import(/* webpackIgnore: true */ TRANSFORMERS);
-        return pipeline("automatic-speech-recognition", MODEL, {
-          device: dev,
-          progress_callback: (p) => {
-            if (typeof onProgress === "function" && p && p.status === "progress" && p.progress != null)
-              onProgress(Math.max(0, Math.min(1, p.progress / 100)));
-          },
-        });
+        const progress_callback = (p) => {
+          if (typeof onProgress === "function" && p && p.status === "progress" && p.progress != null)
+            onProgress(Math.max(0, Math.min(1, p.progress / 100)));
+        };
+        try {
+          return await pipeline("automatic-speech-recognition", MODEL, { device: dev, dtype: dtypeFor(dev), progress_callback });
+        } catch (e) {
+          // Not every model repo publishes every quantization variant —
+          // fall back to the library's own default rather than permanently
+          // breaking voice input over a size optimization.
+          return await pipeline("automatic-speech-recognition", MODEL, { device: dev, progress_callback });
+        }
       })().catch((e) => { _asr = null; throw e; }); // a failed load must not poison the cache
     }
     return _asr;
@@ -110,7 +145,7 @@
   // `lang`: "en" | "es" — passed through to Whisper as a language hint,
   // since guessing the wrong language on a short clip costs more accuracy
   // than a bilingual UI should have to pay for.
-  function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = () => {}, lang = "en", partialIntervalMs = 2500 } = {}) {
+  function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = null, lang = "en", partialIntervalMs = 2500 } = {}) {
     let stream = null, rec = null, chunks = [];
     let state = "idle"; // idle | recording | transcribing
     let streamTimer = null;
@@ -118,6 +153,13 @@
     // (or the final stop()) fires — transcribe calls must never overlap,
     // since two concurrent asr() calls would fight over the one pipeline.
     let streamBusy = false;
+    // Live streaming costs real, recurring CPU/battery (a full ASR pass
+    // every partialIntervalMs) — only pay it when someone's actually
+    // listening for partials, and only on a device that can absorb it
+    // without the UI turning janky. A caller that skips onPartial gets the
+    // exact pre-streaming behavior back: no timeslice, no timer, one
+    // transcription pass on stop().
+    const streamingEnabled = typeof onPartial === "function" && isCapableDevice();
     const set = (s) => { if (s !== state) { state = s; try { onState(s); } catch {} } };
 
     function stopStreamTimer() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
@@ -151,12 +193,18 @@
       chunks = [];
       rec = new MediaRecorder(stream);
       rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      // A 1s timeslice — without one, MediaRecorder holds everything back
-      // until stop() and `chunks` never has anything in it for runPartial()
-      // to snapshot while the person is still talking.
-      rec.start(1000);
+      if (streamingEnabled) {
+        // A 1s timeslice — without one, MediaRecorder holds everything back
+        // until stop() and `chunks` never has anything for runPartial() to
+        // snapshot while the person is still talking. Skipped entirely when
+        // nobody wants partials: no reason to chunk the recording finer
+        // than MediaRecorder's own default.
+        rec.start(1000);
+        streamTimer = setInterval(runPartial, partialIntervalMs);
+      } else {
+        rec.start();
+      }
       set("recording");
-      streamTimer = setInterval(runPartial, partialIntervalMs);
     }
 
     function releaseMic() { try { stream && stream.getTracks().forEach((t) => t.stop()); } catch {} stream = null; }
