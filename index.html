@@ -862,11 +862,24 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 // config.js — small shared constants that don't belong to any one layer.
 //
 // The admin account: whoever is signed in as this Matrix user gets folded
+// ── Deployment config ────────────────────────────────────────────────────────
+// Edit these for your deployment. The app works fully offline in demo mode
+// with zero configuration — Matrix features activate only when these are set.
+const DEPLOY_CONFIG = {
+  // Matrix homeserver for silent account provisioning. Set to null to
+  // disable Matrix entirely (demo-only, localStorage persistence).
+  homeserver: "https://hyphae.social",
+
+  // The admin account that gets invited to every applicant's room.
+  adminUserId: "@planetary_nebula996083:hyphae.social",
+};
+
+// ── config.js ────────────────────────────────────────────────────────────────
+// The admin account: whoever is signed in as this Matrix user gets folded
 // into every applicant's room (see store.js MatrixStore._ensureAdminInvited)
 // and can open the Admin dashboard (see admin.js) to review uploaded
 // documents across every applicant.
-
-const ADMIN_USER_ID = "@planetary_nebula996083:hyphae.social";
+const ADMIN_USER_ID = DEPLOY_CONFIG.adminUserId || "@planetary_nebula996083:hyphae.social";
 
 
 const KEY_STORE_PREFIX = "intake:key:";
@@ -4204,7 +4217,7 @@ let loginState = null;
 // verification). If that ever changes to a flow with a human-only stage
 // (recaptcha, terms-click), registerSilentAccount() throws and the caller
 // falls back to local-only (in-browser) storage rather than get stuck.
-const HYPHAE_HS = "https://hyphae.social";
+const HYPHAE_HS = DEPLOY_CONFIG.homeserver || "https://hyphae.social";
 const SILENT_ACCOUNT_KEY = "eo.silentAccount";
 const LANG_CHOICE_KEY = "eo.lang";
 const SILENT_STAGES = new Set(["m.login.dummy", "m.login.terms"]);
@@ -4369,10 +4382,18 @@ async function chooseLang(lang) {
 
 // Tries a quick (4s-capped) silent registration before first paint so the
 // chat never has to reboot mid-conversation to switch storage backends. If
-// hyphae.social is slow or unreachable, falls back to local-only (in-browser)
+// the homeserver is slow or unreachable, falls back to local-only (in-browser)
 // storage immediately rather than make anyone wait on it — their answers are
 // never lost, they just aren't synced to an account yet this session.
 async function startConstituentSession(lang) {
+  if (!HYPHAE_HS) {
+    // Matrix disabled — go straight to local storage
+    loginState = { kind: "demo", userId: "@demo:local" };
+    hideEntryLoader();
+    hideLogin();
+    await boot();
+    return;
+  }
   showEntryLoader(lang === "es" ? "Preparando tu sesión privada…" : "Setting up your private session…");
   let ready = false;
   try {
