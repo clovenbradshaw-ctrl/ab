@@ -235,3 +235,132 @@ test("end-to-end: Spanish conversation with typos, including a mid-conversation 
     assert.ok(!Object.values(Steer.REPLIES.en).flat().includes(turn.reply) || turn.reply === Steer.REPLIES.es.safety);
   }
 });
+
+// ── address parsing ─────────────────────────────────────────────────────────
+// The address widget in index.html borrows structured street/city/state/ZIP
+// boxes purely so the browser's own autofill has something standard to fill,
+// then folds them back into the single string every other text field stores.
+// These cover that fold in both directions.
+
+test("address: canonical single-line form round-trips exactly", () => {
+  const canonical = "123 Main St, Apt 4B, Nashville, TN 37201";
+  const p = Steer.parseAddress(canonical);
+  assert.deepEqual(p, { street: "123 Main St", unit: "Apt 4B", city: "Nashville", state: "TN", zip: "37201" });
+  assert.equal(Steer.formatAddress(p), canonical);
+});
+
+test("address: parses without a unit, and with a ZIP+4", () => {
+  assert.deepEqual(
+    Steer.parseAddress("500 Oak Ridge Dr, Knoxville, TN 37920-1234"),
+    { street: "500 Oak Ridge Dr", unit: "", city: "Knoxville", state: "TN", zip: "37920-1234" }
+  );
+});
+
+test("address: a pasted multi-line address takes the same path as a comma-joined one", () => {
+  const pasted = "123 Main St\nApt 4B\nNashville, TN 37201";
+  assert.deepEqual(Steer.parseAddress(pasted), Steer.parseAddress("123 Main St, Apt 4B, Nashville, TN 37201"));
+});
+
+test("address: full state names resolve to their code, including multi-word ones", () => {
+  assert.equal(Steer.parseAddress("1 Elm St, Memphis, Tennessee 38103").state, "TN");
+  assert.equal(Steer.parseAddress("1 Elm St, Charlotte, North Carolina 28202").state, "NC");
+  assert.equal(Steer.parseAddress("1 Elm St, Providence, Rhode Island 02903").state, "RI");
+});
+
+test("address: a city that shares a state's name is not eaten by the state matcher", () => {
+  // "Washington, DC 20001" — the state matcher works right-to-left off the
+  // LAST segment, so the city keeps its name.
+  assert.deepEqual(
+    Steer.parseAddress("1600 Pennsylvania Ave NW, Washington, DC 20001"),
+    { street: "1600 Pennsylvania Ave NW", unit: "", city: "Washington", state: "DC", zip: "20001" }
+  );
+  assert.equal(Steer.parseAddress("350 5th Ave, New York, NY 10001").city, "New York");
+});
+
+test("address: with no commas at all, state and ZIP still come off and nothing is invented", () => {
+  // There's no non-guessing way to find the city boundary here, so the
+  // remainder stays whole in `street` rather than being split on a hunch.
+  assert.deepEqual(
+    Steer.parseAddress("123 Main St Nashville TN 37201"),
+    { street: "123 Main St Nashville", unit: "", city: "", state: "TN", zip: "37201" }
+  );
+});
+
+test("address: parse -> format never drops what the person wrote", () => {
+  const inputs = [
+    "123 Main St, Apt 4B, Nashville, TN 37201",
+    "PO Box 88, Erwin, TN 37650",
+    "c/o Room In The Inn, 705 Drexel St, Nashville, TN 37203",
+    "the shelter on 5th, ask for Nora",
+    "Rural Route 2 Box 14, Sneedville, Tennessee",
+    "Unit 7, Building C, 90 Airport Rd, Gatlinburg, TN 37738",
+    "no fixed address right now",
+    "Tennessee",
+    "37201",
+  ];
+  const words = (s) => s.toLowerCase().replace(/,/g, " ").split(/\s+/).filter(Boolean);
+  for (const input of inputs) {
+    const parsed = Steer.parseAddress(input);
+    const out = Steer.formatAddress(parsed);
+    // A full state name legitimately canonicalizes to its code ("Tennessee"
+    // -> "TN"), which is a rewrite, not a loss — so the words it was built
+    // from are excused, and the code has to actually be there.
+    const canonicalized = new Set();
+    if (parsed.state) {
+      const st = Steer.lookupState(parsed.state);
+      for (const w of words(st.name)) canonicalized.add(w);
+      assert.ok(words(out).includes(parsed.state.toLowerCase()), `state code missing from "${out}"`);
+    }
+    for (const w of words(input)) {
+      if (canonicalized.has(w)) continue;
+      assert.ok(words(out).includes(w), `"${w}" from "${input}" was dropped — became "${out}"`);
+    }
+  }
+});
+
+test("address: a trailing country is dropped, but only when something else remains", () => {
+  assert.equal(Steer.parseAddress("123 Main St, Nashville, TN 37201, USA").city, "Nashville");
+  assert.equal(Steer.formatAddress(Steer.parseAddress("123 Main St, Nashville, TN 37201, USA")), "123 Main St, Nashville, TN 37201");
+  assert.equal(Steer.parseAddress("USA").street, "USA", "a lone country is all they gave us — keep it");
+});
+
+test("address: empty and whitespace-only input parse to a blank address, not a crash", () => {
+  for (const v of ["", "   ", null, undefined, "\n\n"]) {
+    assert.deepEqual(Steer.parseAddress(v), Steer.emptyAddress());
+  }
+  assert.equal(Steer.formatAddress(Steer.emptyAddress()), "");
+  assert.equal(Steer.formatAddress(null), "");
+});
+
+test("address: a half-filled address formats as a sentence, not stray commas", () => {
+  assert.equal(Steer.formatAddress({ street: "123 Main St", city: "Nashville" }), "123 Main St, Nashville");
+  assert.equal(Steer.formatAddress({ state: "TN", zip: "37201" }), "TN 37201");
+  assert.equal(Steer.formatAddress({ street: "PO Box 12", zip: "37201" }), "PO Box 12, 37201");
+});
+
+test("address: lookupState accepts codes, names, and casing; returns null rather than guessing", () => {
+  assert.equal(Steer.lookupState("tn").code, "TN");
+  assert.equal(Steer.lookupState("Tennessee").code, "TN");
+  assert.equal(Steer.lookupState("TN.").code, "TN");
+  assert.equal(Steer.lookupState("Puerto Rico").code, "PR");
+  assert.equal(Steer.lookupState("AE").code, "AE", "military posts get federal mail too");
+  assert.equal(Steer.lookupState("Nashville"), null);
+  assert.equal(Steer.lookupState(""), null);
+});
+
+test("address: ZIP check accepts 5-digit and ZIP+4, rejects the rest", () => {
+  assert.equal(Steer.isValidZip("37201"), true);
+  assert.equal(Steer.isValidZip("37201-1234"), true);
+  assert.equal(Steer.isValidZip("3720"), false);
+  assert.equal(Steer.isValidZip("abcde"), false);
+  assert.equal(Steer.isValidZip(""), false);
+});
+
+test("address fields never block on format — only on being empty when required", () => {
+  const field = { path: "complainant_address", type: "address", required: true };
+  // Nothing about the shape of what they typed is grounds for refusing it.
+  assert.equal(Steer.validate(field, "no fixed address right now", "en"), null);
+  assert.equal(Steer.validate(field, "c/o my sister, 12 Elm, Nashville TN 3720", "en"), null);
+  assert.equal(Steer.validate(field, "", "en"), Steer.VALIDATION_MESSAGES.en.required);
+  assert.equal(Steer.validate({ ...field, required: false }, "", "en"), null);
+});
