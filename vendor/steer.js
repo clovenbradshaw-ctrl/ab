@@ -302,13 +302,39 @@
     return text.replace(/(^\s*|[.!?]\s+)([a-záéíóúñ])/g, (m, sep, ch) => sep + ch.toUpperCase());
   }
 
-  function tidyText(text, lang = "en") {
+  // Title-cases a proper name, word by word, instead of only the sentence
+  // start ("frank smith" -> "Frank Smith"). Same conservative bar as the
+  // rest of this file: a word that already contains an interior capital
+  // ("McDonald", "O'Brien", "DeVon") is left completely alone rather than
+  // guessed at, since re-casing it could just as easily make it wrong. This
+  // only ever *adds* capitalization to an all-lowercase word — it never
+  // lowercases anything, so it can't strip a capitalization the person
+  // typed on purpose.
+  function titleCaseName(text) {
+    return text.replace(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*/g, (word) => {
+      if (/[A-ZÀ-Þ]/.test(word.slice(1))) return word;
+      return word[0].toUpperCase() + word.slice(1);
+    });
+  }
+
+  // A field marked nameCase is asking for a short proper name, but a small
+  // classifier (or a person just narrating instead of answering) can still
+  // hand back a whole run-on sentence ("my name is Frank Smith, I'm the
+  // father..."). Title-casing every word of that would produce something
+  // that reads like a book title, not a name — worse than leaving it alone.
+  // Only apply name-casing to text that actually looks like a name: a
+  // handful of words, no digits, no sentence punctuation.
+  function looksLikeName(text) {
+    return text.length <= 60 && !/[0-9]/.test(text) && !/[,.!?;:]/.test(text) && text.trim().split(/\s+/).length <= 6;
+  }
+
+  function tidyText(text, lang = "en", field = null) {
     if (!text) return text;
     let t = text.toString().replace(/\s+/g, " ").trim();
     if (!t) return t;
     t = t.replace(/\s+([,.!?;:])/g, "$1"); // no space before punctuation
     t = fixContractions(t, lang);
-    t = capitalizeSentences(t);
+    t = field && field.nameCase && looksLikeName(t) ? titleCaseName(t) : capitalizeSentences(t);
     // Opening Spanish question/exclamation marks are easy to miss when
     // typing quickly (or transcribing speech) and cost nothing to add back
     // when the sentence clearly ends with the closing mark but doesn't open
