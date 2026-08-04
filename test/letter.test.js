@@ -164,7 +164,7 @@ test("voice-meta from a real Intake conversation reaches fold() provenance and t
   await intake.submit("Nora Alvarez", { inputKind: "voice", voiceClipId: "clip_v0j2kl" });
   // Store the raw source text before tidyText, so the trace can compare.
   const spokenRaw = intake.history[intake.history.length - 1];
-  assert.equal(spokenRaw.text, engine.Steer.REPLIES.en.confirming);
+  assert.equal(spokenRaw.text, engine.Steer.REPLIES.en.confirming("Nora Alvarez"));
   await intake.submit("yes");
 
   const folded = store.fold();
