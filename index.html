@@ -12,10 +12,10 @@
      window.matrixcs undefined. This is a self-built bundle (see
      vendor/README.md to rebuild/upgrade it) that includes the Rust crypto
      backend needed for real E2EE. -->
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <script src="vendor/matrix-sdk-bundle.js"></script>
 <script src="vendor/steer.js"></script>
 <script src="vendor/voice.js"></script>
-<script src="https://unpkg.com/@phosphor-icons/web"></script>
 <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
@@ -232,7 +232,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .msg-group.end .msg-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:4px}
 .msg-group.start .msg-bubble{background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:4px}
 .msg-group.start .msg-bubble.support{background:var(--seal-soft);border-color:#C9E0D5}
-.msg-bubble .tag{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
+.msg-bubble .tag{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
 .msg-bubble .tag.help{color:var(--turn)}
 .msg-bubble .value{display:block;width:max-content;max-width:100%;margin-top:6px;padding:2px 7px;border-radius:4px;background:rgba(46,111,94,.12);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--seal);word-break:break-word;white-space:pre-wrap}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
@@ -737,7 +737,10 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
           <button class="send-btn" id="send">Send</button>
         </div>
         <div class="voice-note hidden" id="voiceNote"></div>
-        <div class="hint"><kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck</div>
+        <div class="hint">
+          <kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck
+          · <a href="#" id="bulkOpen">prefer to write it all out at once?</a>
+        </div>
       </section>
       <section class="wizard hidden" id="wizardPane">
         <div class="progress" id="wizProgress">
@@ -823,6 +826,42 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
   <p class="field-path" id="tracePath"></p>
   <div id="traceBody" style="max-height:52vh;overflow:auto;margin:6px 0 12px"></div>
   <div class="btns"><button class="primary" id="traceClose">Close</button></div>
+</div></div>
+
+<!-- End-user: "answer several at once" bulk entry, an alternative to the
+     one-field-at-a-time chat for someone who'd rather just write their
+     story once. Same schema, same validate() rules — see Intake.extractBulk. -->
+<div class="inline-editor" id="bulkModal"><div class="modal" id="bulkModalBox" style="width:min(560px,94vw)">
+  <h3>Answer several at once</h3>
+  <div id="bulkNeedNote" class="field-path" style="margin-bottom:8px"></div>
+
+  <div id="bulkComposeView">
+    <textarea id="bulkText" rows="8" placeholder="Write or paste as much as you'd like — your name, what happened, anything you'd normally answer one question at a time. We'll pull out whatever we can and ask you about the rest." style="width:100%;resize:vertical;font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)"></textarea>
+    <div class="btns" style="margin-top:12px">
+      <button class="cancel" id="bulkCancel">Cancel</button>
+      <button class="primary" id="bulkFind" disabled>Find my answers</button>
+    </div>
+  </div>
+
+  <div id="bulkLoadingView" class="hidden" style="text-align:center;padding:18px 0">
+    <div class="spin" style="margin:0 auto 12px"></div>
+    <p class="lnote" id="bulkLoadingNote">Reading through what you wrote…</p>
+  </div>
+
+  <div id="bulkReviewView" class="hidden">
+    <p class="lnote" id="bulkReviewNote" style="margin:0 0 10px"></p>
+    <div id="bulkReviewList" style="max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btns" style="margin-top:12px">
+      <button class="cancel" id="bulkBack">← Back</button>
+      <button class="primary" id="bulkSave">Save these answers</button>
+    </div>
+  </div>
+
+  <div id="bulkNoModelView" class="hidden">
+    <p class="lnote">Answering several questions at once needs a real language model to actually read what you wrote — right now you're in quick Demo mode, which can't do that safely.</p>
+    <p class="lnote">Switch the model dropdown above (Demo → the WebLLM or Ollama option) to use this, or keep going one question at a time below.</p>
+    <div class="btns" style="margin-top:12px"><button class="primary" id="bulkNoModelClose">Got it</button></div>
+  </div>
 </div></div>
 
 <!-- Context drawer -->
@@ -990,6 +1029,7 @@ const SCHEMA = {
       path: "complainant_name",
       label: "Your full name",
       type: "text",
+      nameCase: true,
       required: true,
       prompt: "Let's start with you. What's your full name?",
       promptEs: "Empecemos contigo. ¿Cuál es tu nombre completo?",
@@ -2781,6 +2821,15 @@ class Intake {
       return this._classifyAndReply(raw, f, text, meta, thinking2);
     }
 
+    return this._classifyAndReply(raw, f, text, meta, thinking);
+  }
+
+  // The second half of a turn: take the model's raw classify-only response
+  // (from either the configured backend or the EchoModel failover above) and
+  // turn it into the one mechanical reply the person sees. Split out of
+  // submit() so both the normal path and the mid-conversation model-failover
+  // retry can share it instead of duplicating this logic.
+  _classifyAndReply(raw, f, text, meta, thinking) {
     const parsed = this._parseClassification(raw, f, text);
     // Belt and suspenders: the model's own distress judgment can catch
     // subtler phrasing the local keyword scan missed. Either source firing
@@ -2804,9 +2853,9 @@ class Intake {
       // cheap, model-independent pass on top of it. Either way, what
       // reaches the person next is the "does this look right?" confirm
       // step below — nothing here is ever stored without that yes.
-      if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang);
+      if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang, f);
       const err = validate(f, parsed.extracted, this.lang);
-      if (err) { thinking.text = err; thinking.streaming = false; this._emit("message", thinking); return; }
+      if (err) { thinking.text = err; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
       this.pending = {
         field: f,
         value: parsed.extracted,
@@ -2821,6 +2870,17 @@ class Intake {
       thinking.text = this._reply("confirming", { meta: { value: parsed.extracted } }); thinking.streaming = false; thinking.support = false;
       this._emit("message", thinking);
       this._emit("pending", this.pending);
+      return;
+    }
+
+    // The person attempted an answer but it didn't validate (e.g. free text
+    // for an enum field, an unparseable date, a malformed email) — tell them
+    // exactly what's wrong instead of the generic "take your time" nudge,
+    // which gives no way to actually succeed on the next try.
+    const attemptErr = text.trim() ? validate(f, text, this.lang) : null;
+    if (attemptErr) {
+      thinking.text = attemptErr; thinking.streaming = false; thinking.support = true;
+      this._emit("message", thinking);
       return;
     }
 
@@ -2892,6 +2952,83 @@ class Intake {
       pending: this.pending,
       lang: this.lang,
     });
+  }
+
+  // Same assemble() the chat turn uses, but for a one-off "does this one
+  // field's answer happen to be in here" probe against a block of bulk text
+  // instead of the real conversation — the visible chat transcript (and its
+  // epoch bookkeeping) is untouched by this.
+  _assembleBulk(field, text) {
+    return assemble({
+      field,
+      discourse: [{ role: "user", text, epoch: 0 }],
+      timeline: this.store.timeline(),
+      knowledge: this.knowledge,
+      schema: this.schema,
+      anchor: this.anchor,
+      system: this.systemPrompt,
+      pending: null,
+      lang: this.lang,
+    });
+  }
+
+  // "Just let me write it all out" escape hatch for when the one-field-at-a-
+  // time chat is the wrong shape for how someone wants to tell their story.
+  // Runs the SAME per-field classify contract (_assemble → model.chat →
+  // _parseClassification → tidyText/validate) the chat uses, once per
+  // still-unanswered field against the one block of text, instead of a
+  // separate bespoke extractor — so a field either satisfies the exact same
+  // rules typing it in chat would, or it's left for the chat to ask for.
+  // Sequential, not parallel: WebLLM holds a single in-browser engine and
+  // Ollama a single local daemon, neither meant for concurrent requests.
+  // Nothing is stored yet — see commitBulk() — this only proposes candidates
+  // for the person to review first, same "nothing sent until you review it"
+  // bar as every other path into the store.
+  async extractBulk(text) {
+    const intent = Steer.classifyIntent(text, this.lang);
+    if (intent.distress) {
+      Steer.applyForce(this.steer, { distress: true });
+      this._say("assistant", this._reply("safety"), { support: true });
+      return { distress: true, candidates: [] };
+    }
+    const targets = this.progress().filter((p) => !p.done);
+    const candidates = [];
+    for (const f of targets) {
+      const { messages } = this._assembleBulk(f, text);
+      let raw = "";
+      try { raw = await this.model.chat(messages); }
+      catch (e) { console.error("[Intake] extractBulk probe failed:", f.path, e); continue; }
+      const parsed = this._parseClassification(raw, f, text);
+      if (parsed.distress) {
+        Steer.applyForce(this.steer, { distress: true });
+        this._say("assistant", this._reply("safety"), { support: true });
+        return { distress: true, candidates };
+      }
+      if (!parsed.ready || parsed.extracted == null) continue;
+      let value = parsed.extracted;
+      if (f.type === "text") value = Steer.tidyText(value, this.lang, f);
+      if (validate(f, value, this.lang)) continue; // couldn't confidently satisfy this field from the bulk text
+      candidates.push({ field: f, value, source: text });
+    }
+    return { distress: false, candidates };
+  }
+
+  // Stores whichever candidates the person accepted after reviewing
+  // extractBulk()'s proposals (some may have been edited or dropped in that
+  // review — accepted carries only what they actually approved). Provenance
+  // keeps the full bulk text as `source` and inputKind "bulk" so the audit
+  // trail can always show what was pasted, same as "voice"/"typed"/"edited".
+  commitBulk(accepted) {
+    for (const { field, value, source } of accepted) {
+      const ev = this.store.emit(OP.DEF, {
+        anchor: this.anchor, path: field.path, value,
+        source: source ?? null, inputKind: "bulk", voiceClipId: null,
+      });
+      this._emit("stored", { field, value, event: ev });
+      this._checkFilingDeadline(field, value);
+    }
+    if (accepted.length) this.epoch++;
+    return this._askNext();
   }
 
   _parseClassification(raw, field, userText) {
@@ -3455,6 +3592,7 @@ function initAdminView({ onClose }) {
     if (s.inputKind === "typed") return `(typed at ${fmtDate(s.at)})`;
     if (s.inputKind === "voice") return `(transcribed from audio clip id ${s.voiceClipId || "?"} at ${fmtDate(s.at)})`;
     if (s.inputKind === "edited") return `(edited in place by ${s.by || "?"})`;
+    if (s.inputKind === "bulk") return `(found in a bulk answer, reviewed and accepted at ${fmtDate(s.at)})`;
     return `(source unknown${s.at ? " at " + fmtDate(s.at) : ""})`;
   }
 
@@ -4115,6 +4253,140 @@ function wireCompose() {
     lastVoiceClipId = null;
     input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px";
   });
+}
+
+// ── "Answer several at once" bulk entry ──
+// An alternative to the one-field-at-a-time chat: write or paste a whole
+// story once, and Intake.extractBulk() runs the exact same per-field
+// classify → tidyText → validate pipeline the chat uses, once per
+// still-unanswered field, against that one block of text. Only offered
+// with a real model backend — EchoModel has no actual language
+// understanding (it's a keyword/format classifier, not an NLU model — see
+// vendor/steer.js), so against a multi-topic block of free text it can't
+// tell which sentence is meant for which field and will happily copy the
+// entire block into every unconstrained text field. That's not a fallback
+// worth offering; the one-field chat (where "the whole message IS the
+// answer to the one active field" holds true) is what EchoModel is built
+// for.
+function wireBulk() {
+  const modal = $("bulkModal");
+  const textEl = $("bulkText");
+  const findBtn = $("bulkFind");
+  const views = {
+    compose: $("bulkComposeView"),
+    loading: $("bulkLoadingView"),
+    review: $("bulkReviewView"),
+    noModel: $("bulkNoModelView"),
+  };
+  const needNote = $("bulkNeedNote");
+  let reviewRows = [];
+
+  function showView(name) {
+    for (const k in views) views[k].classList.toggle("hidden", k !== name);
+  }
+
+  function openModal() {
+    if (!intake) return;
+    textEl.value = "";
+    findBtn.disabled = true;
+    if (intake.model instanceof EchoModel) {
+      needNote.textContent = "";
+      showView("noModel");
+    } else {
+      const remaining = intake.progress().filter((p) => !p.done);
+      needNote.textContent = remaining.length
+        ? "Still need: " + remaining.map((f) => f.label).join(", ") + "."
+        : "Everything's already answered — nothing left to find.";
+      showView("compose");
+    }
+    modal.classList.add("on");
+    setTimeout(() => textEl.focus(), 50);
+  }
+  function closeModal() { modal.classList.remove("on"); }
+
+  $("bulkOpen").onclick = (e) => { e.preventDefault(); openModal(); };
+  $("bulkCancel").onclick = closeModal;
+  $("bulkNoModelClose").onclick = closeModal;
+  $("bulkBack").onclick = () => showView("compose");
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+
+  textEl.addEventListener("input", () => { findBtn.disabled = !textEl.value.trim(); });
+
+  findBtn.onclick = async () => {
+    const text = textEl.value.trim();
+    if (!text || !intake) return;
+    showView("loading");
+    let result;
+    try { result = await intake.extractBulk(text); }
+    catch (e) {
+      console.error("[bulk] extractBulk failed:", e);
+      showView("compose");
+      toast(intake.lang === "es" ? "Algo salió mal — intenta de nuevo." : "Something went wrong — try again.", "error");
+      return;
+    }
+    if (result.distress) {
+      // Intake._say already pushed the exact same safety line the live
+      // chat shows — just get out of the way and let them see it there.
+      closeModal();
+      return;
+    }
+    reviewRows = result.candidates;
+    renderBulkReview();
+    showView("review");
+  };
+
+  function renderBulkReview() {
+    const list = $("bulkReviewList");
+    list.innerHTML = "";
+    const es = intake.lang === "es";
+    $("bulkReviewNote").textContent = reviewRows.length
+      ? (es
+        ? "Encontramos esto — revisa, corrige lo que haga falta, y desmarca lo que no quieras guardar."
+        : "We found these — check them over, fix anything wrong, and uncheck anything you don't want to save.")
+      : (es
+        ? "No encontramos respuestas claras ahí — sigamos en el chat."
+        : "We didn't find clear answers in there — let's keep going in the chat.");
+    for (const row of reviewRows) {
+      const wrap = el("div");
+      wrap.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:10px";
+      const head = document.createElement("label");
+      head.style.cssText = "display:flex;align-items:center;gap:8px;font:600 12.5px Inter;margin-bottom:6px;cursor:pointer";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = true;
+      head.appendChild(cb);
+      head.appendChild(document.createTextNode(row.field.label));
+      wrap.appendChild(head);
+      const fi = buildFieldInput(row.field, row.value);
+      wrap.appendChild(fi.el);
+      const err = el("div");
+      err.style.cssText = "color:var(--red);font-size:11.5px;margin-top:4px;display:none";
+      wrap.appendChild(err);
+      row._checkbox = cb; row._input = fi; row._err = err;
+      list.appendChild(wrap);
+    }
+  }
+
+  $("bulkSave").onclick = () => {
+    const accepted = [];
+    let hasError = false;
+    for (const row of reviewRows) {
+      row._err.style.display = "none";
+      if (!row._checkbox.checked) continue;
+      const value = row._input.getValue();
+      const err = validate(row.field, value, intake.lang);
+      if (err) { row._err.textContent = err; row._err.style.display = ""; hasError = true; continue; }
+      accepted.push({ field: row.field, value, source: row.source });
+    }
+    if (hasError) return;
+    intake.commitBulk(accepted);
+    closeModal();
+    const es = intake.lang === "es";
+    toast(
+      accepted.length
+        ? (es ? `${accepted.length} respuesta(s) guardada(s).` : `${accepted.length} answer(s) saved.`)
+        : (es ? "No se guardó nada." : "Nothing saved."),
+      "success"
+    );
+  };
 }
 
 // ── Voice input (speak your answer) ──
@@ -5918,6 +6190,7 @@ document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
   wireCompose();
+  wireBulk();
   wireVoice();
   wireDocs();
   wireChat();
