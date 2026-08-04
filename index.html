@@ -5224,9 +5224,12 @@ async function _bootAfterStore() {
   // case. Read-only defaults are fine; only the admin's session seeds the room.
   const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
   const schema = {
-    id: cfg.schema.id, title: cfg.schema.title, blurb: cfg.schema.blurb || "",
-    titleEs: cfg.schema.titleEs || "", blurbEs: cfg.schema.blurbEs || "",
-    fields: cfg.schema.fields.length ? cfg.schema.fields : [],
+    id: cfg.schema.id || SCHEMA.id,
+    title: cfg.schema.title || SCHEMA.title,
+    blurb: cfg.schema.blurb || SCHEMA.blurb || "",
+    titleEs: cfg.schema.titleEs || SCHEMA.titleEs || "",
+    blurbEs: cfg.schema.blurbEs || SCHEMA.blurbEs || "",
+    fields: cfg.schema.fields.length ? cfg.schema.fields : SCHEMA.fields,
   };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
