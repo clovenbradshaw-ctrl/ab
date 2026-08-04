@@ -2868,11 +2868,23 @@ function collectAllAnswers({ storeKind, client }) {
     if (!events.length) continue;
     const defs = events.filter((e) => e.op === OP.DEF && e.payload.anchor !== "qconfig");
     if (!defs.length) continue;
-    const applicantName = fold(events).anchors?.applicant?.complainant_name?.value || roomId;
+    const folded = fold(events);
+    const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
+    // Same voice_clip records the Letters tab's trace modal plays back —
+    // reused here so a voice-answered field is reviewable (transcript AND
+    // original audio) straight from the Answers table, without an admin
+    // needing to have already generated a letter draft for that applicant.
+    const clips = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "voice_clip")
+      .map(([id, r]) => ({ id, roomId, ...r.attrs }));
     for (const ev of defs) {
+      const inputKind = ev.payload.inputKind || "typed";
+      const voiceClip = inputKind === "voice" && ev.payload.voiceClipId
+        ? clips.find((c) => c.id === ev.payload.voiceClipId) : null;
       answers.push({
         roomId, applicantName, anchor: ev.payload.anchor, path: ev.payload.path,
         value: ev.payload.value, at: ev.at, by: ev.by, eventId: ev.id,
+        inputKind, voiceClip,
       });
     }
   }
@@ -3190,15 +3202,27 @@ function initAdminView({ onClose }) {
     if (!answers.length) return $e("div", "aempty", answers.length === 0 && !searchQuery ? "No answers recorded yet." : "No answers match your search.");
     const wrap = $e("div", "atable-wrap");
     const table = document.createElement("table"); table.className = "atable";
-    table.innerHTML = "<thead><tr><th>Applicant</th><th>Field</th><th>Value</th><th>Updated</th><th>By</th></tr></thead>";
+    table.innerHTML = "<thead><tr><th>Applicant</th><th>Field</th><th>Value</th><th>Input</th><th>Updated</th><th>By</th><th></th></tr></thead>";
     const tbody = document.createElement("tbody");
     for (const a of answers) {
       const tr = document.createElement("tr");
       tr.appendChild($e("td", "acell-name", a.applicantName));
       tr.appendChild($e("td", "acell-field", a.path));
       tr.appendChild($e("td", "acell-val", String(a.value).slice(0, 200)));
+      tr.appendChild($e("td", "acell-mime mono", a.inputKind));
       tr.appendChild($e("td", "acell-date mono", fmtDate(a.at)));
       tr.appendChild($e("td", "acell-by mono", a.by));
+      // Voice-answered fields get a play button right beside the transcript
+      // it produced — the reviewer can check the transcription against
+      // exactly what was said without leaving this table.
+      const audioTd = document.createElement("td");
+      if (a.voiceClip) {
+        const play = $e("button", "aview", "▶ Play");
+        play.title = "Play the original recording this transcript came from";
+        play.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
+        audioTd.appendChild(play);
+      }
+      tr.appendChild(audioTd);
       tbody.appendChild(tr);
     }
     table.appendChild(tbody); wrap.appendChild(table);
@@ -4050,18 +4074,27 @@ function setVoiceNote(text) {
   note.classList.remove("hidden");
 }
 
-// Kick the (large, one-time) speech-model download off the moment the page
-// loads, instead of making the first mic tap wait through it — see
-// vendor/voice.js's autoDownload(). Progress only ever touches the voice
-// note when the mic isn't actively in use, so a background download tick
-// can never clobber a live "Recording…"/"Transcribing…" note.
+// Kick the (large, one-time) speech-model download off automatically —
+// during idle time early in the page's life, not lazily on the first mic
+// tap — see vendor/voice.js's autoDownload(). Progress only ever touches
+// the voice note when the mic isn't actively in use, so a background
+// download tick can never clobber a live "Recording…"/"Transcribing…" note.
 function autoDownloadVoiceModel() {
   if (!window.Voice || !Voice.isSupported()) return;
-  Voice.autoDownload((frac) => {
-    voiceModelDownloaded = frac >= 1;
-    if (voiceInstance && voiceInstance.state !== "idle") return;
-    setVoiceNote(frac >= 1 ? voiceCopy("consent") : `${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
-  });
+  // Deferred to idle time, not fired the instant the page loads: this can
+  // compete for bandwidth with the chat model's own (mandatory, much larger)
+  // download during boot, and voice input is optional — it should never be
+  // the thing that makes the app feel slow to become interactive. A 2.5s
+  // cap means it still starts promptly on a browser that's actually idle;
+  // requestIdleCallback is unavailable in Safari, hence the timeout fallback.
+  const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
+  schedule(() => {
+    Voice.autoDownload((frac) => {
+      voiceModelDownloaded = frac >= 1;
+      if (voiceInstance && voiceInstance.state !== "idle") return;
+      setVoiceNote(frac >= 1 ? voiceCopy("consent") : `${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+    });
+  }, { timeout: 4000 });
 }
 
 function wireVoice() {
