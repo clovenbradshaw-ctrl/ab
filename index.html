@@ -15,6 +15,7 @@
 <script src="vendor/matrix-sdk-bundle.js"></script>
 <script src="vendor/steer.js"></script>
 <script src="vendor/voice.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
 <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
@@ -181,7 +182,8 @@ nav .spacer{flex:1;min-width:8px}
 nav .setup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 nav .setup select,nav .setup button,nav .setup a.btn{font:inherit;font-size:11.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:background .15s ease}
 nav .setup button:hover{background:#F2F5F7}
-nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-size:14px}
+nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-size:15px}
+nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .status{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:4px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex:none}
 .dot.live{background:var(--seal)}.dot.warn{background:var(--turn)}.dot.err{background:var(--red)}
@@ -682,15 +684,17 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <a class="brand" id="brandBtn"><span class="logo">◈</span><h1>Feedback Platform</h1><span class="sub">agency service complaint</span></a>
     <span class="spacer"></span>
     <div class="setup">
-      <select id="modelSel" title="Model backend"><option value="echo" selected>✎ Demo</option><option value="webllm">⚡ Qwen2.5 0.5B (smallest)</option><option value="ollama">☀ Ollama</option></select>
       <select id="langSel" title="Conversation language"><option value="en" selected>English</option><option value="es">Español</option></select>
-      <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
-      <button id="ctxBtn" class="icon-btn" title="View folded context">⊡</button>
-      <button id="submissionBtn" title="View my submission" style="display:none">📋</button>
-      <button id="adminBtn" title="Admin dashboard">Admin</button>
-      <button id="questionsBtn" title="Author questions">✎</button>
-      <button id="resetBtn" title="Reset">↺</button>
-      <button id="logoutBtn" title="Switch account">⇥</button>
+      <button id="submissionBtn" class="icon-btn" title="View my submission" style="display:none"><i class="ph ph-clipboard-text"></i></button>
+      <button id="resetBtn" class="icon-btn" title="Start over"><i class="ph ph-arrow-counter-clockwise"></i></button>
+      <button id="logoutBtn" class="icon-btn" title="Switch account"><i class="ph ph-sign-out"></i></button>
+      <span class="setup-admin hidden" id="navAdmin">
+        <select id="modelSel" title="Model backend"><option value="echo" selected>Demo</option><option value="webllm">Qwen2.5 0.5B (smallest)</option><option value="ollama">Ollama</option></select>
+        <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
+        <button id="ctxBtn" class="icon-btn" title="View folded context"><i class="ph ph-brackets-curly"></i></button>
+        <button id="questionsBtn" class="icon-btn" title="Author questions"><i class="ph ph-pencil-simple-line"></i></button>
+        <button id="adminBtn" title="Admin dashboard"><i class="ph ph-shield-check"></i> Admin</button>
+      </span>
     </div>
   </nav>
 
@@ -1944,6 +1948,27 @@ const CLASSIFY_SCHEMA = {
 const CLASSIFY_SCHEMA_STR = JSON.stringify(CLASSIFY_SCHEMA);
 const MAX_REPLY_TOKENS = 60; // classification only, not prose — small and fast
 
+// Why local mode can be off. A WebGPU-less browser, an insecure (plain
+// http) origin, and a GPU that offers no adapter are all "the model won't
+// load" from the person's chair, but they need different fixes — report
+// which one, with the specific fix, instead of one generic failure.
+function webgpuReadiness() {
+  if (typeof navigator === "undefined" || !navigator.gpu) {
+    return { ok: false, hint: "This browser exposes no WebGPU, which the in-browser model needs. In Chrome/Edge, turn on hardware acceleration (Settings → System) and check chrome://gpu, then reload. WebGPU does not run in Firefox." };
+  }
+  if (typeof window !== "undefined" && window.isSecureContext === false) {
+    return { ok: false, hint: "WebGPU only runs in a secure context (https:// or http://localhost). This page is served over plain http — serve it over https and reload." };
+  }
+  return { ok: true };
+}
+
+// The download is many sharded fetches over a CDN; a transient failure on
+// one shard is common and not evidence the model can never load here. Each
+// retry benefits from whatever WebLLM's Cache API backend already committed
+// to disk, so it's usually resuming, not restarting.
+const MODEL_LOAD_ATTEMPTS = 3;
+const MODEL_RETRY_BACKOFF_MS = [1000, 3000, 7000];
+
 // ---- WebLLM: in-browser, WebGPU -------------------------------------------
 class WebLLMModel {
   // Qwen2.5-0.5B is the smallest WebLLM-prebuilt instruct model that still
@@ -1958,10 +1983,41 @@ class WebLLMModel {
   }
   async ready(onProgress) {
     if (this.engine) return;
+
+    const readiness = webgpuReadiness();
+    if (!readiness.ok) throw new Error(readiness.hint);
+
+    // The API existing does not mean an adapter can be created (headless
+    // browser, GPU blocklisted, hardware acceleration off). Fail fast with
+    // the specific reason rather than letting CreateMLCEngine throw after a
+    // download has already started.
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) throw new Error("WebGPU is present but this device offers no GPU adapter — usually hardware acceleration being off or the GPU being blocklisted. Turn hardware acceleration on and reload.");
+    } catch (adapterErr) {
+      throw adapterErr instanceof Error ? adapterErr : new Error("WebGPU adapter could not be created: " + adapterErr);
+    }
+
     const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-    this.engine = await webllm.CreateMLCEngine(this.modelId, {
-      initProgressCallback: (r) => onProgress?.(r.text, r.progress),
-    });
+    let lastErr = null;
+    for (let attempt = 0; attempt < MODEL_LOAD_ATTEMPTS; attempt++) {
+      try {
+        this.engine = await webllm.CreateMLCEngine(this.modelId, {
+          initProgressCallback: (r) => onProgress?.(r.text, r.progress),
+        });
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.error(`[WebLLMModel] load attempt ${attempt + 1}/${MODEL_LOAD_ATTEMPTS} failed:`, err);
+        this.engine = null;
+        if (attempt < MODEL_LOAD_ATTEMPTS - 1) {
+          const wait = MODEL_RETRY_BACKOFF_MS[attempt] || 5000;
+          onProgress?.(`Download failed — retrying in ${Math.round(wait / 1000)}s (attempt ${attempt + 2}/${MODEL_LOAD_ATTEMPTS})…`, 0);
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error("Model download failed after retrying.");
   }
   async chat(messages) {
     const r = await this.engine.chat.completions.create({
@@ -2681,10 +2737,46 @@ class Intake {
     let raw = "";
     try { raw = await this.model.chat(messages); }
     catch (e) {
+      // Person-facing text stays soft and reassuring on purpose (trauma-aware
+      // intake) — the specific cause (WebGPU/adapter/network) goes to the
+      // console for whoever debugs a report of this, not to the parent mid-story.
+      console.error("[Intake] model.chat failed:", e);
+      if (this.model instanceof EchoModel) {
+        // Already on the zero-network fallback and it still failed — there's
+        // nothing further to hand off to.
+        thinking.text = this.lang === "es"
+          ? "El modelo no responde — puedes seguir escribiendo y guardaré tus respuestas directamente."
+          : "The model isn't responding — you can keep typing and I'll store your answers directly.";
+        thinking.streaming = false; this._emit("message", thinking); return;
+      }
+      // The configured backend (WebLLM/Ollama) is unusable this turn and every
+      // turn after — a crashed WebGPU context or an unreachable Ollama host
+      // doesn't recover mid-session. Rather than repeat this same dead-end
+      // message on every future turn (the old behavior — it *promised* "I'll
+      // store your answers directly" and then never actually did), fail over
+      // once to EchoModel: the same zero-network, schema-driven classifier
+      // "Demo" mode uses. It asks the identical schema-authored questions and
+      // applies the identical Steer.validate()/pickReply() rules, so the
+      // interview continues as a plain guided flow — no LLM required — instead
+      // of stalling.
+      thinking.streaming = false;
       thinking.text = this.lang === "es"
-        ? "El modelo no responde — puedes seguir escribiendo y guardaré tus respuestas directamente."
-        : "The model isn't responding — you can keep typing and I'll store your answers directly.";
-      thinking.streaming = false; this._emit("message", thinking); return;
+        ? "El modelo no responde — voy a continuar en un modo guiado simple, sin conexión, para que puedas seguir."
+        : "The model isn't responding — I'll switch to a simple guided mode so we can keep going.";
+      thinking.support = true;
+      this._emit("message", thinking);
+      this.model = new EchoModel();
+      try { raw = await this.model.chat(messages); }
+      catch {
+        // EchoModel is synchronous, local logic — this should be unreachable,
+        // but if it ever throws, don't leave the person mid-turn with no reply.
+        this._say("assistant", this.lang === "es"
+          ? "Puedes seguir escribiendo y guardaré tus respuestas directamente."
+          : "You can keep typing and I'll store your answers directly.", { support: true });
+        return;
+      }
+      const thinking2 = this._say("assistant", "", { streaming: true, field: f.path });
+      return this._classifyAndReply(raw, f, text, meta, thinking2);
     }
 
     const parsed = this._parseClassification(raw, f, text);
@@ -5281,6 +5373,8 @@ async function boot() {
     store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
   }
 
+  document.getElementById("navAdmin").classList.toggle("hidden", !isAdmin(store.user));
+
   await _bootAfterStore();
 }
 
@@ -5289,12 +5383,16 @@ async function _bootAfterStore() {
   const model = makeModel(modelKind, { model: modelKind === "ollama" ? "llama3.2" : undefined });
   
   if (modelKind === "webllm") {
-    if (!navigator.gpu) { document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
     showLoader();
     try {
       await model.ready((text, p) => updateLoader(text, p));
       hideLoader(); setStatus("ready","live");
-    } catch(e) { hideLoader(); document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
+    } catch(e) {
+      hideLoader();
+      console.error("[WebLLMModel] falling back to demo mode:", e);
+      toast(e?.message || "Local model unavailable — using rule-based mode", "warn");
+      document.getElementById("modelSel").value="echo"; return _bootAfterStore();
+    }
   } else if (modelKind === "ollama") {
     try { await model.ready(); setStatus("ollama","live"); }
     catch(e) { toast("Ollama not reachable","warn"); document.getElementById("modelSel").value="echo"; return _bootAfterStore(); }
