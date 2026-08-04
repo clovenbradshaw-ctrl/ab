@@ -352,6 +352,18 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .field-enum label{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13.5px;transition:border-color .15s ease,background .15s ease}
 .field-enum label:hover{border-color:var(--seal);background:var(--seal-soft)}
 .field-enum input[type=radio]{accent-color:var(--seal)}
+.field-address{margin-bottom:10px}
+.field-address .addr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 8px;border:0;padding:0;margin:0}
+.field-address .addr-grid .wide{grid-column:1 / -1}
+.field-address label{display:flex;flex-direction:column;gap:3px;font:600 10.5px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.field-address label input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);text-transform:none;letter-spacing:normal}
+.field-address label input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+.field-address .addr-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted);min-height:1em}
+.field-address .addr-hint.warn{color:var(--turn)}
+.field-address .addr-preview{margin:6px 0 0;font-size:11.5px;color:var(--muted);word-break:break-word}
+.field-address .addr-toggle{margin-top:8px;background:none;border:0;padding:0;font:inherit;font-size:11.5px;color:var(--seal);text-decoration:underline;cursor:pointer}
+.field-address .addr-toggle:hover{color:var(--ink)}
+@media (max-width:420px){.field-address .addr-grid{grid-template-columns:1fr}.field-address .addr-grid .wide{grid-column:auto}}
 .inline-editor .btns{display:flex;gap:7px;justify-content:flex-end}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -1050,7 +1062,10 @@ const SCHEMA = {
     {
       path: "complainant_address",
       label: "Your mailing address",
-      type: "text",
+      // Stored as a plain string like every other text field — `address`
+      // only changes the INPUT, to the separate boxes a browser's own
+      // autofill can fill (see buildAddressInput). Chat stays free text.
+      type: "address",
       required: true,
       prompt: "What's your mailing address? Street, city, state, and zip code.",
       promptEs: "¿Cuál es tu dirección postal? Calle, ciudad, estado y código postal.",
@@ -2879,6 +2894,30 @@ class Intake {
     // which gives no way to actually succeed on the next try.
     const attemptErr = text.trim() ? validate(f, text, this.lang) : null;
     if (attemptErr) {
+      // Exception: an OPTIONAL field whose format check just failed, where
+      // the person's own words are an explicit decline ("N/A", "I don't
+      // have one", "skip this") — the prompt for complainant_email
+      // literally says "you can skip this if you don't have one," so typing
+      // exactly that must not dead-end on "that doesn't look like an email
+      // address" forever. Store their own words verbatim (same confirm step
+      // as any other answer) instead of blocking them — never silently
+      // blank the field, since what they said is itself meaningful content
+      // for the audit trail. Deliberately excludes required fields (can't
+      // be skipped) and enum fields (their own value space has no room for
+      // free text — a schema wanting this should add an explicit enum
+      // option instead).
+      if (!f.required && f.type !== "enum" && Steer.classifyIntent(text, this.lang).skip) {
+        this.pending = {
+          field: f, value: text.trim(), source: text,
+          inputKind: meta.inputKind === "voice" ? "voice" : "typed",
+          voiceClipId: meta.voiceClipId || null,
+        };
+        thinking.text = this._reply("confirming", { meta: { value: text.trim() } });
+        thinking.streaming = false; thinking.support = false;
+        this._emit("message", thinking);
+        this._emit("pending", this.pending);
+        return;
+      }
       thinking.text = attemptErr; thinking.streaming = false; thinking.support = true;
       this._emit("message", thinking);
       return;
@@ -3741,11 +3780,179 @@ function celebrate() {
 
 // ── Inline editor ──
 let ieResolve = null;
+
+// buildAddressInput(currentValue) -> { el, getValue(), focus() }
+//
+// A mailing address, entered as the separate boxes a browser's own autofill
+// knows how to fill. The ONLY suggestion source is the person's own saved
+// addresses: the autocomplete tokens below (address-line1/-line2,
+// address-level2/-level1, postal-code) are the standard names Chrome, Safari
+// and Firefox map their stored profiles onto. Nothing is sent anywhere — no
+// geocoder, no API key, no keystroke leaves the page. That matters more here
+// than on an ordinary form: this is a family's home address attached to a
+// federal complaint about their child.
+//
+// Whatever they end up with is folded back into ONE string (see
+// Steer.formatAddress), so the stored answer is shaped exactly like every
+// other text field and the letter, the extractor and existing answers all
+// keep working.
+//
+// And they never have to use the boxes. "Type it as one line instead" swaps
+// in a single free-text input, carrying the value across intact in both
+// directions, because plenty of real mailing addresses don't fit a
+// five-box grid — PO boxes, care-of lines, rural routes, shelters, or no
+// fixed address at all. Nothing here validates hard enough to block: the
+// ZIP note is a hint, not a gate.
+function buildAddressInput(currentValue) {
+  const es = (typeof intake !== "undefined" && intake && intake.lang === "es");
+  const T = es
+    ? { street: "Calle y número", unit: "Apto., suite, unidad (opcional)", city: "Ciudad",
+        state: "Estado", zip: "Código postal",
+        toOneLine: "Prefiero escribirla en una sola línea",
+        toFields: "Prefiero llenarla por campos",
+        oneLinePh: "Escribe tu dirección como quieras",
+        saved: "Se guardará como:" }
+    : { street: "Street address", unit: "Apt, suite, unit (optional)", city: "City",
+        state: "State", zip: "ZIP code",
+        toOneLine: "Type it as one line instead",
+        toFields: "Fill it in as separate fields",
+        oneLinePh: "Write your address however you like",
+        saved: "Saved as:" };
+
+  const wrap = el("div", "field-address");
+  let parts = Steer.parseAddress(currentValue);
+  // Something that survived a round-trip only as an unsplittable blob (a
+  // care-of line, "no fixed address") is better served by the plain box —
+  // opening it in a grid it doesn't fit reads as the form telling them
+  // they've answered wrong.
+  let oneLine = !!(currentValue || "").trim() && !parts.city && !parts.state && !parts.zip;
+
+  const inputs = {};
+  let freeInput = null;
+
+  // The datalist gives the state box the 50-plus options without ever
+  // trapping the value inside them — an <input list> still accepts anything
+  // typed, which a <select> would not.
+  const listId = "addr_states_" + Math.random().toString(36).slice(2);
+
+  function boxed(key, labelText, opts) {
+    const label = document.createElement("label");
+    if (opts.wide) label.className = "wide";
+    label.appendChild(document.createTextNode(labelText));
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.autocomplete = opts.autocomplete;
+    inp.value = parts[key] || "";
+    if (opts.inputMode) inp.inputMode = opts.inputMode;
+    if (opts.list) inp.setAttribute("list", opts.list);
+    if (opts.maxLength) inp.maxLength = opts.maxLength;
+    label.appendChild(inp);
+    inputs[key] = inp;
+    return label;
+  }
+
+  function readBoxes() {
+    return {
+      street: inputs.street.value, unit: inputs.unit.value, city: inputs.city.value,
+      state: inputs.state.value, zip: inputs.zip.value,
+    };
+  }
+
+  function render() {
+    wrap.innerHTML = "";
+    if (oneLine) {
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.className = "field-input";
+      // street-address is the single-field autofill token — the browser
+      // fills the whole thing in one go here.
+      inp.autocomplete = "street-address";
+      inp.placeholder = T.oneLinePh;
+      inp.value = Steer.formatAddress(parts);
+      freeInput = inp;
+      wrap.appendChild(inp);
+    } else {
+      freeInput = null;
+      const form = document.createElement("form");
+      form.className = "addr-grid";
+      form.autocomplete = "on";
+      // A real <form> is what makes browsers treat these five boxes as one
+      // address profile rather than five unrelated inputs. It is never
+      // submitted — Enter is the wizard's "next", not a page load.
+      form.addEventListener("submit", (e) => e.preventDefault());
+      form.appendChild(boxed("street", T.street, { autocomplete: "address-line1", wide: true }));
+      form.appendChild(boxed("unit", T.unit, { autocomplete: "address-line2", wide: true }));
+      form.appendChild(boxed("city", T.city, { autocomplete: "address-level2", wide: true }));
+      form.appendChild(boxed("state", T.state, { autocomplete: "address-level1", list: listId }));
+      form.appendChild(boxed("zip", T.zip, { autocomplete: "postal-code", inputMode: "numeric", maxLength: 10 }));
+
+      const datalist = document.createElement("datalist");
+      datalist.id = listId;
+      for (const st of Steer.US_STATES) {
+        const opt = document.createElement("option");
+        opt.value = st.code; opt.label = st.name;
+        datalist.appendChild(opt);
+      }
+      form.appendChild(datalist);
+      wrap.appendChild(form);
+
+      const hint = el("p", "addr-hint");
+      hint.setAttribute("role", "status");
+      const preview = el("p", "addr-preview");
+      const repaint = () => {
+        const zip = inputs.zip.value.trim();
+        const bad = zip && !Steer.isValidZip(zip);
+        hint.textContent = bad ? Steer.VALIDATION_MESSAGES[es ? "es" : "en"].zip : "";
+        hint.classList.toggle("warn", !!bad);
+        const composed = Steer.formatAddress(readBoxes());
+        preview.textContent = composed ? T.saved + " " + composed : "";
+      };
+      for (const inp of Object.values(inputs)) inp.addEventListener("input", repaint);
+      // Only normalize the state on blur, and only when it actually
+      // resolves — typing "Tenn" and tabbing away shouldn't have the box
+      // fight back mid-word, and an unrecognized entry is left exactly as
+      // written rather than being cleared.
+      inputs.state.addEventListener("blur", () => {
+        const st = Steer.lookupState(inputs.state.value);
+        if (st) inputs.state.value = st.code;
+        repaint();
+      });
+      repaint();
+      wrap.appendChild(hint);
+      wrap.appendChild(preview);
+    }
+
+    const toggle = el("button", "addr-toggle", oneLine ? T.toFields : T.toOneLine);
+    toggle.type = "button";
+    toggle.onclick = () => {
+      // Carry the value across rather than the box contents, so switching
+      // modes never costs them what they'd typed.
+      parts = oneLine ? Steer.parseAddress(freeInput.value) : readBoxes();
+      oneLine = !oneLine;
+      render();
+      focus();
+    };
+    wrap.appendChild(toggle);
+  }
+
+  function focus() {
+    if (oneLine) freeInput?.focus();
+    else inputs.street?.focus();
+  }
+
+  render();
+  return {
+    el: wrap,
+    getValue: () => (oneLine ? freeInput.value.trim() : Steer.formatAddress(readBoxes())),
+    focus,
+  };
+}
+
 // buildFieldInput(field, currentValue) -> { el, getValue(), focus() }
 // One control-builder shared by the inline checklist editor, the admin's
 // question-creation wizard, and the end-user's no-model form wizard — each
 // mounts `el` wherever it needs and reads the value back the same way.
 function buildFieldInput(field, currentValue) {
+  if (field.type === "address") return buildAddressInput(currentValue);
   if (field.type === "enum" && field.enum?.length) {
     const wrap = el("div", "field-enum");
     const name = "fi_" + Math.random().toString(36).slice(2);
@@ -6115,7 +6322,10 @@ function deleteMemoryQ(row) {
 // flow, but batches everything into one putField() on Finish rather than
 // committing per-step — a half-authored question (label set, type not yet
 // chosen) shouldn't land in the shared config room where real users read it.
-const QUESTION_TYPE_OPTIONS = ["text", "email", "date", "enum"];
+// "address" is a text field with a different input: separate street/city/
+// state/ZIP boxes the browser's own autofill can fill, folded back into one
+// string on save. Nothing about the stored value differs from "text".
+const QUESTION_TYPE_OPTIONS = ["text", "email", "date", "enum", "address"];
 
 function questionWizardSteps(values) {
   const steps = [

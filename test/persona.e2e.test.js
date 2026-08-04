@@ -205,7 +205,10 @@ test("Spanish: invalid email gets the Spanish email validation message", async (
   const idx = fields.findIndex((f) => f.path === "complainant_email");
   const lines = [];
   for (let i = 0; i < idx; i++) { lines.push(validAnswerFor(fields[i])); lines.push("si"); }
-  lines.push("no tengo arroba nada");
+  // A genuine typo'd attempt at giving an email, not a decline ("no tengo" /
+  // "ninguno" style phrases are a deliberate skip on this optional field —
+  // see the bulk.e2e.test.js / persona tests covering that path instead).
+  lines.push("bob arroba gmail punto com, sin arroba de verdad");
   const { turns } = await converse(engine, "es", lines);
   assert.equal(turns[turns.length - 1].reply, engine.Steer.VALIDATION_MESSAGES.es.email);
 });
@@ -234,4 +237,65 @@ test("correction flow: 'no' clears the pending value and the redo stores the cor
   assert.equal(turns[1].reply, engine.Steer.REPLIES.es.denied);
   const nameField = engine.SCHEMA.fields.find((f) => f.path === "complainant_name");
   assert.equal(intake.answers()[nameField.path], "Maria Elena Garcia");
+});
+
+// ── Skipping an optional field ──
+// complainant_email's own prompt says "you can skip this if you don't have
+// one" — but its format check (a real email regex) used to reject every
+// possible way of saying that ("skip", "n/a", "I don't have one"), trapping
+// anyone without an email in a dead-end loop identical to the enum trap
+// above. Fixed by treating an explicit decline on an OPTIONAL, non-enum
+// field as an answer to store verbatim (their own words are meaningful
+// audit content), never a silent blank.
+function walkToEmail(fields) {
+  const idx = fields.findIndex((f) => f.path === "complainant_email");
+  const lines = [];
+  for (let i = 0; i < idx; i++) { lines.push(validAnswerFor(fields[i])); lines.push("yes"); }
+  return lines;
+}
+
+for (const phrase of ["skip this", "n/a", "not applicable", "I don't have one", "none"]) {
+  test(`optional email field: "${phrase}" is accepted as an explicit decline and stored verbatim, not rejected as an invalid email`, async () => {
+    const engine = loadEngine();
+    const lines = walkToEmail(engine.SCHEMA.fields);
+    lines.push(phrase);
+    const { turns, intake } = await converse(engine, "en", lines);
+    const last = turns[turns.length - 1];
+    assert.notEqual(last.reply, engine.Steer.VALIDATION_MESSAGES.en.email, `"${phrase}" must not be treated as a malformed email`);
+    assert.equal(last.reply, engine.Steer.REPLIES.en.confirming(phrase.trim()));
+    assert.ok(intake.pending, "the decline should be pending confirmation, same as any other answer");
+    await intake.submit("yes");
+    assert.equal(intake.answers().complainant_email, phrase.trim());
+  });
+}
+
+test("optional email field: a genuine typo'd email attempt (not a decline) still gets the real validation message", async () => {
+  const engine = loadEngine();
+  const lines = walkToEmail(engine.SCHEMA.fields);
+  lines.push("bob at gmail dot com");
+  const { turns } = await converse(engine, "en", lines);
+  assert.equal(turns[turns.length - 1].reply, engine.Steer.VALIDATION_MESSAGES.en.email);
+});
+
+test("Spanish: optional email field accepts a Spanish decline verbatim", async () => {
+  const engine = loadEngine();
+  const idx = engine.SCHEMA.fields.findIndex((f) => f.path === "complainant_email");
+  const lines = [];
+  for (let i = 0; i < idx; i++) { lines.push(validAnswerFor(engine.SCHEMA.fields[i])); lines.push("si"); }
+  lines.push("no tengo");
+  const { turns, intake } = await converse(engine, "es", lines);
+  assert.notEqual(turns[turns.length - 1].reply, engine.Steer.VALIDATION_MESSAGES.es.email);
+  await intake.submit("si");
+  assert.equal(intake.answers().complainant_email, "no tengo");
+});
+
+test("a decline phrase on a plain required text field is just stored as typed, not treated as a skip", async () => {
+  const engine = loadEngine();
+  const { turns } = await converse(engine, "en", ["n/a"]);
+  // complainant_name is plain "text" with no format check beyond required,
+  // so "n/a" already satisfies validate() (non-empty) on its own — the skip
+  // bypass never even needs to run here. It goes through the ordinary
+  // confirm step like any other text answer (title-cased, since this is the
+  // name field — see the nameCase tests).
+  assert.equal(turns[0].reply, engine.Steer.REPLIES.en.confirming("N/A"));
 });

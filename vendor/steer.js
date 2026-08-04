@@ -168,6 +168,13 @@
       // multi-word phrases that are unambiguously a person asking THIS app
       // something, not describing their own situation.
       help: ["help", "what does", "what do you mean", "what does that mean", "why do you need that", "why is that", "explain", "unsure", "confused", "stuck", "dont know", "don't know", "not sure"],
+      // Only consulted for a field that's already both optional AND failed
+      // its own type-format check (see the skip handling in index.html's
+      // Intake._classifyAndReply) — never for plain unconstrained text
+      // fields, where a real answer legitimately starting with "none" or
+      // "n/a" ("N/A — no case number was assigned") must be stored as
+      // written, not swallowed as a decline.
+      skip: ["skip this", "skip it", "n/a", "not applicable", "i dont have one", "i don't have one", "dont have one", "don't have one", "i dont have any", "i don't have any", "none", "prefer not to say", "rather not say"],
     },
     es: {
       yes: ["si", "sí", "vale", "correcto", "claro", "asi es", "así es", "dale", "esta bien", "está bien"],
@@ -176,6 +183,7 @@
       // "que" especially is one of the most common words in Spanish
       // narration generally, not a help signal on its own.
       help: ["ayuda", "que significa", "qué significa", "por que necesitas", "explicar", "no se", "no sé", "confundido", "confundida", "no entiendo"],
+      skip: ["no aplica", "no tengo uno", "no tengo una", "no tengo", "ninguno", "ninguna", "prefiero no decir"],
     },
   };
 
@@ -197,6 +205,7 @@
       yes: matchesAny(trimmed, LEXICON[l].yes, { leading: 4 }),
       no: matchesAny(trimmed, LEXICON[l].no, { leading: 4 }),
       help: matchesAny(trimmed, LEXICON[l].help, { leading: 5 }),
+      skip: matchesAny(trimmed, LEXICON[l].skip, { leading: 5 }),
       distress: matchesAny(trimmed, DISTRESS_PHRASES.en) || matchesAny(trimmed, DISTRESS_PHRASES.es),
     };
   }
@@ -354,6 +363,10 @@
       date: "I couldn't read that as a date. A format like 1990-04-23 works well.",
       number: "That should be a number.",
       enumMsg: (opts) => `Please pick one of: ${opts.join(", ")}.`,
+      // Shown by the address widget as a soft hint next to the ZIP box, never
+      // returned by validate() — see the note there on why an address never
+      // blocks.
+      zip: "A US ZIP code is 5 digits, like 37201.",
     },
     es: {
       required: "Este campo es obligatorio — una respuesta aproximada está bien para empezar.",
@@ -361,6 +374,7 @@
       date: "No pude leer eso como una fecha. Un formato como 1990-04-23 funciona bien.",
       number: "Eso debería ser un número.",
       enumMsg: (opts) => `Por favor elige una opción: ${opts.join(", ")}.`,
+      zip: "Un código postal de EE. UU. tiene 5 dígitos, como 37201.",
     },
   };
 
@@ -372,7 +386,162 @@
     if (field.type === "date" && v && isNaN(Date.parse(v))) return M.date;
     if (field.type === "number" && v && isNaN(Number(v))) return M.number;
     if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase())) return M.enumMsg(field.enum);
+    // Note: `type: "address"` deliberately falls through to required-only.
+    // A malformed ZIP is surfaced as a soft hint beside the box (M.zip) and
+    // never as a blocking error, because a mailing address is exactly the
+    // field where the unusual real answer is common — rural routes, PO
+    // boxes, APO/FPO, care-of lines, shelter and transitional addresses,
+    // and people who simply have no fixed one. Refusing to store what
+    // someone typed about where to mail their own reply would be a worse
+    // failure than storing something oddly formatted.
     return null;
+  }
+
+  // ---- US mailing addresses --------------------------------------------------
+  // Why this lives here: steer.js is the one module loaded by BOTH the browser
+  // (<script src>) and the Node tests, and it already owns the other per-field
+  // text faculties (validate, tidyText). The address widget itself is DOM and
+  // stays in index.html; everything below is pure string work, so it's testable
+  // directly.
+  //
+  // The stored value of an address field is always ONE string, identical in
+  // shape to every other text field — so the complaint letter, the bulk
+  // extractor, the Matrix event log, and every answer already stored keep
+  // working untouched. The structured street/city/state/ZIP boxes exist for
+  // one reason: the BROWSER's own autofill needs standard, separately-labelled
+  // fields to map its saved addresses onto (autocomplete="address-line1" and
+  // friends). parse/format are how that structure is borrowed for the input
+  // and then folded straight back into the single canonical string. No
+  // network, no third-party geocoder — the only suggestions a person ever
+  // sees are the ones already saved in their own browser.
+
+  const US_STATES = [
+    { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" }, { code: "AZ", name: "Arizona" },
+    { code: "AR", name: "Arkansas" }, { code: "CA", name: "California" }, { code: "CO", name: "Colorado" },
+    { code: "CT", name: "Connecticut" }, { code: "DE", name: "Delaware" }, { code: "FL", name: "Florida" },
+    { code: "GA", name: "Georgia" }, { code: "HI", name: "Hawaii" }, { code: "ID", name: "Idaho" },
+    { code: "IL", name: "Illinois" }, { code: "IN", name: "Indiana" }, { code: "IA", name: "Iowa" },
+    { code: "KS", name: "Kansas" }, { code: "KY", name: "Kentucky" }, { code: "LA", name: "Louisiana" },
+    { code: "ME", name: "Maine" }, { code: "MD", name: "Maryland" }, { code: "MA", name: "Massachusetts" },
+    { code: "MI", name: "Michigan" }, { code: "MN", name: "Minnesota" }, { code: "MS", name: "Mississippi" },
+    { code: "MO", name: "Missouri" }, { code: "MT", name: "Montana" }, { code: "NE", name: "Nebraska" },
+    { code: "NV", name: "Nevada" }, { code: "NH", name: "New Hampshire" }, { code: "NJ", name: "New Jersey" },
+    { code: "NM", name: "New Mexico" }, { code: "NY", name: "New York" }, { code: "NC", name: "North Carolina" },
+    { code: "ND", name: "North Dakota" }, { code: "OH", name: "Ohio" }, { code: "OK", name: "Oklahoma" },
+    { code: "OR", name: "Oregon" }, { code: "PA", name: "Pennsylvania" }, { code: "RI", name: "Rhode Island" },
+    { code: "SC", name: "South Carolina" }, { code: "SD", name: "South Dakota" }, { code: "TN", name: "Tennessee" },
+    { code: "TX", name: "Texas" }, { code: "UT", name: "Utah" }, { code: "VT", name: "Vermont" },
+    { code: "VA", name: "Virginia" }, { code: "WA", name: "Washington" }, { code: "WV", name: "West Virginia" },
+    { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
+    { code: "DC", name: "District of Columbia" },
+    // Territories and military posts get mail from federal agencies too, and
+    // OCR's jurisdiction reaches them — leaving them out would silently tell
+    // those families their address is wrong.
+    { code: "AS", name: "American Samoa" }, { code: "GU", name: "Guam" },
+    { code: "MP", name: "Northern Mariana Islands" }, { code: "PR", name: "Puerto Rico" },
+    { code: "VI", name: "U.S. Virgin Islands" },
+    { code: "AA", name: "Armed Forces Americas" }, { code: "AE", name: "Armed Forces Europe" },
+    { code: "AP", name: "Armed Forces Pacific" },
+  ];
+
+  const ZIP_RE = /^\d{5}(?:-\d{4})?$/;
+  function isValidZip(zip) { return ZIP_RE.test((zip ?? "").toString().trim()); }
+
+  const STATE_BY_CODE = new Map(US_STATES.map((s) => [s.code, s]));
+  const STATE_BY_NAME = new Map(US_STATES.map((s) => [s.name.toLowerCase(), s]));
+
+  // Resolves "TN" / "tn" / "Tennessee" / "Tenn." to the canonical entry, or
+  // null. Returning null is a normal outcome, not an error: the caller keeps
+  // whatever the person typed rather than overwriting it with a guess.
+  function lookupState(text) {
+    const t = (text ?? "").toString().trim().replace(/\.$/, "");
+    if (!t) return null;
+    return STATE_BY_CODE.get(t.toUpperCase()) || STATE_BY_NAME.get(t.toLowerCase()) || null;
+  }
+
+  // Secondary-address markers common enough to recognize on sight. Anything
+  // not on this list stays part of the street line instead of being guessed
+  // into the unit box.
+  const UNIT_RE = /^(?:#|apt\.?|apartment|unit|ste\.?|suite|rm\.?|room|fl\.?|floor|bldg\.?|building|lot|trlr|trailer|space|spc|box)\b/i;
+  const COUNTRY_RE = /^(?:usa|u\.?s\.?a\.?|u\.?s\.?|united states(?: of america)?|ee\.?\s?uu\.?|estados unidos)$/i;
+
+  const EMPTY_ADDRESS = { street: "", unit: "", city: "", state: "", zip: "" };
+  function emptyAddress() { return { ...EMPTY_ADDRESS }; }
+
+  // Pulls a trailing state off a token list, in place. Tries the longest
+  // candidate first so "District of Columbia" and "New York" win over a
+  // chance single-word match on their last word.
+  function takeTrailingState(tokens) {
+    for (let n = Math.min(3, tokens.length); n >= 1; n--) {
+      const st = lookupState(tokens.slice(tokens.length - n).join(" "));
+      if (st) { tokens.length -= n; return st.code; }
+    }
+    return "";
+  }
+
+  // parseAddress(str) -> { street, unit, city, state, zip }
+  //
+  // Best-effort, and deliberately lossless: anything this can't confidently
+  // place stays in `street`, so formatAddress(parseAddress(s)) never DROPS
+  // part of what someone wrote. That one-way guarantee is what makes it safe
+  // to re-parse a stored answer every time the editor reopens.
+  //
+  // It works backwards from the end because the tail of a US address is the
+  // only part with a reliable shape ("TN 37201" / "37201" / "Tennessee").
+  // Where it stops short: with no commas at all ("123 Main St Nashville TN
+  // 37201") the state and ZIP still come off cleanly, but there is no
+  // non-guessing way to tell where the street ends and the city begins —
+  // "123 Oak Grove Lane" would just as happily yield a city of "Grove Lane".
+  // So the remainder stays whole in `street` and the city box is left empty
+  // for the person to split themselves, if they even care to.
+  function parseAddress(value) {
+    const out = emptyAddress();
+    const raw = (value ?? "").toString();
+    if (!raw.trim()) return out;
+
+    // A pasted address is as often three lines as one comma-joined line;
+    // normalizing newlines to commas lets both take the same path.
+    const flat = raw.replace(/[\r\n]+/g, ", ").replace(/\s+/g, " ").trim();
+    let parts = flat.split(",").map((p) => p.trim()).filter(Boolean);
+    if (!parts.length) return out;
+
+    // A trailing "USA" is noise on a domestic form, but only drop it when
+    // something else remains — "USA" alone is all the person gave us.
+    if (parts.length > 1 && COUNTRY_RE.test(parts[parts.length - 1])) parts.pop();
+
+    const tokens = parts[parts.length - 1].split(" ").filter(Boolean);
+    if (tokens.length && ZIP_RE.test(tokens[tokens.length - 1])) out.zip = tokens.pop();
+    out.state = takeTrailingState(tokens);
+    if (out.zip || out.state) {
+      // Whatever is left of that last segment isn't state or ZIP — usually
+      // the city ("Nashville TN 37201" as one comma-free segment).
+      const remainder = tokens.join(" ");
+      if (remainder) parts[parts.length - 1] = remainder;
+      else parts.pop();
+    }
+
+    // With two or more segments left, the last is the city and the earlier
+    // ones are the street. With only one, it's a street — a lone segment is
+    // never a bare city on a form that asked for a mailing address.
+    if (parts.length >= 2) out.city = parts.pop();
+    if (parts.length >= 2 && UNIT_RE.test(parts[1])) {
+      out.unit = parts[1];
+      out.street = [parts[0], ...parts.slice(2)].join(", ");
+    } else {
+      out.street = parts.join(", ");
+    }
+    return out;
+  }
+
+  // The canonical single-line form: "123 Main St, Apt 4B, Nashville, TN 37201".
+  // Every empty part simply drops out, so a half-filled address still reads
+  // as a sentence instead of a row of stray commas.
+  function formatAddress(parts) {
+    const p = parts || {};
+    const get = (k) => (p[k] ?? "").toString().trim();
+    const line1 = [get("street"), get("unit")].filter(Boolean).join(", ");
+    const region = [get("state"), get("zip")].filter(Boolean).join(" ");
+    return [line1, get("city"), region].filter(Boolean).join(", ");
   }
 
   return {
@@ -381,5 +550,6 @@
     REPLIES, pickReply,
     VALIDATION_MESSAGES, validate,
     tidyText,
+    US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
   };
 });
