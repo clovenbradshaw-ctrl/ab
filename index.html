@@ -230,9 +230,9 @@ nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-
 .msg-group.end .msg-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:4px}
 .msg-group.start .msg-bubble{background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:4px}
 .msg-group.start .msg-bubble.support{background:var(--seal-soft);border-color:#C9E0D5}
-.msg .tag{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
-.msg .tag.help{color:var(--turn)}
-.msg .value{display:inline-block;margin-top:3px;padding:2px 7px;border-radius:4px;background:rgba(46,111,94,.12);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--seal)}
+.msg-bubble .tag{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
+.msg-bubble .tag.help{color:var(--turn)}
+.msg-bubble .value{display:block;width:max-content;max-width:100%;margin-top:6px;padding:2px 7px;border-radius:4px;background:rgba(46,111,94,.12);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--seal);word-break:break-word;white-space:pre-wrap}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .typing{display:inline-flex;gap:4px;padding:3px 0}.typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
@@ -254,6 +254,8 @@ nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,64,47,.25)}50%{box-shadow:0 0 0 5px rgba(176,64,47,.08)}}
 .voice-note{padding:0 14px 6px;font-size:11px;color:var(--muted);line-height:1.4}
 .voice-note.hidden{display:none}
+.compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
+@keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
@@ -4048,21 +4050,45 @@ function setVoiceNote(text) {
   note.classList.remove("hidden");
 }
 
+// Kick the (large, one-time) speech-model download off the moment the page
+// loads, instead of making the first mic tap wait through it — see
+// vendor/voice.js's autoDownload(). Progress only ever touches the voice
+// note when the mic isn't actively in use, so a background download tick
+// can never clobber a live "Recording…"/"Transcribing…" note.
+function autoDownloadVoiceModel() {
+  if (!window.Voice || !Voice.isSupported()) return;
+  Voice.autoDownload((frac) => {
+    voiceModelDownloaded = frac >= 1;
+    if (voiceInstance && voiceInstance.state !== "idle") return;
+    setVoiceNote(frac >= 1 ? voiceCopy("consent") : `${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+  });
+}
+
 function wireVoice() {
   const btn = document.getElementById("micBtn");
+  const input = document.getElementById("input");
   if (!btn) return;
   if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
   btn.hidden = false;
   setVoiceNote(voiceCopy("consent"));
+  autoDownloadVoiceModel();
+
+  // Whatever's already typed before the mic is tapped — live partials
+  // replace only the spoken portion of the box, never this prefix, since
+  // each partial pass re-hears the WHOLE clip-to-date rather than
+  // appending incrementally.
+  let voicePreText = "";
 
   btn.onclick = async () => {
     if (!voiceInstance || voiceInstance.state === "idle") {
+      voicePreText = input.value.trim();
       voiceInstance = Voice.createVoice({
         lang: intake?.lang || "en",
         onState: (s) => {
           btn.classList.toggle("recording", s === "recording");
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
+          input.classList.toggle("streaming", s === "recording");
           if (s === "recording") setVoiceNote(voiceCopy("recording"));
           else if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
           else setVoiceNote(voiceCopy("consent"));
@@ -4070,6 +4096,15 @@ function wireVoice() {
         onProgress: (frac) => {
           voiceModelDownloaded = frac >= 1;
           if (frac < 1) setVoiceNote(`${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+        },
+        // Live preview while still recording — a lower-quality pass than
+        // the final stop() transcript, replaced by it the moment recording
+        // ends. Ignored once we've moved past "recording" so a slow
+        // in-flight partial can't land text after stop() already resolved.
+        onPartial: (text) => {
+          if (!voiceInstance || voiceInstance.state !== "recording") return;
+          input.value = voicePreText ? (text ? voicePreText + " " + text : voicePreText) : text;
+          input.dispatchEvent(new Event("input"));
         },
       });
       try { await voiceInstance.start(); }
@@ -4081,11 +4116,10 @@ function wireVoice() {
         const { text, blob } = await voiceInstance.stop();
         setVoiceNote(voiceCopy("consent"));
         if (text) {
-          const input = document.getElementById("input");
-          input.value = input.value.trim() ? input.value.trim() + " " + text : text;
+          input.value = voicePreText ? voicePreText + " " + text : text;
           input.dispatchEvent(new Event("input"));
-          input.focus();
         }
+        input.focus();
         if (blob) await saveVoiceClip(blob, text);
       } catch (e) {
         setVoiceNote(voiceCopy("micFailed"));
@@ -4093,7 +4127,7 @@ function wireVoice() {
     }
   };
 
-  document.getElementById("input").addEventListener("keydown", (e) => {
+  input.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && voiceInstance && voiceInstance.state === "recording") {
       voiceInstance.cancel();
       setVoiceNote(voiceCopy("consent"));

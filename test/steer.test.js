@@ -83,9 +83,12 @@ test("physics: distress decays back out once signals stop", () => {
 });
 
 test("mechanical replies: every reply comes from the fixed table, never freeform", () => {
+  // confirming is a template, not a literal — it always embeds whatever
+  // value it's given (see the next test), so here it's called the same way
+  // pickReply defaults it (no meta -> "") to get the literal it will emit.
   const allEn = new Set([
     ...Steer.REPLIES.en.supporting,
-    Steer.REPLIES.en.confirming, Steer.REPLIES.en.confirmed, Steer.REPLIES.en.denied,
+    Steer.REPLIES.en.confirming(""), Steer.REPLIES.en.confirmed, Steer.REPLIES.en.denied,
     Steer.REPLIES.en.safety, Steer.REPLIES.en.closing,
   ]);
   for (const focus of ["confirming", "confirmed", "denied", "safety", "closing"]) {
@@ -94,6 +97,15 @@ test("mechanical replies: every reply comes from the fixed table, never freeform
   for (let tier = 0; tier < 5; tier++) {
     assert.ok(allEn.has(Steer.pickReply({ lang: "en", focus: "supporting", tier })));
   }
+});
+
+test("mechanical replies: confirming embeds the captured value so it's clear what's being confirmed", () => {
+  const en = Steer.pickReply({ lang: "en", focus: "confirming", meta: { value: "Nora Alvarez" } });
+  const es = Steer.pickReply({ lang: "es", focus: "confirming", meta: { value: "Nora Alvarez" } });
+  assert.match(en, /Nora Alvarez/);
+  assert.match(es, /Nora Alvarez/);
+  assert.equal(en, Steer.REPLIES.en.confirming("Nora Alvarez"));
+  assert.equal(es, Steer.REPLIES.es.confirming("Nora Alvarez"));
 });
 
 test("mechanical replies: Spanish table is fully populated and distinct from English", () => {

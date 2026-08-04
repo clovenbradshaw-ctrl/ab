@@ -38,6 +38,19 @@ function validAnswerFor(field) {
   return "Test answer for " + field.label;
 }
 
+// confirming is a template (see vendor/steer.js), not a literal from the
+// table — it always has some captured value spliced into a fixed frame.
+// Derive that frame from the live template itself (a sentinel substitution,
+// not a hand-copied wording guess) so a reply can be recognized as "a
+// confirming line" regardless of which value it's confirming.
+function confirmingPattern(engine, lang) {
+  const SENTINEL = " SENTINEL "; // wont occur naturally in the template
+  const templated = engine.Steer.REPLIES[lang].confirming(SENTINEL);
+  const [prefix, suffix] = templated.split(SENTINEL);
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("^" + esc(prefix) + "[\\s\\S]*" + esc(suffix) + "$");
+}
+
 async function converse(engine, lang, lines) {
   const { Intake, SCHEMA } = engine;
   const store = makeStore(engine);
@@ -66,8 +79,10 @@ test("English: the complainant-name field walked with typos, then confirmed with
     "Nroa Alvarez",   // typo'd candidate answer for the first field (complainant_name)
     "yse",            // typo'd confirmation
   ]);
-  // First reply must be the confirming line (mechanical, from the table).
-  assert.equal(turns[0].reply, engine.Steer.REPLIES.en.confirming);
+  // First reply must be the confirming line (mechanical, from the table),
+  // and must embed the captured value itself — otherwise there's nothing
+  // on screen to anchor what "does that look right?" is asking about.
+  assert.equal(turns[0].reply, engine.Steer.REPLIES.en.confirming("Nroa Alvarez"));
   // Second turn confirms despite the typo, and the answer is now stored.
   assert.equal(intake.answers()[engine.SCHEMA.fields[0].path], "Nroa Alvarez");
   // After confirming, the engine moved on to ask the next field mechanically
@@ -88,7 +103,7 @@ test("Spanish: accent-free typed reply still gets the Spanish confirmation line"
     "Nora Alvarez",
     "sii",  // typo'd "sí"
   ]);
-  assert.equal(turns[0].reply, engine.Steer.REPLIES.es.confirming);
+  assert.equal(turns[0].reply, engine.Steer.REPLIES.es.confirming("Nora Alvarez"));
   // Confirmed in Spanish mode -> the *next* prompt shown is the field's
   // Spanish prompt, not the English one.
   const nextFieldPromptEs = engine.SCHEMA.fields[1].promptEs;
@@ -176,15 +191,16 @@ test("every single reply across a long, typo-heavy conversation is a literal lin
   ]);
   const mechanical = new Set([
     ...engine.Steer.REPLIES.en.supporting,
-    engine.Steer.REPLIES.en.confirming, engine.Steer.REPLIES.en.confirmed,
+    engine.Steer.REPLIES.en.confirmed,
     engine.Steer.REPLIES.en.denied, engine.Steer.REPLIES.en.safety, engine.Steer.REPLIES.en.closing,
   ]);
+  const confirmRe = confirmingPattern(engine, "en");
   const fieldTexts = new Set(engine.SCHEMA.fields.flatMap((f) => [f.prompt, f.help]).filter(Boolean));
   const validationTexts = new Set(Object.values(engine.Steer.VALIDATION_MESSAGES.en).filter((v) => typeof v === "string"));
   for (const t of turns) {
     const isEnumRejection = /^Please pick one of:/.test(t.reply);
     assert.ok(
-      mechanical.has(t.reply) || fieldTexts.has(t.reply) || validationTexts.has(t.reply) || isEnumRejection,
+      mechanical.has(t.reply) || fieldTexts.has(t.reply) || validationTexts.has(t.reply) || isEnumRejection || confirmRe.test(t.reply),
       `unexpected freeform reply: ${JSON.stringify(t.reply)}`
     );
   }
