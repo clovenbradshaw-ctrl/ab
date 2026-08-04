@@ -212,7 +212,7 @@
         "No pressure to get it perfect. Share as much, or as little, as feels okay right now.",
         "You're doing fine. Even a partial answer helps — we can always add more later.",
       ],
-      confirming: "Does that look right? You can say yes to keep it, or no to change it.",
+      confirming: (value) => `You said: "${value}". Does that look right? You can say yes to keep it, or no to change it.`,
       confirmed: "Thank you — I've saved that.",
       denied: "No problem — go ahead and tell me the version you'd like instead.",
       safety: "Thank you for trusting me with that. Your safety matters more than this form. If you're in immediate danger, please contact your local emergency number, or a crisis line — in the US you can call or text 988. We can keep going whenever, and only whenever, you're ready.",
@@ -225,7 +225,7 @@
         "No tienes que decirlo perfecto. Comparte tanto, o tan poco, como te sientas cómodo o cómoda ahora mismo.",
         "Lo estás haciendo bien. Incluso una respuesta parcial ayuda — siempre podemos añadir más después.",
       ],
-      confirming: "¿Está correcto? Puedes decir sí para guardarlo, o no para cambiarlo.",
+      confirming: (value) => `Dijiste: "${value}". ¿Está correcto? Puedes decir sí para guardarlo, o no para cambiarlo.`,
       confirmed: "Gracias — ya lo guardé.",
       denied: "No hay problema — dime la versión correcta cuando quieras.",
       safety: "Gracias por confiar en mí con eso. Tu seguridad importa más que este formulario. Si estás en peligro inmediato, por favor contacta a tu número de emergencia local, o a una línea de crisis — en EE. UU. puedes llamar o enviar un mensaje de texto al 988. Podemos continuar cuando, y solo cuando, te sientas listo o lista.",
@@ -249,6 +249,7 @@
     }
     if (focus === "supporting") return L.supporting[clamp(tier, 0, L.supporting.length - 1)];
     if (focus === "welcomeBack") return L.welcomeBack(meta.done ?? 0, meta.total ?? 0);
+    if (focus === "confirming") return L.confirming(meta.value ?? "");
     if (L[focus]) return L[focus];
     return L.supporting[0];
   }
