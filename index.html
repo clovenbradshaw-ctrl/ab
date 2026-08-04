@@ -4,6 +4,32 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Feedback Platform</title>
+<!-- Content-Security-Policy — the load-bearing control for "the homeserver
+     operator can't read submissions".
+     Client-side encryption only holds if nothing on this page can read
+     plaintext before encryptBytes()/Megolm run, or ship it somewhere. The
+     app is one big inline script block, so 'unsafe-inline' is unavoidable
+     here and script-src is NOT the protection — connect-src is. Answers can
+     ever be POSTed to the homeserver; there is no origin in this list that
+     an exfiltration attempt could reach.
+     'wasm-unsafe-eval' is required twice over: the matrix-sdk-crypto WASM
+     (the thing doing the encrypting) and WebLLM's WebGPU runtime.
+     NOTE: frame-ancestors/report-uri are ignored in a <meta> CSP. Serve
+     `frame-ancestors 'none'` as a real header at the CDN/proxy too. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  base-uri 'none';
+  object-src 'none';
+  form-action 'self';
+  script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
+  font-src 'self' data: https://fonts.gstatic.com https://unpkg.com;
+  img-src 'self' blob: data: https://hyphae.social https://matrix.org https://www.gstatic.com;
+  media-src 'self' blob:;
+  frame-src 'self' blob: https://www.google.com;
+  worker-src 'self' blob:;
+  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://raw.githubusercontent.com;
+">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,560&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,7 +42,15 @@
 <script src="vendor/matrix-sdk-bundle.js"></script>
 <script src="vendor/steer.js"></script>
 <script src="vendor/voice.js"></script>
-<script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit" async defer></script>
+<!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
+     load, which put Google-controlled JS in the same origin as every
+     plaintext answer, for every visitor — including the constituent flow,
+     which never registers on matrix.org and never needs a captcha at all
+     (hyphae.social's registration is a single m.login.dummy stage).
+     It is now injected on demand by loadRecaptchaApi(), only inside the
+     matrix.org sign-up wizard, and only when that homeserver's UIA flow
+     actually asks for an m.login.recaptcha stage. -->
+
 <style>
 :root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -564,7 +598,14 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
       <p>Takes about a minute, and it's free.</p>
       <ul>
         <li>Your submission is saved under your own login, not on our servers</li>
-        <li>End-to-end encrypted — only you and the reviewing agency can read it</li>
+        <!-- Was: "End-to-end encrypted — only you and the reviewing agency
+             can read it". Accurate about the transport, but it promised more
+             than the deployment delivers: until DEPLOY_CONFIG.adminMasterKey
+             is pinned, a homeserver operator can still add a device to the
+             reviewer's account and read what is sent afterward. This wording
+             claims exactly what the code guarantees today — the server stores
+             ciphertext it has no key for — and no more. -->
+        <li>Encrypted on your device before it's sent — the server stores it without being able to read it</li>
         <li>Come back from any device and pick up where you left off</li>
       </ul>
       <button class="login-btn seal" id="loginSignup">Create an account →</button>
@@ -929,6 +970,15 @@ const DEPLOY_CONFIG = {
 
   // The admin account that gets invited to every applicant's room.
   adminUserId: "***REDACTED_ADMIN_ID***",
+
+  // The admin's cross-signing MASTER key, pinned at deploy time.
+  // Leave null and submissions are still encrypted at rest (the homeserver
+  // only ever stores Megolm ciphertext), but a homeserver admin can add a
+  // device to the admin account and read everything sent from then on.
+  // Set it and the client refuses to send if the server presents a different
+  // identity — see assertAdminIdentity(). Format: the base64 key id, e.g.
+  // "gHqKPGXBQmoIPnaAcxx8mCg6ZQZ1L0RQ9k3bnvcRLo0".
+  adminMasterKey: null,
 };
 
 // ── config.js ────────────────────────────────────────────────────────────────
@@ -939,7 +989,21 @@ const DEPLOY_CONFIG = {
 const ADMIN_USER_ID = DEPLOY_CONFIG.adminUserId || "***REDACTED_ADMIN_ID***";
 
 
+// Kept only to clean up after the removed key layer described below: earlier
+// builds could leave an exportable AES-256 room key sitting in localStorage.
+// Deleting the code that wrote them doesn't delete the ones already written,
+// so purge on every load.
 const KEY_STORE_PREFIX = "intake:key:";
+(function purgeLegacyRoomKeys() {
+  try {
+    const stale = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(KEY_STORE_PREFIX)) stale.push(k);
+    }
+    stale.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+})();
 
 const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)).buffer;
@@ -965,45 +1029,15 @@ async function decryptBytes(ciphertext, jwk, ivB64, expectHashB64) {
   return crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(ivB64) }, key, ciphertext);
 }
 
-async function ensureRoomKey(roomId) {
-  const stored = localStorage.getItem(KEY_STORE_PREFIX + roomId);
-  if (stored) {
-    try { return JSON.parse(stored); } catch {}
-  }
-  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-  const jwk = await crypto.subtle.exportKey("jwk", key);
-  const kp = { key: jwk, created: Date.now() };
-  try { localStorage.setItem(KEY_STORE_PREFIX + roomId, JSON.stringify(kp)); } catch {}
-  return kp;
-}
-
-function getRoomKey(roomId) {
-  const stored = localStorage.getItem(KEY_STORE_PREFIX + roomId);
-  if (!stored) return null;
-  try { return JSON.parse(stored); } catch { return null; }
-}
-
-const enc = new TextEncoder();
-const dec = new TextDecoder();
-
-async function encryptText(plaintext, jwk) {
-  if (!plaintext) return null;
-  const key = await crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, false, ["encrypt"]);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
-  return { ct: toB64(ciphertext), iv: toB64(iv) };
-}
-
-async function decryptText(cipherObj, jwk) {
-  if (!cipherObj || !jwk) return null;
-  const key = await crypto.subtle.importKey("jwk", jwk, { name: "AES-GCM" }, false, ["decrypt"]);
-  const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(cipherObj.iv) }, key, fromB64(cipherObj.ct));
-  return dec.decode(plainBuf);
-}
-
-function isEncrypted(value) {
-  return value && typeof value === "object" && value.ct && value.iv;
-}
+// Removed: ensureRoomKey / getRoomKey / encryptText / decryptText /
+// isEncrypted. They were defined here and never called from anywhere — a
+// whole second, unused encryption layer sitting next to the real one. Worse,
+// ensureRoomKey() persisted a raw exportable AES-256 JWK into localStorage,
+// so wiring it up would have handed the room key to any script on the page.
+// Text answers are protected by Megolm (see MatrixStore._assertEncrypted);
+// file and audio bytes by encryptBytes/decryptBytes above. Two layers, both
+// live, is the whole story — leaving dead crypto around invites someone to
+// assume there is a third.
 
 
 // Every field carries an English prompt/help and its Spanish counterpart
@@ -1608,6 +1642,11 @@ class DemoStore extends BaseStore {
 class MatrixStore extends BaseStore {
   constructor(client) { super(); this.client = client; this.user = client.getUserId(); }
 
+  // Note the initClientCrypto() call: without it this built a client with no
+  // crypto backend at all, so every send would have gone to Synapse in the
+  // clear. It was unreachable (doMatrixLogin() is the live path) but it is
+  // exactly the kind of helper someone wires up later, so it now follows the
+  // same fail-closed rule as everything else — crypto first, then startClient.
   static async login({ homeserver, userId, password }) {
     const sdk = window.matrixcs;
     if (!sdk) throw new Error("matrix-js-sdk not loaded");
@@ -1617,6 +1656,7 @@ class MatrixStore extends BaseStore {
       baseUrl: homeserver, accessToken: res.access_token,
       userId: res.user_id, deviceId: res.device_id,
     });
+    await initClientCrypto(client);
     await client.startClient({ initialSyncLimit: 100 });
     await new Promise((resolve) => {
       client.once("sync", (state) => state === "PREPARED" && resolve());
@@ -1651,12 +1691,48 @@ class MatrixStore extends BaseStore {
 
   _decode(mxEvent) { return decodeMxEvent(mxEvent); }
 
+  // Hard precondition on every single write to the homeserver: a live crypto
+  // backend, and a room the crypto layer agrees is encrypted. Belt and
+  // braces on purpose — ensureAnswerRoom() sets m.room.encryption in
+  // initial_state, but if that state event were ever missing, absent, or
+  // stripped, sendEvent() would happily post readable JSON into Synapse.
+  // This is the last gate before plaintext would reach a disk the operator
+  // controls, so it asks the crypto layer rather than trusting our own
+  // room-creation code.
+  async _assertEncrypted() {
+    const crypto = this.client.getCrypto();
+    if (!crypto || !this.client._e2eeReady) throw new Error("encryption backend is not ready");
+    if (!(await crypto.isEncryptionEnabledInRoom(this.roomId))) {
+      throw new Error("room " + this.roomId + " is not encrypted");
+    }
+  }
+
+  // emit() stays synchronous — every caller relies on getting the optimistic
+  // event straight back — but the send is now awaited and its failure is
+  // surfaced. Previously this was fire-and-forget: the local push had already
+  // rendered "saved", so a rejected send (crypto missing, room unencrypted,
+  // network gone) produced an unhandled rejection and nothing else. The
+  // person was told their answer was stored when it was not.
   emit(op, payload) {
     const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user, _pending: true };
     this._events.push(ev);
     this._notify(ev);
-    this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+    this._send(ev, op, payload);
     return ev;
+  }
+
+  async _send(ev, op, payload) {
+    try {
+      await this._assertEncrypted();
+      await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+      ev._pending = false;
+    } catch (e) {
+      ev._pending = false;
+      ev._failed = true;
+      console.error("Refused to send unencrypted, or send failed — kept local only:", e);
+      toast("Couldn't securely save that to your account — it's still here on this device.", "warn");
+    }
+    this._notify(ev);
   }
 
   static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
@@ -2055,7 +2131,16 @@ class WebLLMModel {
       throw adapterErr instanceof Error ? adapterErr : new Error("WebGPU adapter could not be created: " + adapterErr);
     }
 
-    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
+    // Version-pinned on purpose. This is a remote dynamic import of code that
+    // runs in the same origin as every plaintext answer, so an unpinned
+    // "latest" specifier means whatever the CDN serves today can read the
+    // intake before any of it is encrypted. Pinning at least makes the code
+    // that ships a deliberate, reviewable choice; vendoring it next to
+    // matrix-sdk-bundle.js (same rationale as vendor/README.md) removes the
+    // CDN from the trust boundary entirely and is the better end state.
+    // Only reached when someone explicitly selects the WebLLM backend — the
+    // default "Demo" path never loads it.
+    const webllm = await import("https://esm.run/@mlc-ai/web-llm@0.2.79");
     let lastErr = null;
     for (let attempt = 0; attempt < MODEL_LOAD_ATTEMPTS; attempt++) {
       try {
@@ -2253,7 +2338,26 @@ class MatrixMedia {
     });
     return typeof res === "string" ? res : res.content_uri;
   }
+  // Authenticated media (Matrix v1.11+). The old call was a bare, tokenless
+  // fetch of /_matrix/media/v3/download, which is unauthenticated by design:
+  // anyone who learned an mxc:// id could pull the blob without an account.
+  // The bytes are AES-GCM ciphertext either way, so this was never a
+  // plaintext leak — but "you need the key AND an account" is a strictly
+  // better position than "you need the key", and the legacy endpoint is
+  // being removed from Synapse regardless. Falls back to the old path so
+  // this keeps working against homeservers that haven't shipped v1.11 yet.
   async get(url) {
+    const m = /^mxc:\/\/([^/]+)\/(.+)$/.exec(url);
+    if (m) {
+      const authed = `${this.client.baseUrl}/_matrix/client/v1/media/download/${encodeURIComponent(m[1])}/${encodeURIComponent(m[2])}`;
+      const res = await fetch(authed, {
+        headers: { Authorization: "Bearer " + this.client.getAccessToken() },
+      });
+      if (res.ok) return res.arrayBuffer();
+      if (res.status !== 404 && res.status !== 400) {
+        throw new Error("download failed: " + res.status);
+      }
+    }
     const httpUrl = this.client.mxcUrlToHttp(url);
     const res = await fetch(httpUrl);
     if (!res.ok) throw new Error("download failed: " + res.status);
@@ -2458,7 +2562,13 @@ async function ensureAnswerRoom(client) {
     initial_state: [
       { type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } },
     ],
-    name: "Feedback Platform — submission",
+    // Room names are UNENCRYPTED state — a homeserver admin reading the
+    // `room_stats_state` table sees this string next to the user's MXID.
+    // "Feedback Platform — submission" told them a named individual had
+    // filed a complaint, which for an OCR complaint against a child-services
+    // agency is itself the sensitive fact. The content is encrypted; the
+    // label must not give it away.
+    name: "Session",
   });
   await client.setAccountData(ANSWER_ROOM_ACCOUNT_DATA_TYPE, { room_id });
   return room_id;
@@ -3237,13 +3347,35 @@ function collectApplicantRooms({ storeKind, client }) {
   return rooms;
 }
 
+// The admin dashboard writes into applicant rooms directly on the client
+// rather than through MatrixStore.emit(), so it bypassed that class's
+// encryption gate entirely. Same rule has to apply here — and it matters
+// most of all for saveLetter(), which carries the full drafted complaint.
+// Also awaited-and-caught: these were fire-and-forget, so a refused or
+// failed send left the reviewer's UI showing a change that never landed.
+async function sendGuarded(ctx, roomId, op, payload) {
+  const crypto = ctx.client.getCrypto?.();
+  if (!crypto || !ctx.client._e2eeReady) throw new Error("encryption backend is not ready");
+  if (!(await crypto.isEncryptionEnabledInRoom(roomId))) {
+    throw new Error("room " + roomId + " is not encrypted");
+  }
+  await ctx.client.sendEvent(roomId, EVENT_TYPE, { op, payload });
+}
+
+function sendGuardedOrWarn(ctx, roomId, op, payload) {
+  sendGuarded(ctx, roomId, op, payload).catch((e) => {
+    console.error("Refused to send unencrypted, or send failed:", e);
+    toast("Couldn't securely save that change — nothing was sent to the server.", "warn");
+  });
+}
+
 function saveLetter(ctx, roomId, text) {
   const payload = {
     entity: "letter",
     id: newId("letter"),
     attrs: { text, generatedAt: nowIso(), generatedBy: ctx.currentUserId, status: "draft" },
   };
-  if (ctx.storeKind === "matrix") ctx.client.sendEvent(roomId, EVENT_TYPE, { op: OP.INS, payload });
+  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.INS, payload);
   else DemoStore.appendEvent(roomId, OP.INS, payload, ctx.currentUserId);
   return payload.id;
 }
@@ -3254,7 +3386,7 @@ function saveLetter(ctx, roomId, text) {
 // shadow this one (classic function-hoisting collision).
 function setDocStatus(ctx, doc, status) {
   const payload = { anchor: doc.id, path: "status", value: status };
-  if (ctx.storeKind === "matrix") ctx.client.sendEvent(doc.roomId, EVENT_TYPE, { op: OP.DEF, payload });
+  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, doc.roomId, OP.DEF, payload);
   else DemoStore.appendEvent(doc.roomId, OP.DEF, payload, ctx.currentUserId);
 }
 
@@ -3262,7 +3394,7 @@ function setDocStatus(ctx, doc, status) {
 // the letter record's id — one status channel per record type, same truth.
 function setLetterStatus(ctx, roomId, letterId, status) {
   const payload = { anchor: letterId, path: "status", value: status };
-  if (ctx.storeKind === "matrix") ctx.client.sendEvent(roomId, EVENT_TYPE, { op: OP.DEF, payload });
+  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
   else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
 }
 
@@ -4928,28 +5060,45 @@ async function setupSilentClient(homeserver, registered) {
   return client;
 }
 
+// The account password is deliberately NOT persisted. It used to be written
+// here in cleartext, which made localStorage a permanent, replayable
+// credential for the account holding every answer — one XSS, one shared or
+// forensically-imaged device, and it is total account takeover, forever.
+// The access token is enough to resume, and unlike the password it can be
+// invalidated server-side. Losing it costs a fresh start, which this flow
+// already treats as an acceptable outcome (see tryResumeSilentAccount).
 function saveSilentAccount(homeserver, registered) {
   try {
     localStorage.setItem(SILENT_ACCOUNT_KEY, JSON.stringify({
-      homeserver, userId: registered.user_id, password: registered.password,
+      homeserver, userId: registered.user_id,
       deviceId: registered.device_id, accessToken: registered.access_token,
     }));
   } catch {}
 }
 
+// Also scrubs the cleartext password that earlier builds persisted here, so
+// that upgrading actually removes it from the device instead of leaving it
+// in localStorage indefinitely for everyone who already ran the old code.
 function loadSilentAccount() {
-  try { return JSON.parse(localStorage.getItem(SILENT_ACCOUNT_KEY) || "null"); } catch { return null; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(SILENT_ACCOUNT_KEY) || "null");
+    if (saved && "password" in saved) {
+      delete saved.password;
+      try { localStorage.setItem(SILENT_ACCOUNT_KEY, JSON.stringify(saved)); } catch {}
+    }
+    return saved;
+  } catch { return null; }
 }
 
-// Resume a previously auto-created account. Tries the saved access token
-// first (fast path — no network round trip to re-authenticate); if that's
-// expired, falls back to a fresh password login with the saved password
-// before giving up. The person never sees any of this — they either land
-// straight back in their conversation, or (rarely) a new account gets
-// quietly created and today becomes a fresh start.
+// Resume a previously auto-created account from its saved access token.
+// The old password-login fallback is gone along with the stored password:
+// keeping a replayable credential on the device forever was a worse trade
+// than the thing it bought, which was avoiding a fresh start on the rare
+// occasion a token gets invalidated server-side. The caller already treats
+// "couldn't resume" as a normal outcome and starts a new session.
 async function tryResumeSilentAccount(saved) {
   const sdk = window.matrixcs;
-  if (!sdk) return null;
+  if (!sdk || !saved?.accessToken) return null;
   try {
     const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId });
     await initClientCrypto(client);
@@ -4959,20 +5108,9 @@ async function tryResumeSilentAccount(saved) {
       client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
     });
     return client;
-  } catch {
-    try {
-      const tmp = sdk.createClient({ baseUrl: saved.homeserver });
-      const res = await tmp.loginWithPassword(saved.userId, saved.password);
-      const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: res.access_token, userId: res.user_id, deviceId: res.device_id });
-      await initClientCrypto(client);
-      client.startClient({ initialSyncLimit: 50 });
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error("timeout")), 15000);
-        client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
-      });
-      saveSilentAccount(saved.homeserver, { user_id: res.user_id, password: saved.password, device_id: res.device_id, access_token: res.access_token });
-      return client;
-    } catch { return null; }
+  } catch (e) {
+    console.warn("Couldn't resume the saved account — starting fresh:", e);
+    return null;
   }
 }
 
@@ -5299,15 +5437,70 @@ function openMatrixPasswordReset() {
 // legacy libolm initCrypto() — that call requires a separately-loaded olm.wasm
 // this app never provided, so it always silently no-op'd. initRustCrypto()
 // downloads/instantiates its WASM from the bundle itself; no extra script tag.
-// Login/signup still proceed if this fails (e.g. no IndexedDB/WASM support),
-// but the user is told plainly rather than silently losing the protection the
-// login screen promises them.
+//
+// THIS FAILS CLOSED, deliberately. It used to catch the error, toast, and let
+// the caller carry on with a crypto-less client — which meant any browser
+// without WASM or IndexedDB (private windows, locked-down or old devices)
+// would write every answer into Synapse's `events` table as cleartext. That
+// is precisely what a homeserver admin with a psql shell must never be able
+// to read. Throwing here routes every caller into its existing fallback,
+// which keeps the person on local-only storage: their answers survive, they
+// just never leave the device.
 async function initClientCrypto(client) {
   try {
     await client.initRustCrypto({ useIndexedDB: true });
   } catch (e) {
-    console.error("E2EE setup failed:", e);
-    toast("Couldn't set up encryption — your data will sync but without the extra protection.", "warn");
+    console.error("E2EE setup failed — refusing to use server storage:", e);
+    toast("This browser can't set up encryption, so nothing will be sent to the server. Your answers stay on this device.", "warn");
+    throw e;
+  }
+  if (!client.getCrypto()) {
+    const e = new Error("crypto backend reported ready but getCrypto() is null");
+    console.error(e);
+    throw e;
+  }
+  await assertAdminIdentity(client);
+  client._e2eeReady = true;
+  return client;
+}
+
+// The forward-secrecy hole that Megolm alone does NOT close: a homeserver
+// admin can mint a device on any account (Synapse's admin API will do it),
+// and a sending client with no verification policy will include that device
+// in the next Megolm key share. Past sessions aren't re-shared, so history
+// stays safe — but everything sent afterward would be readable.
+//
+// The targeted fix is to pin the admin's cross-signing master key at deploy
+// time and refuse to send if the server ever presents a different one. That
+// is strictly better than setGlobalBlacklistUnverifiedDevices(true), which
+// would refuse to encrypt to *every* unverified device — including the
+// admin's real one — and break sending outright.
+//
+// Publish the fingerprint by running, as the admin, in Element:
+//   Settings → Security & Privacy → Cryptography → the "Session key" of the
+//   cross-signing master key, or `getCrypto().getCrossSigningKeyId("master")`
+// then set it as DEPLOY_CONFIG.adminMasterKey.
+async function assertAdminIdentity(client) {
+  const pinned = DEPLOY_CONFIG.adminMasterKey;
+  if (!pinned) {
+    console.warn(
+      "[e2ee] DEPLOY_CONFIG.adminMasterKey is not set. Submissions are encrypted at rest, " +
+      "but nothing stops the homeserver from adding a device to " + ADMIN_USER_ID + " and " +
+      "reading everything sent after that point. Pin the admin's cross-signing master key."
+    );
+    return;
+  }
+  if (client.getUserId() === ADMIN_USER_ID) return;
+  const crypto = client.getCrypto();
+  const identity = await crypto.getUserVerificationStatus?.(ADMIN_USER_ID).catch(() => null);
+  const actual = await crypto.getCrossSigningKeyId?.call(crypto, "master", ADMIN_USER_ID).catch(() => null)
+    ?? identity?.masterKey ?? null;
+  if (!actual) throw new Error("Couldn't read the reviewer's identity key — refusing to send.");
+  if (actual !== pinned) {
+    throw new Error(
+      "The reviewer's identity key does not match the one this app was deployed with. " +
+      "Refusing to send — this is what a homeserver-side key substitution looks like."
+    );
   }
 }
 
@@ -5444,10 +5637,13 @@ function suGoToStep2() {
   if (suPwMode === "auto" && !suGeneratedPassword) suGeneratePassword();
 }
 
+// Uses randomStrongPassword() — the CSPRNG-backed generator this file
+// already had — rather than the Math.random() loop that used to live here.
+// V8's Math.random is xorshift128+, whose internal state is recoverable from
+// a handful of outputs, so the account password guarding every answer was
+// predictable to anyone who could sample the same PRNG stream.
 function suGeneratePassword() {
-  const charset = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
-  let pw = "";
-  for (let i = 0; i < 16; i++) pw += charset.charAt(Math.floor(Math.random() * charset.length));
+  const pw = randomStrongPassword();
   suGeneratedPassword = pw;
   document.getElementById("suPwValue").textContent = pw;
   suUpdateStep2Button();
@@ -5495,6 +5691,26 @@ function suUpdateCreateButton() {
 
 function onRecaptchaApiReady() { suCaptchaReady = true; }
 
+// Inject Google's reCAPTCHA script only at the moment a homeserver's UIA
+// flow actually demands an m.login.recaptcha stage. Everything else in this
+// app — the whole constituent intake, where the sensitive answers live —
+// runs without third-party JS ever entering the origin. Idempotent: the
+// wizard can be opened, cancelled and reopened without stacking script tags.
+let recaptchaLoadPromise = null;
+function loadRecaptchaApi() {
+  if (recaptchaLoadPromise) return recaptchaLoadPromise;
+  recaptchaLoadPromise = new Promise((resolve, reject) => {
+    if (window.grecaptcha && window.grecaptcha.render) { suCaptchaReady = true; resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://www.google.com/recaptcha/api.js?onload=onRecaptchaApiReady&render=explicit";
+    s.async = true; s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => { recaptchaLoadPromise = null; reject(new Error("reCAPTCHA failed to load")); };
+    document.head.appendChild(s);
+  });
+  return recaptchaLoadPromise;
+}
+
 async function suGoToStep3() {
   suGotoStep(3);
   suRegSession = null;
@@ -5527,6 +5743,10 @@ async function suGoToStep3() {
 
 function suRenderCaptcha(sitekey) {
   const box = document.getElementById("suCaptchaBox");
+  box.textContent = "Loading verification…";
+  loadRecaptchaApi().catch(() => {
+    box.innerHTML = '<p style="font-size:12.5px;color:var(--muted)">Verification couldn\'t load — use the matrix.org sign-up link below instead.</p>';
+  });
   const tryRender = () => {
     if (!window.grecaptcha || !window.grecaptcha.render) { setTimeout(tryRender, 300); return; }
     box.innerHTML = "";
@@ -5706,7 +5926,18 @@ function wireSignupWizard() {
     btn.disabled = true;
     btn.textContent = "Loading…";
     if (suClientReadyPromise) await suClientReadyPromise;
-    if (!loginState) { loginState = { kind: "matrix", client: null, userId: suRegisteredData.user_id }; }
+    // Post-signup client setup failed — which now includes "this browser
+    // couldn't start the encryption backend", since initClientCrypto()
+    // throws rather than carrying on unencrypted. This used to claim
+    // kind:"matrix" with a null client, so the app would go on believing it
+    // had server storage it did not have. Drop to local-only instead: the
+    // same fallback the constituent entry path uses, and the same promise —
+    // answers stay on this device rather than leaving it unprotected.
+    if (!loginState) {
+      console.warn("Signed up, but the encrypted client didn't come up — using local-only storage.");
+      toast("Your account is created, but this browser couldn't start encryption. Your answers stay on this device for now.", "warn");
+      loginState = { kind: "demo", userId: suRegisteredData.user_id };
+    }
     hideLogin();
     boot();
   };
