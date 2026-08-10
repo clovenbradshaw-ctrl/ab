@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AB — Admin Demo</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; background: #E9EDF0; color: #16242B; }
+  .card { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 32px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+  h1 { font-family: Georgia, serif; font-size: 22px; margin: 0 0 8px; }
+  .sub { color: #5C6B72; font-size: 13px; margin: 0 0 24px; }
+  pre { background: #F2F5F7; border: 1px solid #D3DADF; border-radius: 8px; padding: 14px; font: 11.5px "IBM Plex Mono", monospace; color: #2E6F5E; max-height: 300px; overflow: auto; white-space: pre-wrap; }
+  button { display: block; width: 100%; padding: 12px; border: none; border-radius: 9px; font: 600 14px system-ui, sans-serif; cursor: pointer; margin-top: 16px; }
+  button.seed { background: #16242B; color: #fff; }
+  button.go { background: #2E6F5E; color: #fff; margin-top: 8px; }
+  button:hover { opacity: 0.88; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .done { display: none; margin-bottom: 16px; padding: 12px; background: #E4EFEA; border: 1px solid #C9E0D5; border-radius: 8px; color: #2E6F5E; font-weight: 600; font-size: 13px; }
+  .done.on { display: block; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>AB — Admin pipeline demo</h1>
+  <p class="sub">Seeds 3 sample applications with full provenance (typed answers, voice recordings with transcripts, parsed values, generated letters) into browser storage, then opens the admin dashboard to the Pipeline tab.</p>
+  <div class="done" id="doneBar">Data seeded — 3 applications ready.</div>
+  <pre id="log">Click "Seed sample data" to begin.</pre>
+  <button class="seed" id="seedBtn">Seed sample data</button>
+  <button class="go" id="goBtn" disabled>Open admin pipeline</button>
+</div>
+
+<script>
+(function() {
+var log = document.getElementById("log");
+function L(msg) { log.textContent += msg + "\n"; }
+
+var OP = { DEF: "DEF", INS: "INS", CON: "CON" };
+var NOW = new Date().toISOString();
+function newId(p) { return p + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+
+function seedRoom(roomId, name, answers) {
+  const events = [];
+  events.push({ id: newId("e"), op: OP.DEF, payload: { anchor: "applicant", path: "complainant_name", value: name, source: name, inputKind: "typed", voiceClipId: null }, at: NOW, by: "@applicant:local" });
+
+  for (let i = 0; i < answers.length; i++) {
+    const a = answers[i];
+    events.push({ id: newId("e"), op: OP.DEF, payload: { anchor: "applicant", path: a.path, value: a.value, source: a.source, inputKind: a.kind || "typed", voiceClipId: a.voiceClipId || null }, at: a.at || NOW, by: "@applicant:local" });
+  }
+
+  let addedLetter = false;
+  for (const a of answers) {
+    if (a.voiceClip) {
+      events.push({ id: newId("e"), op: OP.INS, payload: { entity: "voice_clip", id: a.voiceClipId, attrs: { fieldPath: a.path, transcript: a.voiceClip.transcript, mimetype: "audio/webm", size: 42000, url: "demo://voice/" + a.voiceClipId, key: "k", iv: "iv", hash: "h", lang: "en" } }, at: a.at || NOW, by: "@applicant:local" });
+    }
+    if (!addedLetter && answers.length >= 6) {
+      const letterId = newId("letter");
+      events.push({ id: newId("e"), op: OP.INS, payload: { entity: "letter", id: letterId, attrs: { text: generateLetter(name, answers), generatedAt: NOW, generatedBy: "@admin:local", status: "draft" } }, at: NOW, by: "@admin:local" });
+      addedLetter = true;
+    }
+  }
+
+  localStorage.setItem("intake:" + roomId, JSON.stringify(events));
+  L("  " + name + " — " + answers.length + " answers, " + (addedLetter ? "1 letter" : "0 letters"));
+}
+
+function generateLetter(name, answers) {
+  const v = (p) => (answers.find((a) => a.path === p) || {}).value || "";
+  return [
+    "OFFICE FOR CIVIL RIGHTS — ADMINISTRATIVE COMPLAINT",
+    "",
+    "PERSONAL INFORMATION",
+    "Complainant: " + name,
+    "Relationship: " + v("complainant_relationship"),
+    "Address: " + v("complainant_address"),
+    "Phone: " + v("complainant_phone"),
+    "",
+    "CHILD INFORMATION",
+    "Initials: " + v("child_initials"),
+    "Age: " + v("child_age"),
+    "Race/Ethnicity: " + v("child_race_ethnicity"),
+    "Disability: " + (v("child_disability") || "None reported"),
+    "Home Language: " + (v("home_language") || "English"),
+    "",
+    "CASE BACKGROUND",
+    "DCS County: " + v("dcs_county"),
+    "Custody Start: " + v("custody_start_date"),
+    "",
+    "SUMMARY OF COMPLAINT",
+    v("dcs_actions_failures"),
+    "",
+    "PLACEMENT HISTORY",
+    v("placement_history"),
+    "",
+    "DESIRED OUTCOME",
+    v("desired_outcome"),
+  ].join("\n");
+}
+
+function doSeed() {
+  log.textContent = "Seeding sample data…\n";
+
+  // Sample 1: Maria Lopez — Nashville mother, voice + typed
+  L("Applicant 1:");
+  seedRoom("!maria-lopez-demo:local", "Maria Lopez", [
+    { path: "complainant_relationship", value: "Mother", source: "I am her mother", kind: "typed" },
+    { path: "complainant_address", value: "1427 Oak Street, Apt 4B, Nashville, TN 37206", source: "1427 Oak St Apt 4B Nashville", kind: "typed" },
+    { path: "complainant_phone", value: "615-555-0142", source: "my phone is 615-555-0142", kind: "typed" },
+    { path: "child_initials", value: "J.L.", source: "her initials are JL", kind: "typed" },
+    { path: "child_age", value: "7", source: "she is 7 years old", kind: "typed" },
+    { path: "child_race_ethnicity", value: "Hispanic/Latina", source: "she is Hispanic", kind: "typed" },
+    { path: "dcs_county", value: "Davidson County", source: "this happened in davidson county", kind: "voice", voiceClipId: "voice_maria_1", voiceClip: { transcript: "this happened in davidson county" } },
+    { path: "custody_start_date", value: "March 2025", source: "they took her in March 2025", kind: "typed" },
+    { path: "placement_history", value: "Three placements in 14 months. First foster family in Madison, then group home in East Nashville, currently with relatives in Antioch.", source: "she was with a foster family in Madison first. then they moved her to a group home in East Nashville. now she is with my cousin in Antioch. that is three different places in 14 months.", kind: "typed" },
+    { path: "dcs_actions_failures", value: "DCS failed to provide notice before moving the child between placements three times. No family reunification plan was offered. The case worker did not respond to five phone calls over two months.", source: "they moved her without telling me three times. nobody ever talked about getting her back home. i called the case worker five times over two months and she never called back.", kind: "voice", voiceClipId: "voice_maria_2", voiceClip: { transcript: "they moved her without telling me three different times. nobody talked about reunification. i called the case worker five times and she never called me back" } },
+    { path: "desired_outcome", value: "Return child to mother's custody with family support services and supervised transition.", source: "i want my daughter back home with me. i will do whatever they need me to do", kind: "typed" },
+    { path: "last_incident_date", value: "July 28, 2026", source: "the last move was July 28th", kind: "typed" },
+  ]);
+
+  // Sample 2: James Washington — Memphis father, typed + voice
+  L("Applicant 2:");
+  seedRoom("!james-washington-demo:local", "James Washington", [
+    { path: "complainant_relationship", value: "Father", source: "I am the father", kind: "typed" },
+    { path: "complainant_address", value: "3120 Rosa Parks Blvd, Nashville, TN 37208", source: "3120 Rosa Parks Blvd Nashville", kind: "typed" },
+    { path: "complainant_phone", value: "615-555-0829", source: "615-555-0829", kind: "typed" },
+    { path: "child_initials", value: "T.W.", source: "TW", kind: "typed" },
+    { path: "child_age", value: "14", source: "he is 14", kind: "typed" },
+    { path: "child_race_ethnicity", value: "Black/African American", source: "he is African American", kind: "voice", voiceClipId: "voice_james_1", voiceClip: { transcript: "he is african american" } },
+    { path: "home_language", value: "English", source: "we speak English", kind: "typed" },
+    { path: "dcs_county", value: "Shelby County", source: "Shelby county", kind: "typed" },
+    { path: "custody_start_date", value: "January 2026", source: "since January 2026", kind: "typed" },
+    { path: "child_disability", value: "Diagnosed ADHD, no IEP in current placement", source: "he has ADHD and they are not giving him an IEP at his school", kind: "typed" },
+    { path: "placement_history", value: "Two placements. Initially maternal grandmother, then residential facility after incident report. Father not contacted about either move.", source: "he was with his grandmother then they put him in some kind of facility. nobody told me about either move", kind: "voice", voiceClipId: "voice_james_2", voiceClip: { transcript: "he was with his grandmother and then they put him in some kind of residential facility. nobody told me about either one of those moves" } },
+    { path: "dcs_actions_failures", value: "No family placement search conducted. Father not notified of placement changes. IEP not provided despite documented ADHD. Visitation suspended without court order.", source: "they never looked for me as a placement, never told me when they moved him, he doesnt have the IEP he needs, and they stopped letting me visit him", kind: "typed" },
+    { path: "desired_outcome", value: "Placement with father pending home study. Full educational evaluation and IEP implementation at appropriate school.", source: "i want him home with me and i want him to get the help he needs in school", kind: "typed" },
+    { path: "prior_remedy_dcs_grievance", value: "Filed grievance with DCS regional office on April 15, 2026 — no response received.", source: "i filed a grievance in April and nobody responded", kind: "typed" },
+  ]);
+
+  // Sample 3: Diane Chen — Williamson county, aunt/guardian, voice heavy
+  L("Applicant 3:");
+  seedRoom("!diane-chen-demo:local", "Diane Chen", [
+    { path: "complainant_relationship", value: "Legal guardian / Aunt", source: "I am her aunt and legal guardian", kind: "typed" },
+    { path: "complainant_address", value: "8800 Highway 100, Nashville, TN 37221", source: "8800 Hwy 100", kind: "typed" },
+    { path: "complainant_phone", value: "615-555-0371", source: "my cell is 615-555-0371", kind: "typed" },
+    { path: "child_initials", value: "A.M.", source: "her initials AM", kind: "typed" },
+    { path: "child_age", value: "3", source: "she just turned 3", kind: "typed" },
+    { path: "child_race_ethnicity", value: "Asian/Chinese American", source: "she is Chinese American", kind: "typed" },
+    { path: "home_language", value: "Mandarin Chinese and English", source: "we speak both Mandarin and English", kind: "typed" },
+    { path: "dcs_county", value: "Williamson County", source: "Williamson county", kind: "typed" },
+    { path: "custody_start_date", value: "October 2025", source: "they took her in October of last year", kind: "voice", voiceClipId: "voice_diane_1", voiceClip: { transcript: "they took her in october of last year" } },
+    { path: "child_disability", value: "Speech delay, no services provided since removal", source: "she has a speech delay. she was getting speech therapy before they took her. now she is not getting anything.", kind: "typed" },
+    { path: "family_background", value: "Mother has substance use disorder, currently in treatment. Father unknown. Extended family willing to provide kinship care.", source: "my sister has an addiction problem but she is in treatment now. nobody knows who the father is. myself and my parents all want to help take care of her", kind: "typed" },
+    { path: "placement_history", value: "Emergency shelter for 3 weeks, then foster home with non-relative family. No family placement assessment conducted.", source: "they put her in a shelter for the first three weeks. then a foster family that is not related to us. they never even looked at me or my parents", kind: "typed" },
+    { path: "dcs_actions_failures", value: "No family placement assessment despite legal guardian notification. Speech therapy discontinued after removal. Language needs (Mandarin) not accommodated. Guardian denied visitation for 6 weeks.", source: "they never looked at me as a placement even though I am her legal guardian. she is not getting speech therapy anymore. the foster family only speaks English and she is losing her Mandarin. they would not let me see her for the first six weeks.", kind: "voice", voiceClipId: "voice_diane_2", voiceClip: { transcript: "they never looked at me as a placement even though i'm her legal guardian. she lost her speech therapy. the foster family only speaks english and she's losing her mandarin. they would not let me see her for the first six weeks" } },
+    { path: "desired_outcome", value: "Immediate kinship placement with legal guardian. Reinstatement of speech therapy. Mandarin language preservation support.", source: "i want her to come live with me or my parents. she needs her speech help back. and she needs to keep both her languages", kind: "typed" },
+    { path: "last_incident_date", value: "August 1, 2026", source: "last Friday August 1st", kind: "typed" },
+  ]);
+
+  // Seed config room so the app boots
+  const configEvents = [];
+  configEvents.push({ id: newId("e"), op: OP.DEF, payload: { anchor: "qconfig", path: "schema", value: JSON.stringify({ id:"default", title:"Feedback Platform", titleEs:"Plataforma de comentarios", blurb:"Document your experience.", fields:[{path:"complainant_name",label:"Your name",type:"text",required:true},{path:"complainant_relationship",label:"Relationship to child",type:"text",required:true},{path:"complainant_address",label:"Mailing address",type:"text",required:true},{path:"complainant_phone",label:"Phone number",type:"text",required:true},{path:"child_initials",label:"Child's initials",type:"text",required:true},{path:"child_age",label:"Child's age",type:"text",required:true},{path:"child_race_ethnicity",label:"Child's race or ethnicity",type:"text",required:true},{path:"child_disability",label:"Disability",type:"text"},{path:"home_language",label:"Home language",type:"text"},{path:"custody_start_date",label:"DCS custody start",type:"text",required:true},{path:"dcs_county",label:"County",type:"text",required:true},{path:"family_background",label:"Family background",type:"text"},{path:"placement_history",label:"Placement history",type:"text",required:true},{path:"dcs_actions_failures",label:"DCS failures",type:"text",required:true},{path:"desired_outcome",label:"Desired outcome",type:"text"},{path:"last_incident_date",label:"Last incident date",type:"text"},{path:"prior_remedy_dcs_grievance",label:"Prior grievance",type:"text"}]}), inputKind:"typed",voiceClipId:null }, at: NOW, by: "@admin:local" });
+  localStorage.setItem("intake:!intake-config:local", JSON.stringify(configEvents));
+  L("\nConfig room seeded.");
+
+  L("\nDone. 3 applications, " + (12+13+15) + " total answers, 3 letters, 5 voice clips.");
+  document.getElementById("doneBar").classList.add("on");
+  document.getElementById("goBtn").disabled = false;
+  document.getElementById("seedBtn").disabled = true;
+}
+
+function openAdminView() {
+  localStorage.setItem("ab_admin_demo", "1");
+  window.location.href = "/";
+}
+
+// Wire buttons
+document.getElementById("seedBtn").addEventListener("click", doSeed);
+document.getElementById("goBtn").addEventListener("click", openAdminView);
+})();
+</script>
+</body>
+</html>
