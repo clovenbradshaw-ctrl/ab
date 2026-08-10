@@ -944,7 +944,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button></div>
+    <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="pipeline">Pipeline</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminClose">← Back</button>
   </header>
@@ -3199,7 +3199,7 @@ class Intake {
 
 
 { ADMIN_USER_ID };
-const isAdmin = (userId) => userId === ADMIN_USER_ID;
+const isAdmin = (userId) => userId === ADMIN_USER_ID || userId === "@admin:local";
 
 const STATUSES = [
   { key: "new", label: "New" },
@@ -3347,6 +3347,59 @@ function collectApplicantRooms({ storeKind, client }) {
   return rooms;
 }
 
+// Pipeline data: every applicant with their full provenance chain —
+// raw submissions, voice transcripts ("heard"), parsed answers, and
+// generated letters (templatized output). Used by the Pipeline admin tab.
+function collectPipelineData({ storeKind, client }) {
+  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const pipelines = [];
+  for (const roomId of roomIds) {
+    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    if (!events.length) continue;
+    const folded = fold(events);
+    const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
+    const provenance = provenanceOf(folded, "applicant");
+
+    const voiceClips = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "voice_clip")
+      .map(([id, r]) => ({ id, roomId, ...r.attrs }));
+
+    const defs = events.filter((e) => e.op === OP.DEF && e.payload.anchor !== "qconfig");
+    const answers = [];
+    // Collect per-field provenance: for each path that has an answer,
+    // grab the latest cell value AND find all events for that path
+    // (the edit history).
+    const seenPaths = new Set();
+    for (const ev of defs) {
+      const p = ev.payload.path;
+      if (seenPaths.has(p)) continue;
+      seenPaths.add(p);
+      const cell = provenance[p];
+      if (!cell) continue;
+      const clip = (cell.inputKind === "voice" && cell.voiceClipId)
+        ? voiceClips.find((c) => c.id === cell.voiceClipId) : null;
+      answers.push({
+        path: p,
+        value: cell.value,
+        source: cell.source,
+        inputKind: cell.inputKind || "typed",
+        voiceClip: clip,
+        at: cell.at,
+        by: cell.by,
+      });
+    }
+
+    const letters = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "letter")
+      .map(([id, r]) => ({ id, roomId, applicantName, ...r.attrs, status: r.attrs.status || "draft", generatedAt: r.at }));
+
+    const lastActivity = defs.length ? defs.reduce((max, e) => (e.at || "") > (max || "") ? e.at : max, "") : null;
+
+    pipelines.push({ roomId, applicantName, answers, letters, voiceClips, lastActivity });
+  }
+  return pipelines.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
+}
+
 // The admin dashboard writes into applicant rooms directly on the client
 // rather than through MatrixStore.emit(), so it bypassed that class's
 // encryption gate entirely. Same rule has to apply here — and it matters
@@ -3420,6 +3473,12 @@ function initAdminView({ onClose }) {
   let searchQuery = "";
   let searchTimer = null;
   let evalTimer = null;
+  // Which applicant the Pipeline tab's single-submission (inbox detail) view
+  // is showing, if any. Lives here — not on the div renderPipeline builds —
+  // because that div is thrown away and rebuilt every renderActive() call,
+  // so state stored on it never survives the re-render its own click
+  // handlers trigger.
+  let pipelineViewing = null;
 
   tabs.forEach((btn) => {
     btn.onclick = () => {
@@ -3474,6 +3533,9 @@ function initAdminView({ onClose }) {
       body.appendChild(renderLetters(filtered));
     } else if (active === "eval") {
       body.appendChild(renderEval());
+    } else if (active === "pipeline") {
+      const pipelineData = collectPipelineData(ctx);
+      body.appendChild(renderPipeline(pipelineData));
     }
   }
 
@@ -3665,6 +3727,338 @@ function initAdminView({ onClose }) {
     card.appendChild(meta);
     card.appendChild(viewBtn(d));
     return card;
+  }
+
+  // ── Pipeline view ──
+  // Main table showing all applicants, then a detail panel for
+  // reviewing a single applicant with non-destructive inline editing
+  // and full provenance always visible. Every edit emits a new event
+  // in the room — no data is ever destroyed, all changes logged.
+
+  function renderPipeline(pipelines) {
+    if (!pipelines.length) return $e("div", "aempty", "No applicant data yet — submissions will appear here as constituents answer questions.");
+
+    const wrap = $e("div");
+    wrap.style.cssText = "display:flex;flex-direction:column;gap:14px";
+
+    // View toggle: "All submissions" or per-applicant single review
+    const viewing = pipelineViewing ? pipelines.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
+
+    const viewBar = $e("div");
+    viewBar.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:2px";
+
+    if (viewing) {
+      const backBtn = document.createElement("button");
+      backBtn.textContent = "← Back to all submissions";
+      backBtn.className = "aclose";
+      backBtn.onclick = () => { pipelineViewing = null; renderActive(); };
+      viewBar.appendChild(backBtn);
+      viewBar.appendChild($e("div", "acell-name", `Reviewing: ${viewing.applicantName}`));
+      viewBar.appendChild($e("span", "mono", `${viewing.answers.length} answers · ${viewing.letters.length} letters · ${viewing.roomId}`));
+      viewBar.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-left:auto";
+    } else {
+      viewBar.appendChild($e("span", null, "All submissions"));
+      viewBar.lastChild.style.cssText = "font-size:13px;font-weight:600;color:var(--ink)";
+      viewBar.appendChild($e("span", "mono", `${pipelines.length} applicant(s)`));
+      viewBar.lastChild.style.cssText = "font-size:10.5px;color:var(--muted);margin-left:auto";
+    }
+    wrap.appendChild(viewBar);
+
+    if (viewing) {
+      // ── SINGLE SUBMISSION VIEW ──
+      renderSingleSubmission(wrap, viewing);
+    } else {
+      // ── ALL SUBMISSIONS TABLE ──
+      const table = $e("div", "atable-wrap");
+      const t = document.createElement("table");
+      t.className = "atable";
+      const thead = document.createElement("thead");
+      thead.innerHTML = `<tr><th>Applicant</th><th>Typed ⌨</th><th>Voice 🎙</th><th>Total</th><th>Letters</th><th>Last activity</th><th></th></tr>`;
+      t.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      for (const pl of pipelines) {
+        const tr = document.createElement("tr");
+        tr.style.cursor = "pointer";
+        tr.onclick = () => { pipelineViewing = pl; renderActive(); };
+
+        const name = $e("td", "acell-name");
+        name.style.cssText = "max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        name.textContent = pl.applicantName;
+        tr.appendChild(name);
+        
+        const typedN = pl.answers.filter((a) => a.inputKind === "typed").length;
+        const voiceN = pl.answers.filter((a) => a.inputKind === "voice").length;
+        tr.appendChild($e("td", "acell-val", String(typedN)));
+        tr.appendChild($e("td", "acell-val", String(voiceN)));
+        tr.appendChild($e("td", "acell-val", `${pl.answers.length}`));
+        
+        const approved = pl.letters.filter((l) => l.status === "approved" || l.status === "filed").length;
+        const drafts = pl.letters.filter((l) => l.status === "draft" || l.status === "review").length;
+        const letterCell = $e("td", "acell-val");
+        letterCell.innerHTML = `${pl.letters.length} total · <span style="color:var(--seal)">${approved} approved</span>${drafts ? ` · <span style="color:var(--turn)">${drafts} in progress</span>` : ""}`;
+        tr.appendChild(letterCell);
+        
+        tr.appendChild($e("td", "acell-date", pl.lastActivity ? fmtDate(pl.lastActivity) : "—"));
+        
+        const actions = $e("td");
+        const reviewBtn = document.createElement("button");
+        reviewBtn.textContent = "Review →";
+        reviewBtn.className = "aview";
+        reviewBtn.onclick = (e) => { e.stopPropagation(); pipelineViewing = pl; renderActive(); };
+        actions.appendChild(reviewBtn);
+        tr.appendChild(actions);
+        tbody.appendChild(tr);
+      }
+      t.appendChild(tbody);
+      table.appendChild(t);
+      wrap.appendChild(table);
+    }
+
+    return wrap;
+  }
+
+  function renderSingleSubmission(wrap, pl) {
+    // ── Audit summary bar ──
+    const auditBar = $e("div");
+    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#F2F5F7;border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
+    const typedCount = pl.answers.filter((a) => a.inputKind === "typed").length;
+    const voiceCount = pl.answers.filter((a) => a.inputKind === "voice").length;
+    const editedCount = pl.answers.filter((a) => a.inputKind === "edited").length;
+    const bulkCount = pl.answers.filter((a) => a.inputKind === "bulk").length;
+    const parts = [
+      `<span>⌨ <b style="color:var(--ink)">${typedCount} typed</b> — constituent wrote these directly</span>`,
+      `<span>🎙 <b style="color:var(--ink)">${voiceCount} voice-to-text</b> — spoken, transcribed by Whisper VTT</span>`,
+    ];
+    if (editedCount) parts.push(`<span>✎ <b style="color:var(--ink)">${editedCount} edited</b> — admin-corrected, original preserved in room</span>`);
+    if (bulkCount) parts.push(`<span>📋 <b style="color:var(--ink)">${bulkCount} bulk</b> — extracted from pasted block</span>`);
+    parts.push(`<span style="margin-left:auto;color:var(--seal);font-weight:500">No data is ever destroyed — all changes are new Matrix events</span>`);
+    auditBar.innerHTML = parts.join(" &nbsp;·&nbsp; ");
+    wrap.appendChild(auditBar);
+
+    // ── Four-column provenance grid ──
+    const grid = $e("div");
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(4,1fr);gap:12px";
+
+    // Column 1: Raw — what the user submitted
+    const colRaw = $e("div");
+    colRaw.style.cssText = "border:1px solid var(--line);border-radius:10px;background:#FBF1E3;padding:10px;display:flex;flex-direction:column;gap:6px";
+    const rawHead = $e("div");
+    rawHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
+    rawHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#B67A2E;border-radius:4px;padding:1px 5px;font-weight:600">raw</span><span style="font-size:11.5px;font-weight:600">Submitted</span>`;
+    colRaw.appendChild(rawHead);
+    colRaw.appendChild($e("div", null, "What the constituent typed or spoke — verbatim, never modified."));
+    colRaw.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
+
+    for (const a of pl.answers) {
+      if (!a.source) continue;
+      const isVoice = a.inputKind === "voice";
+      const item = $e("div", "mem");
+      item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:4px";
+      const badge = $e("span", "mono", isVoice ? "🎙 voice" : "⌨ typed");
+      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "#F2F5F7"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
+      item.appendChild(badge);
+      const sourceText = $e("div", null, a.source);
+      sourceText.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
+      item.appendChild(sourceText);
+      item.appendChild($e("div", "mono", `${a.path} · ${fmtDate(a.at)}`));
+      item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:2px";
+      if (isVoice && a.voiceClip) {
+        const playBtn = document.createElement("button");
+        playBtn.innerHTML = "▶ Play recorded audio";
+        playBtn.style.cssText = "margin-top:4px;border:1px solid var(--seal);border-radius:5px;background:var(--surface);font:500 10px Inter;padding:3px 9px;cursor:pointer;color:var(--seal);align-self:flex-start";
+        playBtn.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
+        item.appendChild(playBtn);
+      }
+      colRaw.appendChild(item);
+    }
+    if (!pl.answers.filter((a) => a.source).length) colRaw.appendChild(pipelineEmpty("No raw submissions."));
+    grid.appendChild(colRaw);
+
+    // Column 2: Heard — VTT transcriptions only
+    const colHeard = $e("div");
+    colHeard.style.cssText = "border:1px solid #C9E0D5;border-radius:10px;background:var(--seal-soft);padding:10px;display:flex;flex-direction:column;gap:6px";
+    const heardHead = $e("div");
+    heardHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
+    heardHead.innerHTML = `<span class="mono" style="font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 5px;font-weight:600">heard</span><span style="font-size:11.5px;font-weight:600">Transcribed (VTT)</span>`;
+    colHeard.appendChild(heardHead);
+    colHeard.appendChild($e("div", null, "What the speech model heard — raw Whisper transcription, independent of the answer parser. Play the audio to verify accuracy."));
+    colHeard.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
+    let hc = 0;
+    for (const a of pl.answers) {
+      if (!a.voiceClip || !a.voiceClip.transcript) continue;
+      hc++;
+      const item = $e("div", "mem");
+      item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px;display:flex;flex-direction:column;gap:4px";
+      item.appendChild($e("span", "mono", "whisper VTT"));
+      item.lastChild.style.cssText = "align-self:flex-start;font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px";
+      item.appendChild($e("div", null, a.voiceClip.transcript));
+      item.lastChild.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
+      item.appendChild($e("div", "mono", `${a.path} · ${fmtDate(a.at)}`));
+      item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:2px";
+      const playBtn = document.createElement("button");
+      playBtn.innerHTML = "▶ Play audio to verify transcript";
+      playBtn.style.cssText = "margin-top:4px;border:1px solid var(--seal);border-radius:5px;background:var(--surface);font:500 10px Inter;padding:3px 9px;cursor:pointer;color:var(--seal);align-self:flex-start";
+      playBtn.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
+      item.appendChild(playBtn);
+      colHeard.appendChild(item);
+    }
+    if (!hc) colHeard.appendChild(pipelineEmpty("No voice transcriptions — all answers were typed."));
+    grid.appendChild(colHeard);
+
+    // Column 3: Parsed answer — model's extraction, editable
+    const colReview = $e("div");
+    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:#F2F5F7;padding:10px;display:flex;flex-direction:column;gap:6px";
+    const reviewHead = $e("div");
+    reviewHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
+    reviewHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#5C6B72;border-radius:4px;padding:1px 5px;font-weight:600">review</span><span style="font-size:11.5px;font-weight:600">Parsed answer</span>`;
+    colReview.appendChild(reviewHead);
+    colReview.appendChild($e("div", null, "The model's extraction from the raw input — defaults to best guess. ✎ to override — edit creates a new DEF event, original never touched."));
+    colReview.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
+    for (const a of pl.answers) {
+      colReview.appendChild(pipelineEditableField(pl, a));
+    }
+    if (!pl.answers.length) colReview.appendChild(pipelineEmpty("No answers to review."));
+    grid.appendChild(colReview);
+
+    // Column 4: Templatized — generated letters
+    const colFinal = $e("div");
+    colFinal.style.cssText = "border:1px solid #C9E0D5;border-radius:10px;background:var(--seal-soft);padding:10px;display:flex;flex-direction:column;gap:6px";
+    const finalHead = $e("div");
+    finalHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
+    finalHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:var(--seal);border-radius:4px;padding:1px 5px;font-weight:600">final</span><span style="font-size:11.5px;font-weight:600">Templatized output</span>`;
+    colFinal.appendChild(finalHead);
+    colFinal.appendChild($e("div", null, "OCR complaint letter generated from current answers. Audit trail links every line to its raw source."));
+    colFinal.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
+
+    if (pl.answers.length > 0) {
+      const genItem = $e("div", "mem");
+      genItem.style.cssText = "padding:8px;background:var(--surface);border:2px dashed var(--seal);border-radius:8px;text-align:center";
+      const genBtn = document.createElement("button");
+      genBtn.textContent = "✎ Generate complaint letter from current answers";
+      genBtn.style.cssText = "border:1px solid var(--seal);border-radius:6px;background:var(--seal);color:#fff;font:600 11px Inter;padding:6px 12px;cursor:pointer;width:100%";
+      genBtn.onclick = () => {
+        const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
+        const folded = fold(events);
+        const ans = answersOf(folded, "applicant");
+        const prov = provenanceOf(folded, "applicant");
+        const { letter } = buildComplaintLetter(ans, prov);
+        saveLetter(ctx, pl.roomId, letter);
+        toast(`Letter generated for ${pl.applicantName} — status: draft`, "success");
+        setTimeout(() => renderActive(), 400);
+      };
+      genItem.appendChild(genBtn);
+      colFinal.appendChild(genItem);
+    }
+
+    for (const l of pl.letters) {
+      const item = $e("div", "mem");
+      item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px";
+      item.appendChild($e("span", "pill pill-" + l.status, LETTER_STATUSES.find((s) => s.key === l.status)?.label || l.status));
+      const preview = $e("div", null, (l.text || "").slice(0, 280));
+      preview.style.cssText = "margin-top:4px;white-space:pre-wrap;font-size:11px;color:var(--ink);line-height:1.45";
+      item.appendChild(preview);
+      item.appendChild($e("div", "mono", `generated ${fmtDate(l.generatedAt)} · by ${l.generatedBy || "?"}`));
+      item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:3px";
+      const btns = $e("div");
+      btns.style.cssText = "display:flex;gap:5px;margin-top:6px;flex-wrap:wrap";
+      const viewBtn = document.createElement("button");
+      viewBtn.textContent = "View full"; viewBtn.className = "aview";
+      viewBtn.onclick = () => showLetterModal(l);
+      btns.appendChild(viewBtn);
+      const traceBtn = document.createElement("button");
+      traceBtn.textContent = "Audit trail"; traceBtn.className = "aview";
+      traceBtn.onclick = () => showTraceModal(l);
+      btns.appendChild(traceBtn);
+      btns.appendChild(letterStatusSelect(l));
+      item.appendChild(btns);
+      colFinal.appendChild(item);
+    }
+    if (!pl.letters.length) {
+      colFinal.appendChild(pipelineEmpty("No letters yet — click generate above."));
+    }
+    grid.appendChild(colFinal);
+    wrap.appendChild(grid);
+  }
+
+  // Helpers used by both renderPipeline and renderSingleSubmission
+  function pipelineEmpty(msg) {
+    const el = $e("div", null, msg);
+    el.style.cssText = "font-size:11px;color:var(--muted);padding:4px;font-style:italic";
+    return el;
+  }
+
+  function pipelineEditableField(pl, a) {
+    const item = $e("div", "mem");
+    item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px";
+
+    const header = $e("div");
+    header.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:4px";
+    header.appendChild($e("span", "mono", a.path));
+    header.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);font-weight:500";
+    header.appendChild($e("span", "mono", `· ${a.inputKind} · ${fmtDate(a.at)}`));
+    header.lastChild.style.cssText = "font-size:9px;color:var(--muted)";
+    item.appendChild(header);
+
+    // Provenance summary: always shown
+    if (a.source && a.inputKind !== "voice") {
+      const prov = $e("div", null, `Source: "${a.source}"`);
+      prov.style.cssText = "font-size:10.5px;color:var(--muted);margin-bottom:4px;font-style:italic;line-height:1.3";
+      item.appendChild(prov);
+    }
+
+    // Editable value — model's best answer displayed, editable inline
+    const valueWrap = $e("div");
+    valueWrap.style.cssText = "display:flex;gap:6px;align-items:flex-start";
+    const valueDisplay = $e("div", null, a.value || "(empty)");
+    valueDisplay.style.cssText = "flex:1;font-size:12.5px;color:var(--ink);line-height:1.45;white-space:pre-wrap;min-height:1.2em;padding:4px 6px;border:1px solid transparent;border-radius:5px";
+    valueWrap.appendChild(valueDisplay);
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "✎";
+    editBtn.title = "Edit value (creates a new event — original is preserved)";
+    editBtn.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--surface);font-size:11px;padding:2px 7px;cursor:pointer;color:var(--muted);flex:none;margin-top:2px";
+    valueWrap.appendChild(editBtn);
+    item.appendChild(valueWrap);
+
+    // Inline edit mode (hidden by default)
+    const editArea = $e("div");
+    editArea.style.cssText = "display:none;flex-direction:column;gap:6px;margin-top:6px";
+    const textarea = document.createElement("textarea");
+    textarea.className = "field-input";
+    textarea.value = a.value || "";
+    textarea.style.cssText = "width:100%;min-height:60px;resize:vertical;margin-bottom:0";
+    editArea.appendChild(textarea);
+    const editBtns = $e("div");
+    editBtns.style.cssText = "display:flex;gap:5px";
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent = "Save (emits new event)";
+    saveBtn.style.cssText = "border:1px solid var(--seal);border-radius:5px;background:var(--seal);color:#fff;font:600 10.5px Inter;padding:3px 9px;cursor:pointer";
+    saveBtn.onclick = () => {
+      const newVal = textarea.value.trim();
+      if (!newVal || newVal === a.value) { editArea.style.display = "none"; valueDisplay.style.display = ""; valueWrap.style.display = ""; return; }
+      const payload = { anchor: "applicant", path: a.path, value: newVal, source: a.source, inputKind: "edited", voiceClipId: null };
+      if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, pl.roomId, OP.DEF, payload);
+      else DemoStore.appendEvent(pl.roomId, OP.DEF, payload, ctx.currentUserId);
+      toast(`Saved "${a.path}" — original event preserved in room timeline`, "success");
+      setTimeout(() => renderActive(), 400);
+    };
+    editBtns.appendChild(saveBtn);
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--surface);font:500 10.5px Inter;padding:3px 9px;cursor:pointer;color:var(--ink)";
+    cancelBtn.onclick = () => {
+      editArea.style.display = "none"; valueDisplay.style.display = ""; valueWrap.style.display = "";
+    };
+    editBtns.appendChild(cancelBtn);
+    editArea.appendChild(editBtns);
+    item.appendChild(editArea);
+
+    editBtn.onclick = () => {
+      textarea.value = a.value || "";
+      valueDisplay.style.display = "none";
+      editArea.style.display = "flex";
+    };
+
+    return item;
   }
 
   function letterStatusSelect(l) {
@@ -5124,6 +5518,18 @@ function showEntryLoader(text) { document.getElementById("entryLoaderText").text
 function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
 
 async function initEntry() {
+  // Admin demo: seeded data, skip login, go straight to admin dashboard
+  if (localStorage.getItem("ab_admin_demo") === "1") {
+    localStorage.removeItem("ab_admin_demo");
+    loginState = { kind: "demo", userId: "@admin:local" };
+    hideLangGate();
+    hideLogin();
+    await boot();
+    openAdmin();
+    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
+    if (pipelineTab) pipelineTab.click();
+    return;
+  }
   const saved = loadSilentAccount();
   if (saved) {
     showEntryLoader("Welcome back — reconnecting…");
@@ -6071,6 +6477,12 @@ function doDemoLogin() {
   boot();
 }
 
+function doDemoAdminLogin() {
+  loginState = { kind: "demo", userId: "@admin:local" };
+  hideLogin();
+  boot();
+}
+
 function wireLogin() {
   wireSignupWizard();
   document.getElementById("loginDemo").onclick = doDemoLogin;
@@ -6151,6 +6563,24 @@ async function boot() {
   }
 
   document.getElementById("navAdmin").classList.toggle("hidden", !isAdmin(store.user));
+
+  // The admin account never fills out the intake — it only reviews what
+  // constituents have submitted. Any admin login (the local demo account or
+  // the real Matrix ADMIN_USER_ID) skips the applicant chat/model setup
+  // entirely and lands straight on the read-only dashboard, defaulted to the
+  // Pipeline tab (submissions table + per-applicant inbox-style detail view).
+  if (isAdmin(loginState.userId)) {
+    const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
+    knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
+    store.subscribe(renderDocs);
+    configStore.subscribe(onConfigChange);
+    renderDocs();
+    renderLedgerFromTimeline();
+    openAdmin();
+    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
+    if (pipelineTab) pipelineTab.click();
+    return;
+  }
 
   await _bootAfterStore();
 }
