@@ -47,6 +47,7 @@ function loadEngine() {
   const sandbox = {
     console,
     Steer: require("../vendor/steer.js"),
+    EOReader6: require("../vendor/eoreader6.js"),
     document: {
       addEventListener() {}, removeEventListener() {},
       getElementById: stubEl, querySelector: stubEl, querySelectorAll: () => [],
@@ -77,6 +78,12 @@ function loadEngine() {
     exports.DEADLINE_WARNING_ES = DEADLINE_WARNING_ES;
     exports.CLOSING_MESSAGE_EN = CLOSING_MESSAGE_EN;
     exports.CLOSING_MESSAGE_ES = CLOSING_MESSAGE_ES;
+    exports.INTAKE_OVERVIEW_EN = INTAKE_OVERVIEW_EN;
+    exports.INTAKE_OVERVIEW_ES = INTAKE_OVERVIEW_ES;
+    exports.NARRATIVE_FRAMEWORK = NARRATIVE_FRAMEWORK;
+    exports.COVERAGE_FRAMEWORKS = COVERAGE_FRAMEWORKS;
+    exports.placementRoundFields = placementRoundFields;
+    exports.SECTIONS = SECTIONS;
   `;
   vm.runInContext(exposer, sandbox, { filename: "index.html (extracted engine slice)" });
   return sandbox.exports;

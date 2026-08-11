@@ -21,14 +21,14 @@
   base-uri 'none';
   object-src 'none';
   form-action 'self';
-  script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://esm.run https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com;
+  script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://esm.run https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;
   font-src 'self' data: https://fonts.gstatic.com https://unpkg.com;
   img-src 'self' blob: data: https://hyphae.social https://matrix.org https://www.gstatic.com;
   media-src 'self' blob:;
   frame-src 'self' blob: https://www.google.com;
   worker-src 'self' blob:;
-  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://raw.githubusercontent.com;
+  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com;
 ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +41,7 @@
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <script src="vendor/matrix-sdk-bundle.js"></script>
 <script src="vendor/steer.js"></script>
+<script src="vendor/eoreader6.js"></script>
 <script src="vendor/voice.js"></script>
 <!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
      load, which put Google-controlled JS in the same origin as every
@@ -57,9 +58,8 @@
 body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
 .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
 .hidden{display:none!important}
+nav .setup .rail-toggle{display:none}
 @media(prefers-color-scheme:dark){:root{--ink:#E9EDF0;--paper:#11181C;--surface:#1A2429;--line:#2A353C;--muted:#88969E;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);--shadow-lg:0 4px 16px rgba(0,0,0,.4),0 16px 48px rgba(0,0,0,.3);--seal-soft:#1A2F28;--turn-soft:#2F2416;--red-soft:#2F1814}.msg-group.end .msg-bubble{background:var(--seal)!important;color:#fff!important}.msg-group.start .msg-bubble{background:#1F2A30!important;color:var(--ink)!important;border-color:var(--line)!important}.msg-group.start .msg-bubble.support{background:var(--seal-soft)!important}.loader{background:rgba(17,24,28,.92)!important}.kcol{background:#1A2429!important}.kcard{background:#1F2A30!important}.docs-drop{background:#1A2429!important}.atable th{background:var(--surface)!important}.drawer{background:var(--paper)!important}.mem,.q{border-color:var(--line)!important}.scrim,.docscrim{background:rgba(0,0,0,.5)!important}}
-@media(max-width:900px){.grid{grid-template-columns:1fr}.rail{max-height:none;overflow:visible}.msg-group{max-width:95%}.kanban{grid-template-columns:1fr 1fr}}
-@media(max-width:500px){.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* Login screen */
@@ -249,6 +249,23 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .progress .meta{font-size:12px;color:var(--muted);line-height:1.4;min-width:0}
 .progress .meta strong{color:var(--ink);font-weight:600;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .progress .meta .prog-sub{font-size:11px}
+/* Section stepper — 3 segments, one per SECTIONS entry, so a long interview
+   reads as "3 short parts" instead of an undifferentiated 30+ question
+   scroll. The active segment is outlined, a finished one gets a checkmark
+   and a subdued fill, an upcoming one is dimmed — the same "where am I /
+   what's left / when do I get to the story part" question the interview
+   overview text answers, answered visually every screen instead of once. */
+.sect-stepper{display:flex;gap:6px;padding:9px 16px 11px;border-bottom:1px solid var(--line);background:var(--surface)}
+.sect-stepper .sect{flex:1;min-width:0;position:relative;border-radius:9px;padding:7px 10px;background:#F2F5F7;border:1.5px solid transparent;overflow:hidden;transition:border-color .15s ease,opacity .15s ease}
+.sect-stepper .sect .fill{position:absolute;left:0;top:0;bottom:0;background:var(--seal-soft);width:0%;transition:width .35s ease;z-index:0}
+.sect-stepper .sect .row{position:relative;z-index:1;display:flex;align-items:flex-start;gap:6px}
+.sect-stepper .sect .num{flex:none;width:16px;height:16px;border-radius:50%;background:var(--line);color:var(--muted);font:700 9px "IBM Plex Mono",monospace;display:grid;place-items:center;line-height:1;margin-top:1px}
+.sect-stepper .sect .label{position:relative;z-index:1;font:600 11.5px Inter;color:var(--ink);white-space:normal;overflow-wrap:break-word;line-height:1.25}
+.sect-stepper .sect .sub{position:relative;z-index:1;font-size:10px;color:var(--muted);margin-top:2px;margin-left:22px}
+.sect-stepper .sect.active{border-color:var(--seal)}
+.sect-stepper .sect.active .num{background:var(--seal);color:#fff}
+.sect-stepper .sect.complete .num{background:var(--seal);color:#fff}
+.sect-stepper .sect.upcoming{opacity:.6}
 .badge{font:500 9.5px "IBM Plex Mono",monospace;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;background:var(--seal-soft);color:var(--seal);margin-left:auto;flex:none}
 .stream{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 .stream::-webkit-scrollbar{width:4px}.stream::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
@@ -269,10 +286,27 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .msg-bubble .tag{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
 .msg-bubble .tag.help{color:var(--turn)}
 .msg-bubble .value{display:block;width:max-content;max-width:100%;margin-top:6px;padding:2px 7px;border-radius:4px;background:rgba(46,111,94,.12);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--seal);word-break:break-word;white-space:pre-wrap}
+.msg-bubble.editable{cursor:pointer;position:relative;padding-right:30px}
+.msg-bubble.editable .edit-hint{position:absolute;top:9px;right:10px;font-size:13px;opacity:0;transition:opacity .15s ease}
+.msg-bubble.editable:hover,.msg-bubble.editable:focus-visible{box-shadow:0 0 0 2px var(--seal) inset}
+.msg-bubble.editable:hover .edit-hint,.msg-bubble.editable:focus-visible .edit-hint{opacity:.85}
+.msg-bubble.editable:focus-visible{outline:none}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .typing{display:inline-flex;gap:4px;padding:3px 0}.typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,60%,100%{opacity:.3}30%{opacity:1}}
+.quick-answer{padding:2px 12px 10px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;background:var(--surface)}
+.quick-answer.hidden{display:none}
+.quick-answer .qa-btn{font:600 13px Inter;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.quick-answer .qa-btn:hover{border-color:var(--seal);background:var(--seal-soft)}
+.quick-answer .qa-decline{font-weight:500;color:var(--muted);border-style:dashed}
+.quick-answer .qa-decline:hover{border-color:var(--muted);background:#F2F5F7}
+.quick-answer select.qa-select{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:260px}
+.quick-answer .qa-go{font:600 13px Inter;padding:7px 14px;border-radius:8px;border:none;background:var(--ink);color:#fff;cursor:pointer}
+.quick-answer .qa-checks{display:flex;flex-direction:column;gap:4px;width:100%}
+.quick-answer .qa-checks label{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 2px;cursor:pointer}
+.quick-answer .qa-checks input{accent-color:var(--seal)}
+.quick-answer .qa-row{display:flex;flex-wrap:wrap;gap:7px;width:100%}
 .compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)}
 .compose .input-wrap{flex:1;display:flex;align-items:flex-end;gap:6px;border:1px solid var(--line);border-radius:10px;padding:3px 3px 3px 10px;background:var(--surface);transition:border-color .15s ease}
 .compose .input-wrap:focus-within{border-color:var(--seal);box-shadow:0 0 0 3px rgba(46,111,94,.1)}
@@ -296,9 +330,17 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
-.card h2{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
+.card h2{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;flex:none}
 .card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:#F2F5F7}
-.check{list-style:none;margin:0;padding:4px;max-height:260px;overflow-y:auto;scrollbar-width:thin}
+/* "Your answers" vs "Supporting docs" split the rail's vertical space 4:1
+   (not their natural content height) — each is a flex column with its own
+   internal scroll area, so a short docs list doesn't leave a tall empty gap
+   and a long answer list doesn't get stuck at a fixed pixel cap. flex-basis
+   0 makes the ratio hold regardless of either card's actual content. */
+.rail .card.rail-4{flex:4 1 0;min-height:0;display:flex;flex-direction:column}
+.rail .card.rail-1{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+.check{list-style:none;margin:0;padding:4px;overflow-y:auto;scrollbar-width:thin}
+.rail-4 .check{flex:1;min-height:0}
 .check li{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer;transition:background .12s ease}
 .check li:hover{background:#F2F5F7}
 .check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;flex:none;margin-top:1px;display:grid;place-items:center;transition:all .2s ease;font-size:10px}
@@ -306,6 +348,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .check li.active .box{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.15)}
 .check .lab{font-size:12.5px}
 .check .val{display:block;font-size:11px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
+.check .check-heading{font:700 10px Inter;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:10px 9px 3px;cursor:default}
+.check .check-heading:first-child{padding-top:4px}
+.check .check-heading:hover{background:none}
 .ledger-wrap{max-height:240px;overflow-y:auto;scrollbar-width:thin}
 .ledger{list-style:none;margin:0;padding:0}
 .ledger .empty{padding:16px 12px;color:var(--muted);font-size:11.5px;text-align:center}
@@ -325,18 +370,21 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:3px;font-size:10px}
 
 /* Docs */
-.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:#FAFBFC;transition:border-color .15s ease,background .15s ease}
+.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:#FAFBFC;transition:border-color .15s ease,background .15s ease;flex:none}
 .docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
 .docs-drop p{margin:0 0 3px;font-size:11.5px;color:var(--muted)}
 .docs-drop p:last-child{margin-bottom:0;font-size:10.5px}
 .docs-drop button{font:inherit;font-size:inherit;color:var(--seal);background:none;border:none;padding:0;text-decoration:underline;cursor:pointer}
-.docs-list{list-style:none;margin:0;padding:0 8px 6px}
+.docs-list{list-style:none;margin:0;padding:0 8px 6px;overflow-y:auto;scrollbar-width:thin}
+.rail-1 .docs-list{flex:1;min-height:0}
 .docs-list .doc{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:5px;background:var(--surface)}
 .docs-list .doc.pending{opacity:.7}
 .docs-list .doc.error{border-color:var(--red-soft);background:var(--red-soft)}
 .docs-list .drow1{display:flex;justify-content:space-between;gap:6px;font-size:12px;font-weight:500}
 .docs-list .dsize{color:var(--muted);font:500 10px "IBM Plex Mono",monospace;flex:none}
 .docs-list .drow2{display:flex;align-items:center;gap:5px;margin-top:4px}
+.docs-list .dcontext{font-size:11px;color:var(--muted);margin-top:2px}
+.docs-list .dtitle-input{width:100%;box-sizing:border-box;font:inherit;font-size:11px;padding:3px 6px;margin-top:3px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
 .docs-list .docs-status{font-size:11px;color:var(--muted)}
 .docs-list .dview{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
 .docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:#F2F5F7}
@@ -525,6 +573,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .q.open .qbody{display:block}
 .q.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
 .q .qtype{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex:none}
+.q .qsection{font:600 9.5px Inter;color:var(--seal);background:var(--seal-soft);border-radius:99px;padding:2px 8px;flex:none;white-space:nowrap}
+.q .qsection.qsection-none{color:var(--muted);background:#F2F5F7}
 .q .req{font:600 9px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--turn);flex:none}
 .sec button,.mem button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
 .sec button.danger{color:var(--red);border-color:var(--red-soft)}
@@ -560,6 +610,21 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
    chat bubble — the mandatory closing block, the 180-day filing warning. */
 .msg-banner{margin:14px 0;padding:14px 16px;border-radius:12px;font-size:13.5px;line-height:1.55;font-weight:600;white-space:pre-wrap;background:var(--seal-soft);border:1.5px solid var(--seal);color:var(--ink)}
 .msg-banner.warn{background:var(--red-soft);border-color:var(--red)}
+
+/* Mobile breakpoints live last in the stylesheet on purpose: at equal
+   specificity the LAST matching rule wins, so an override placed above the
+   unconditional rule it's meant to override (as these used to be, up near
+   the top of the file) loses every time regardless of viewport — dead CSS
+   that silently never applied. Keep every mobile override down here. */
+@media(max-width:900px){
+.grid{grid-template-columns:1fr}
+nav .setup .rail-toggle{display:inline-flex}
+.rail{position:fixed;top:0;right:0;height:100%;width:min(360px,88vw);margin:0;padding:14px;border-radius:0;background:var(--paper);box-shadow:-16px 0 48px rgba(22,36,43,.14);z-index:22;transform:translateX(100%);transition:transform .28s var(--ease-out)}
+.rail.on{transform:none}
+.msg-group{max-width:95%}
+.kanban{grid-template-columns:1fr 1fr}
+}
+@media(max-width:500px){.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
 </style>
 </head>
 <body>
@@ -740,6 +805,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
     <span class="spacer"></span>
     <div class="setup">
       <select id="langSel" title="Conversation language"><option value="en" selected>English</option><option value="es">Español</option></select>
+      <button id="railToggleBtn" class="icon-btn rail-toggle" title="Your answers &amp; supporting docs"><i class="ph ph-list-checks"></i></button>
       <button id="submissionBtn" class="icon-btn" title="View my submission" style="display:none"><i class="ph ph-clipboard-text"></i></button>
       <button id="resetBtn" class="icon-btn" title="Start over"><i class="ph ph-arrow-counter-clockwise"></i></button>
       <button id="logoutBtn" class="icon-btn" title="Switch account"><i class="ph ph-sign-out"></i></button>
@@ -778,13 +844,15 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
           <div class="meta"><strong id="docTitle">…</strong><span class="prog-sub" id="progTxt">loading…</span></div>
           <span class="badge" id="phaseBadge"></span>
         </div>
+        <div class="sect-stepper" id="sectStepper" role="list"></div>
         <div class="stream" id="stream"></div>
+        <div class="quick-answer hidden" id="quickAnswer"></div>
         <div class="compose">
           <div class="input-wrap">
             <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
             <div class="input-actions">
-              <button id="micBtn" title="Speak your answer" type="button" hidden>🎙</button>
-              <button id="attachBtn" title="Attach a file" type="button">📎</button>
+              <button id="micBtn" title="Speak your answer" type="button" hidden><i class="ph ph-microphone"></i></button>
+              <button id="attachBtn" title="Attach a file" type="button"><i class="ph ph-paperclip"></i></button>
             </div>
           </div>
           <button class="send-btn" id="send">Send</button>
@@ -815,9 +883,10 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
           <button class="primary" id="wizNext">Next →</button>
         </div>
       </section>
-      <aside class="rail">
-        <div class="card"><h2>Your answers <span class="count" id="checkCount"></span></h2><ul class="check" id="check"></ul></div>
-        <div class="card">
+      <div class="scrim" id="railScrim"></div>
+      <aside class="rail" id="railPanel">
+        <div class="card rail-4"><h2>Your answers <span class="count" id="checkCount"></span></h2><ul class="check" id="check"></ul></div>
+        <div class="card rail-1">
           <h2>Supporting docs <span class="count" id="docsCount"></span></h2>
           <div class="docs-drop" id="docsDrop">
             <input type="file" id="docsInput" multiple hidden>
@@ -826,18 +895,8 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
           </div>
           <ul class="docs-list" id="docsList"></ul>
         </div>
-        <div class="card"><h2>Event log <span class="count" id="ledgerCount">0</span></h2><div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet.</li></ul></div></div>
-        <div class="card" id="chatCard">
-          <h2>Chat with admin <span class="count" id="chatCount"></span></h2>
-          <div id="chatPane" style="display:flex;flex-direction:column;min-height:120px;max-height:240px">
-            <div class="chat-msg-list" id="chatMsgList" style="flex:1;overflow-y:auto;padding:8px 10px"></div>
-            <div style="display:flex;gap:6px;border-top:1px solid var(--line);padding:6px 8px">
-              <textarea id="chatInput" rows="1" placeholder="Message the admin…" style="flex:1;resize:none;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink);outline:none;max-height:60px"></textarea>
-              <button id="chatSend" style="border:none;background:var(--ink);color:#fff;border-radius:7px;padding:0 10px;font:600 12px Inter;cursor:pointer">Send</button>
-            </div>
-          </div>
-        </div>
-        <p class="foot">Every answer is one <code>DEF</code> in the room. <code>fold(timeline)</code> recomputes state. Resumable by construction.</p>
+        <div class="card hidden" id="eventLogCard"><h2>Event log <span class="count" id="ledgerCount">0</span></h2><div class="ledger-wrap"><ul class="ledger" id="ledger"><li class="empty">Nothing stored yet.</li></ul></div></div>
+        <p class="foot hidden" id="internalsFoot">Every answer is one <code>DEF</code> in the room. <code>fold(timeline)</code> recomputes state. Resumable by construction.</p>
       </aside>
     </div>
   </div>
@@ -1073,6 +1132,7 @@ const SCHEMA = {
   fields: [
     {
       path: "complainant_name",
+      section: "about",
       label: "Your full name",
       type: "text",
       nameCase: true,
@@ -1084,9 +1144,11 @@ const SCHEMA = {
     },
     {
       path: "complainant_relationship",
+      section: "about",
       label: "Your relationship to the child",
       type: "enum",
       enum: ["Parent", "Legal guardian", "Other relationship"],
+      enumEs: ["Padre/madre", "Tutor legal", "Otra relación"],
       required: true,
       prompt: "What is your relationship to the child?",
       promptEs: "¿Cuál es tu relación con el niño o la niña?",
@@ -1095,6 +1157,7 @@ const SCHEMA = {
     },
     {
       path: "complainant_address",
+      section: "about",
       label: "Your mailing address",
       // Stored as a plain string like every other text field — `address`
       // only changes the INPUT, to the separate boxes a browser's own
@@ -1108,16 +1171,19 @@ const SCHEMA = {
     },
     {
       path: "complainant_phone",
+      section: "about",
       label: "Your phone number",
-      type: "text",
+      type: "tel",
+      digits: 10,
       required: true,
       prompt: "What's the best phone number to reach you?",
       promptEs: "¿Cuál es el mejor número de teléfono para comunicarnos contigo?",
-      help: "A number where someone from the office can reach you if they have questions.",
-      helpEs: "Un número donde alguien de la oficina pueda comunicarse contigo si tiene preguntas.",
+      help: "A 10-digit US phone number, like 615-555-0148 — a number where someone from the office can reach you if they have questions.",
+      helpEs: "Un número de teléfono de EE. UU. de 10 dígitos, como 615-555-0148 — un número donde alguien de la oficina pueda comunicarse contigo si tiene preguntas.",
     },
     {
       path: "complainant_email",
+      section: "about",
       label: "Your email address",
       type: "email",
       required: false,
@@ -1128,6 +1194,7 @@ const SCHEMA = {
     },
     {
       path: "child_initials",
+      section: "about",
       label: "Child's initials",
       type: "text",
       required: true,
@@ -1138,6 +1205,7 @@ const SCHEMA = {
     },
     {
       path: "child_age",
+      section: "about",
       label: "Child's age",
       type: "number",
       required: true,
@@ -1148,38 +1216,102 @@ const SCHEMA = {
     },
     {
       path: "child_race_ethnicity",
+      section: "about",
       label: "Child's race or ethnicity",
-      type: "text",
+      // Standardized categories (the same federal race/ethnicity set used
+      // across HHS OCR intake, derived from the OMB 1997 standard) instead
+      // of open text — picked with checkboxes since a child can be more
+      // than one of these. Multiselect stores the picks as one
+      // comma-joined string, same shape as every other text answer.
+      type: "multiselect",
+      enum: [
+        "American Indian or Alaska Native",
+        "Asian",
+        "Black or African American",
+        "Hispanic or Latino",
+        "Native Hawaiian or Other Pacific Islander",
+        "White",
+      ],
       required: true,
-      prompt: "How would you describe your child's race or ethnicity?",
-      promptEs: "¿Cómo describirías la raza o etnicidad de tu hijo o hija?",
-      help: "Use whatever words feel right to you. This matters because the complaint may involve unequal treatment.",
-      helpEs: "Usa las palabras que te parezcan correctas. Esto importa porque la queja puede tratar sobre un trato desigual.",
+      prompt: "How would you describe your child's race or ethnicity? Choose all that apply.",
+      promptEs: "¿Cómo describirías la raza o etnicidad de tu hijo o hija? Elige todas las que apliquen.",
+      help: "This matters because the complaint may involve unequal treatment.",
+      helpEs: "Esto importa porque la queja puede tratar sobre un trato desigual.",
     },
     {
-      path: "child_disability",
+      path: "child_disability_has",
+      section: "about",
+      label: "Disability, diagnosis, or medical/learning condition",
+      type: "boolean",
+      required: false,
+      prompt: "Does your child have a disability, diagnosis, or medical or learning condition that's part of this?",
+      promptEs: "¿Tu hijo o hija tiene alguna discapacidad, diagnóstico, o condición médica o de aprendizaje relacionada con esto?",
+      help: "This could be a seizure disorder, autism, ADHD, a learning disability, or anything else medical or developmental.",
+      helpEs: "Podría ser un trastorno convulsivo, autismo, TDAH, una discapacidad de aprendizaje, o cualquier otra cosa médica o del desarrollo.",
+    },
+    {
+      path: "child_disability_explain",
+      section: "about",
       label: "Child's disability or diagnosis",
       type: "text",
       required: false,
-      prompt: "Does your child have a disability, diagnosis, or medical or learning condition that's part of this? If so, tell us about it. If not, you can say \"none.\"",
-      promptEs: "¿Tu hijo o hija tiene alguna discapacidad, diagnóstico, o condición médica o de aprendizaje relacionada con esto? Si es así, cuéntanos. Si no, puedes decir \"ninguna.\"",
-      help: "For example, a seizure disorder, autism, ADHD, or a learning disability. Include a diagnosis if you have one.",
-      helpEs: "Por ejemplo, un trastorno convulsivo, autismo, TDAH, o una discapacidad de aprendizaje. Incluye un diagnóstico si lo tienes.",
+      // Only asked when the Yes/No question right above it was answered
+      // Yes — an empty or "No" answer skips straight past this one. Plain
+      // data (not a function) so it survives the admin panel's save round
+      // trip — see Steer.isFieldSkipped.
+      skipUnless: { field: "child_disability_has", oneOf: ["Yes", "Sí"] },
+      prompt: "Tell us about it — for example, a seizure disorder, autism, ADHD, or a learning disability. Include a diagnosis if you have one.",
+      promptEs: "Cuéntanos — por ejemplo, un trastorno convulsivo, autismo, TDAH, o una discapacidad de aprendizaje. Incluye un diagnóstico si lo tienes.",
+      help: "One box is fine — you don't need to list every diagnosis and date separately.",
+      helpEs: "Una sola respuesta está bien — no necesitas enumerar cada diagnóstico y fecha por separado.",
     },
     {
       path: "custody_start_date",
+      section: "about",
       label: "Date DCS custody began",
-      type: "date",
+      // Full calendar picker by default; the quick-answer control also
+      // offers a month-only toggle for when the exact day isn't known (see
+      // renderQuickAnswer). Date.parse accepts either "YYYY-MM-DD" or
+      // "YYYY-MM", so validate() needs no special-casing beyond the type.
+      type: "date_flex",
       required: true,
       prompt: "About when did your child enter DCS custody?",
       promptEs: "¿Aproximadamente cuándo entró tu hijo o hija bajo la custodia de DCS?",
-      help: "An approximate date is fine if you don't remember the exact day.",
-      helpEs: "Una fecha aproximada está bien si no recuerdas el día exacto.",
+      help: "An approximate date is fine — if you don't know the exact day, just the month and year works too.",
+      helpEs: "Una fecha aproximada está bien — si no sabes el día exacto, el mes y el año también funcionan.",
     },
     {
       path: "dcs_county",
+      section: "about",
       label: "County handling the case",
-      type: "text",
+      type: "select",
+      // All 95 Tennessee counties — this schema is specifically for
+      // Tennessee DCS, so a closed list beats free text without leaving
+      // anyone's county out. Inlined here (not a shared constant) because
+      // test/_extract-engine.js's slice starts exactly at "const SCHEMA =
+      // {" — a constant declared above that line would be undefined in
+      // the extracted test harness even though the real page loads fine.
+      enum: [
+        "Anderson County", "Bedford County", "Benton County", "Bledsoe County", "Blount County",
+        "Bradley County", "Campbell County", "Cannon County", "Carroll County", "Carter County",
+        "Cheatham County", "Chester County", "Claiborne County", "Clay County", "Cocke County",
+        "Coffee County", "Crockett County", "Cumberland County", "Davidson County", "Decatur County",
+        "DeKalb County", "Dickson County", "Dyer County", "Fayette County", "Fentress County",
+        "Franklin County", "Gibson County", "Giles County", "Grainger County", "Greene County",
+        "Grundy County", "Hamblen County", "Hamilton County", "Hancock County", "Hardeman County",
+        "Hardin County", "Hawkins County", "Haywood County", "Henderson County", "Henry County",
+        "Hickman County", "Houston County", "Humphreys County", "Jackson County", "Jefferson County",
+        "Johnson County", "Knox County", "Lake County", "Lauderdale County", "Lawrence County",
+        "Lewis County", "Lincoln County", "Loudon County", "Macon County", "Madison County",
+        "Marion County", "Marshall County", "Maury County", "McMinn County", "McNairy County",
+        "Meigs County", "Monroe County", "Montgomery County", "Moore County", "Morgan County",
+        "Obion County", "Overton County", "Perry County", "Pickett County", "Polk County",
+        "Putnam County", "Rhea County", "Roane County", "Robertson County", "Rutherford County",
+        "Scott County", "Sequatchie County", "Sevier County", "Shelby County", "Smith County",
+        "Stewart County", "Sullivan County", "Sumner County", "Tipton County", "Trousdale County",
+        "Unicoi County", "Union County", "Van Buren County", "Warren County", "Washington County",
+        "Wayne County", "Weakley County", "White County", "Williamson County", "Wilson County",
+      ],
       required: true,
       prompt: "Which county's DCS office is handling your child's case?",
       promptEs: "¿Qué oficina de condado de DCS está manejando el caso de tu hijo o hija?",
@@ -1188,18 +1320,23 @@ const SCHEMA = {
     },
     {
       path: "dcs_case_number",
+      section: "about",
       label: "DCS case number",
       type: "text",
+      digits: 10,
+      digitsOrKeywords: ["unknown", "no lo sé", "no lo se", "no sé", "no se", "desconocido", "desconocida"],
       required: false,
-      prompt: "Do you know the DCS case number? If not, that's okay, you can skip this.",
-      promptEs: "¿Sabes el número de caso de DCS? Si no, está bien, puedes saltarte esto.",
+      prompt: "Do you know the DCS case number? It's usually 10 digits. If not, that's okay — just say \"unknown\" or skip this.",
+      promptEs: "¿Sabes el número de caso de DCS? Normalmente tiene 10 dígitos. Si no, está bien — solo di \"no lo sé\" o puedes saltarte esto.",
       help: "Usually on paperwork DCS has given you.",
       helpEs: "Normalmente está en los documentos que DCS te ha dado.",
     },
     {
       path: "home_language",
+      section: "about",
       label: "Language spoken at home",
-      type: "text",
+      type: "select",
+      enum: ["English", "Spanish", "Arabic", "Chinese", "French", "Kurdish", "Somali", "Swahili", "Vietnamese", "Other"],
       required: true,
       prompt: "What language does your family mainly speak at home?",
       promptEs: "¿Qué idioma habla tu familia principalmente en casa?",
@@ -1207,27 +1344,49 @@ const SCHEMA = {
       helpEs: "Esto importa si el idioma alguna vez fue un obstáculo para entender a DCS o para que DCS te entendiera a ti.",
     },
     {
-      path: "family_background",
-      label: "A little about your family",
+      path: "home_language_other",
+      section: "about",
+      label: "Which language",
       type: "text",
       required: false,
-      prompt: "In a sentence or two, tell us a bit about your family and how your child came to be in DCS custody.",
-      promptEs: "En una o dos oraciones, cuéntanos un poco sobre tu familia y cómo tu hijo o hija terminó bajo la custodia de DCS.",
-      help: "Just a short summary is fine. You'll have room to go into detail in the next few questions.",
-      helpEs: "Un breve resumen está bien. Tendrás espacio para dar más detalles en las próximas preguntas.",
+      // Only asked when "Other" was picked above — the standardized list
+      // covers the common cases without losing the ability to name a
+      // language that isn't on it. Plain data, not a function — see
+      // Steer.isFieldSkipped.
+      skipUnless: { field: "home_language", oneOf: ["Other"] },
+      prompt: "Which language is that?",
+      promptEs: "¿Cuál idioma es?",
+      help: "Just the language name is fine.",
+      helpEs: "Solo el nombre del idioma está bien.",
     },
     {
-      path: "placement_history",
-      label: "Placement history",
+      path: "family_background",
+      section: "story",
+      label: "Your family's story",
       type: "text",
-      required: true,
-      prompt: "Since entering DCS custody, where has your child been placed? Please list each placement in order, with about when it started, what kind of placement it was (like a relative's home, a foster home, a group home, or a facility), and where.",
-      promptEs: "Desde que entró bajo la custodia de DCS, ¿dónde ha sido colocado tu hijo o hija? Por favor enumera cada colocación en orden, con aproximadamente cuándo comenzó, qué tipo de colocación fue (como la casa de un familiar, un hogar de crianza, un hogar grupal, o una instalación) y dónde.",
-      help: "One line per placement is perfect, in order. For example: \"January 2026, group home, Wilson County.\"",
-      helpEs: "Una línea por colocación es perfecto, en orden. Por ejemplo: \"enero de 2026, hogar grupal, condado de Wilson.\"",
+      required: false,
+      // No length cap, on purpose — see NARRATIVE_FOLLOWUPS above. This
+      // answer becomes core content in the letter, so the prompt invites
+      // as much detail as the person has rather than steering them toward
+      // a short summary.
+      prompt: "Tell us about your family and how your child came to be in DCS custody. Take as much space as you need — this is your chance to lay out what's been happening in your own words.",
+      promptEs: "Cuéntanos sobre tu familia y cómo tu hijo o hija terminó bajo la custodia de DCS. Tómate todo el espacio que necesites — esta es tu oportunidad de explicar lo que ha estado pasando con tus propias palabras.",
+      help: "There's no length limit here. Names, dates, and specific details all help, but general is fine too if that's what you remember.",
+      helpEs: "No hay límite de longitud aquí. Los nombres, fechas y detalles específicos ayudan, pero algo general también está bien si es lo que recuerdas.",
     },
+    // Placement history is a structured, per-placement intake (when, type,
+    // additional notes) instead of one open blob — modeled like a repeating
+    // group, one round of questions per placement. placementRoundFields(1)
+    // is the always-asked first round; round 2 onward is spliced into the
+    // live schema at runtime by Intake._maybeInjectNextPlacementRound only
+    // if "was there another placement?" was answered yes (see that method,
+    // and PLACEMENT_TYPES / placementRoundFields below — both function
+    // declarations, so they're hoisted and callable here even though they're
+    // defined later in this file).
+    ...placementRoundFields(1),
     {
       path: "alternatives_asked",
+      section: "story",
       label: "Asking about family-based options",
       type: "text",
       required: false,
@@ -1238,6 +1397,7 @@ const SCHEMA = {
     },
     {
       path: "dcs_actions_failures",
+      section: "story",
       label: "What DCS did or failed to do",
       type: "text",
       required: true,
@@ -1248,6 +1408,7 @@ const SCHEMA = {
     },
     {
       path: "coercion_threats",
+      section: "story",
       label: "Pressure or threats (if this applies to you)",
       type: "text",
       required: false,
@@ -1258,6 +1419,7 @@ const SCHEMA = {
     },
     {
       path: "harms",
+      section: "story",
       label: "How this has affected your child",
       type: "text",
       required: false,
@@ -1268,6 +1430,7 @@ const SCHEMA = {
     },
     {
       path: "last_incident_date",
+      section: "story",
       label: "Date of the most recent incident",
       type: "date",
       required: true,
@@ -1278,6 +1441,7 @@ const SCHEMA = {
     },
     {
       path: "prior_remedy_dcs_grievance",
+      section: "wrapup",
       label: "Grievance filed with DCS",
       type: "text",
       required: false,
@@ -1288,6 +1452,7 @@ const SCHEMA = {
     },
     {
       path: "prior_remedy_state_office",
+      section: "wrapup",
       label: "Contact with another state office",
       type: "text",
       required: false,
@@ -1298,6 +1463,7 @@ const SCHEMA = {
     },
     {
       path: "prior_remedy_federal",
+      section: "wrapup",
       label: "Earlier federal complaint",
       type: "text",
       required: false,
@@ -1308,6 +1474,7 @@ const SCHEMA = {
     },
     {
       path: "prior_remedy_court",
+      section: "wrapup",
       label: "Court or legal proceedings",
       type: "text",
       required: false,
@@ -1318,6 +1485,7 @@ const SCHEMA = {
     },
     {
       path: "prior_remedy_legal_help",
+      section: "wrapup",
       label: "Legal help sought",
       type: "text",
       required: false,
@@ -1328,6 +1496,7 @@ const SCHEMA = {
     },
     {
       path: "desired_outcome",
+      section: "wrapup",
       label: "What you're hoping for",
       type: "text",
       required: false,
@@ -1338,6 +1507,7 @@ const SCHEMA = {
     },
     {
       path: "doc_court_orders",
+      section: "wrapup",
       label: "Court orders",
       type: "text",
       required: false,
@@ -1348,6 +1518,7 @@ const SCHEMA = {
     },
     {
       path: "doc_dcs_records",
+      section: "wrapup",
       label: "DCS paperwork and correspondence",
       type: "text",
       required: false,
@@ -1358,6 +1529,7 @@ const SCHEMA = {
     },
     {
       path: "doc_medical_records",
+      section: "wrapup",
       label: "Medical or mental-health records",
       type: "text",
       required: false,
@@ -1368,6 +1540,7 @@ const SCHEMA = {
     },
     {
       path: "doc_school_records",
+      section: "wrapup",
       label: "School or education records",
       type: "text",
       required: false,
@@ -1378,6 +1551,7 @@ const SCHEMA = {
     },
     {
       path: "doc_other_evidence",
+      section: "wrapup",
       label: "Other records or evidence",
       type: "text",
       required: false,
@@ -1389,12 +1563,228 @@ const SCHEMA = {
   ],
 };
 
+// One round of the placement repeating group: when it started, what kind of
+// placement it was, and optional notes, followed by a Yes/No on whether
+// there was another one after it. `n` is 1 for the always-asked first round;
+// Intake._maybeInjectNextPlacementRound splices in round n+1 at runtime
+// only when round n's "another placement?" question is answered yes — see
+// that method for how the chain grows. A function declaration (not a
+// const/arrow function) so it's hoisted and callable from inside the SCHEMA
+// object literal above, even though it's defined after it in this file —
+// `const`/`let` don't get that (they're hoisted but stay in the temporal
+// dead zone until their own line runs), which is also why PLACEMENT_TYPES
+// lives inside this function rather than as a module-level constant.
+function placementRoundFields(n) {
+  const PLACEMENT_TYPES = [
+    "A relative's home (kinship placement)",
+    "A foster home",
+    "A group home",
+    "A residential or treatment facility",
+    "Other",
+  ];
+  const PLACEMENT_TYPES_ES = [
+    "La casa de un familiar (colocación con parientes)",
+    "Un hogar de crianza",
+    "Un hogar grupal",
+    "Una instalación residencial o de tratamiento",
+    "Otro",
+  ];
+  const ordinal = n === 1 ? "first" : n === 2 ? "second" : n === 3 ? "third" : `${n}th`;
+  const ordinalEs = n === 1 ? "primera" : n === 2 ? "segunda" : n === 3 ? "tercera" : `${n}.ª`;
+  return [
+    {
+      path: `placement_${n}_when`,
+      label: `Placement ${n} — when`,
+      type: "date_flex",
+      section: "story",
+      required: n === 1,
+      prompt: n === 1
+        ? "Let's go through your child's placements one at a time. About when did the first placement start?"
+        : `About when did the ${ordinal} placement start?`,
+      promptEs: n === 1
+        ? "Vamos a repasar las colocaciones de tu hijo o hija una por una. ¿Aproximadamente cuándo comenzó la primera colocación?"
+        : `¿Aproximadamente cuándo comenzó la ${ordinalEs} colocación?`,
+      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
+      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
+    },
+    {
+      path: `placement_${n}_type`,
+      label: `Placement ${n} — type`,
+      type: "select",
+      section: "story",
+      enum: PLACEMENT_TYPES,
+      enumEs: PLACEMENT_TYPES_ES,
+      required: n === 1,
+      prompt: "What kind of placement was that?",
+      promptEs: "¿Qué tipo de colocación fue esa?",
+      help: "Pick whichever fits best.",
+      helpEs: "Elige la que mejor se ajuste.",
+    },
+    {
+      path: `placement_${n}_notes`,
+      label: `Placement ${n} — notes`,
+      type: "text",
+      section: "story",
+      required: false,
+      prompt: "Anything else about this placement — where it was, who was involved, or how it went? You can skip this if there's nothing to add.",
+      promptEs: "¿Algo más sobre esta colocación — dónde fue, quién estuvo involucrado, o cómo resultó? Puedes saltarte esto si no hay nada que agregar.",
+      help: "A short note is enough — you don't need to write a lot here.",
+      helpEs: "Una nota breve es suficiente — no necesitas escribir mucho aquí.",
+    },
+    {
+      path: `placement_more_${n}`,
+      label: "Another placement after this one?",
+      type: "boolean",
+      section: "story",
+      required: false,
+      prompt: "Was there another placement after that one?",
+      promptEs: "¿Hubo otra colocación después de esa?",
+      help: "If that was the most recent one, say no.",
+      helpEs: "Si esa fue la más reciente, di que no.",
+    },
+  ];
+}
+
+// The three-part shape of the interview, in the order they're meant to be
+// walked through. Every field carries a `section` key matching one of
+// these (see the SCHEMA fields above and placementRoundFields/
+// NARRATIVE_FOLLOWUPS). Plain data — like skipUnless, this is what lets
+// the admin's question-editor panel move a field around without losing
+// which part of the interview it belongs to (a JS-side grouping function
+// wouldn't survive that round trip; a string on the field does).
+// "Reorder as needed" happens in two independent ways: the existing ▲▼
+// controls in the admin panel change WHEN a question is asked, and the
+// per-question Section dropdown changes WHICH graphic segment counts it —
+// a question can move within its section, move to a different section, or
+// both, without touching this array.
+const SECTIONS = [
+  { key: "about", label: "About you and your child", labelEs: "Sobre ti y tu hijo o hija" },
+  { key: "story", label: "Your story", labelEs: "Tu historia" },
+  { key: "wrapup", label: "Wrapping up", labelEs: "Para terminar" },
+];
+
 // The field whose confirmed value drives the 180-day filing-window check —
 // kept as one named constant rather than a magic string scattered through
 // Intake, since this is domain-specific business logic layered on top of an
 // otherwise generic intake engine.
 const DEADLINE_CHECK_FIELD = "last_incident_date";
 const OCR_FILING_WINDOW_DAYS = 180;
+
+// ── Open-question frameworks: "what we're looking for," surfaced and folded ──
+//
+// For every open-ended field, a FRAMEWORK names the topics/facts a complete
+// answer would ideally touch. Each confirmed answer is `EOReader6.surf`'d
+// against the framework's slots, and the result `fold`'d into that
+// framework's running coverage (see vendor/eoreader6.js — a small adaptation
+// of eoreader6's surf/fold vocabulary, not its actual statistical engine:
+// there's no numeric series here and no corpus to calibrate against, just a
+// few sentences to read against a standing list of what's expected).
+// Uncovered slots become follow-up questions, asked one at a time, until the
+// framework is satisfied or a cap is hit — never an open-ended interrogation.
+// This never calls `this.model`: it runs against the CONFIRMED text inside
+// _confirm(), synchronously, so it works identically whether the active
+// backend is EchoModel, WebLLM, or Ollama, and keeps working if a local
+// model never loads at all.
+//
+// Two kinds of framework live here:
+//
+// TRIGGERED — a slot that's only relevant if the person's own words raise
+// it (mentioning medication, mentioning abuse). Rather than leaving someone
+// who under-shares with just one open box, a mention pulls in the specific
+// follow-up a caseworker would naturally ask next. Only two slots exist so
+// far because those are the only two the office walked through concretely;
+// per the project notes, the office described this as depending on "what
+// the child's story is," implying more slots (education neglect, caseworker
+// misconduct, financial/basic-needs neglect, etc.) exist in practice. Add
+// them here once the office provides a fuller list — surf/fold and the
+// injection mechanism already generalize to any number of slots, and to any
+// number of trigger fields (a mention counts the same wherever in the
+// person's own words it shows up, not only in one specific question).
+const NARRATIVE_FRAMEWORK = {
+  triggerFields: ["family_background", "dcs_actions_failures", "coercion_threats", "harms"],
+  slots: [
+    {
+      key: "medical",
+      keywords: ["medicine", "medication", "medications", "meds", "prescription", "prescribed", "dose", "dosage"],
+      followup: {
+        path: "narrative_followup_medical",
+        label: "Follow-up: medication",
+        type: "text",
+        section: "story",
+        required: false,
+        prompt: "You mentioned medication — what medications is your child on, when were they prescribed, and how often are they supposed to take them? Have you heard anything about whether your child is actually getting them?",
+        promptEs: "Mencionaste medicamentos — ¿qué medicamentos toma tu hijo o hija, cuándo se los recetaron, y con qué frecuencia debe tomarlos? ¿Has escuchado algo sobre si realmente se los están dando?",
+        help: "Whatever you know is helpful, even if it's incomplete.",
+        helpEs: "Lo que sepas es útil, aunque esté incompleto.",
+      },
+    },
+    {
+      key: "abuse",
+      keywords: ["abuse", "abused", "hit", "hitting", "hurt", "hurting", "bruise", "bruises", "bruising", "injury", "injuries"],
+      followup: {
+        path: "narrative_followup_abuse",
+        label: "Follow-up: abuse or injury",
+        type: "text",
+        section: "story",
+        required: false,
+        prompt: "You mentioned something that sounds like abuse or injury — have you seen any bruising or other physical evidence? If so, please describe it.",
+        promptEs: "Mencionaste algo que suena a abuso o lesión — ¿has visto moretones u otra evidencia física? Si es así, por favor descríbela.",
+        help: "This helps document evidence that can support the complaint.",
+        helpEs: "Esto ayuda a documentar evidencia que puede respaldar la queja.",
+      },
+    },
+  ],
+};
+
+// EXPECTED — slots worth asking for even unprompted, because the field's own
+// prompt already asks for them by name ("Please include dates you remember,
+// and the names of any caseworkers or supervisors involved") — this
+// operationalizes that existing ask into an actual follow-up loop instead of
+// a passive hint nobody circles back to check. Scoped to dcs_actions_failures
+// only (the one required, fact-finding narrative field) rather than applied
+// everywhere: harms/coercion_threats are the sensitive, optional fields this
+// project's own notes say never to pressure for detail on, and inventing a
+// who/when framework for them isn't grounded in anything the office asked
+// for. `maxFollowups` bounds the loop — "until we get it," not "however long
+// it takes" — and any decline (the same skip lexicon every optional field
+// already honors) ends it early regardless of how many slots are still open.
+const COVERAGE_FRAMEWORKS = {
+  dcs_actions_failures: {
+    maxFollowups: 2,
+    slots: [
+      {
+        key: "when",
+        // A year, a month name, or a numeric date — loose on purpose: a
+        // false "met" just skips an unneeded follow-up, a false miss just
+        // asks one extra (skippable) question. Either way costs little.
+        test: (t) => /\b(19|20)\d{2}\b/.test(t) || /\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/.test(t) ||
+          /\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/.test(t),
+        followup: {
+          label: "Follow-up: when",
+          prompt: "Do you remember about when this happened — even just the month, season, or year is fine?",
+          promptEs: "¿Recuerdas aproximadamente cuándo pasó esto — aunque sea solo el mes, la estación o el año está bien?",
+          help: "An approximate time is genuinely useful, even if you don't remember the exact date.",
+          helpEs: "Un tiempo aproximado es realmente útil, aunque no recuerdes la fecha exacta.",
+        },
+      },
+      {
+        key: "who",
+        // A loose "looks like a proper name" heuristic (two capitalized
+        // words in a row) — same false-positive/false-negative tradeoff as
+        // `when` above, and for the same reason acceptable in either
+        // direction here.
+        test: (t, rawText) => /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(rawText || ""),
+        followup: {
+          label: "Follow-up: who",
+          prompt: "Do you remember the name of the caseworker or supervisor involved, even just a first name?",
+          promptEs: "¿Recuerdas el nombre del trabajador social o supervisor involucrado, aunque sea solo el nombre de pila?",
+          help: "If you never got a name, that's okay to say.",
+          helpEs: "Si nunca supiste el nombre, está bien decirlo.",
+        },
+      },
+    ],
+  },
+};
 
 // Both messages below are required, exact wording (per the project's
 // intake instructions), not phrasing the model or Steer's generic table
@@ -1407,6 +1797,18 @@ const DEADLINE_WARNING_EN = "OCR complaints can only be filed within 180 days of
 const DEADLINE_WARNING_ES = "Las quejas ante la OCR solo pueden presentarse dentro de los 180 días posteriores al último incidente. Esta entrevista continuará, pero este borrador no podrá presentarse porque ya pasó el plazo permitido.";
 const CLOSING_MESSAGE_EN = "Thank you so much for completing this interview. PLEASE DO NOT SEND THIS DRAFT UNTIL IT HAS BEEN REVIEWED WITH REPRESENTATIVE BEHN'S OFFICE. We will contact you soon with next steps.";
 const CLOSING_MESSAGE_ES = "Muchas gracias por completar esta entrevista. POR FAVOR NO ENVÍES ESTE BORRADOR HASTA QUE HAYA SIDO REVISADO POR LA OFICINA DE LA REPRESENTANTE BEHN. Nos pondremos en contacto contigo pronto con los próximos pasos.";
+
+// Shown once, up front, before the first question — a short walkthrough of
+// the shape of the whole interview so a long conversation never feels like
+// it's repeating itself or asking the same thing twice partway through. Only
+// on a fresh start (never on a resumed session — see begin()'s `done === 0`
+// check), and only for this schema, same reasoning as CLOSING_MESSAGE above.
+// Matches SECTIONS' 3 labels 1:1 on purpose — this is the spoken version of
+// the same 3-part structure the stepper graphic shows on every screen, so a
+// person hears it once up front and then sees it confirmed the whole way
+// through, instead of the two ever describing a different shape.
+const INTAKE_OVERVIEW_EN = "Here's how this works, in 3 parts: first a few basic questions about you and your child, then space for you to tell your family's story in your own words — that's where the details of what happened go — and finally some quick questions about steps you've already taken and any documents you have. You'll see which part you're in at the top of the screen the whole way through. You can stop and come back anytime, and you can change any answer later.";
+const INTAKE_OVERVIEW_ES = "Así es como funciona esto, en 3 partes: primero algunas preguntas básicas sobre ti y tu hijo o hija, luego espacio para que cuentes la historia de tu familia con tus propias palabras — ahí es donde van los detalles de lo que pasó — y finalmente algunas preguntas rápidas sobre los pasos que ya has tomado y los documentos que tengas. Verás en qué parte estás en la parte superior de la pantalla durante toda la entrevista. Puedes detenerte y volver cuando quieras, y puedes cambiar cualquier respuesta después.";
 
 
 
@@ -1472,7 +1874,14 @@ const LETTER_REQUIRED_FIELDS = [
   { path: "custody_start_date", label: "date DCS custody began" },
   { path: "dcs_county", label: "county handling the case" },
   { path: "home_language", label: "home language" },
-  { path: "placement_history", label: "placement history" },
+  // Only the first placement round is ever required — a second round only
+  // exists if "another placement?" was answered yes (see
+  // placementRoundFields / _maybeInjectNextPlacementRound), and the schema
+  // itself already enforces the round-1 requiredness the same way it
+  // enforces every other required field. This entry is what makes an
+  // unanswered round 1 show up in the "missing" report like anything else.
+  { path: "placement_1_when", label: "first placement — when" },
+  { path: "placement_1_type", label: "first placement — type" },
   { path: "dcs_actions_failures", label: "what DCS did or failed to do" },
   { path: "last_incident_date", label: "date of the most recent incident" },
 ];
@@ -1482,10 +1891,25 @@ const LETTER_REQUIRED_FIELDS = [
 // top-to-bottom in exactly the same order as the sections of the letter.
 const LETTER_PATHS = [
   "complainant_name", "complainant_relationship", "complainant_address", "complainant_phone", "complainant_email",
-  "child_initials", "child_age", "child_race_ethnicity", "child_disability",
-  "home_language", "custody_start_date", "dcs_county", "dcs_case_number",
-  "family_background", "placement_history", "alternatives_asked",
-  "dcs_actions_failures", "coercion_threats", "harms", "last_incident_date",
+  "child_initials", "child_age", "child_race_ethnicity", "child_disability_has", "child_disability_explain",
+  "home_language", "home_language_other", "custody_start_date", "dcs_county", "dcs_case_number",
+  "family_background",
+  // Placement rounds beyond the first are numbered dynamically at runtime
+  // and can't be listed here ahead of time — buildComplaintLetter derives
+  // however many actually got answered straight from the answers object
+  // itself (see placementRoundNumbers) and merges them in at this point in
+  // the order.
+  "alternatives_asked",
+  // dcs_actions_failures_coverage_N is capped at COVERAGE_FRAMEWORKS'
+  // maxFollowups (2), unlike the placement rounds above — small and fixed
+  // enough to just list both slots here rather than derive them.
+  "dcs_actions_failures", "dcs_actions_failures_coverage_1", "dcs_actions_failures_coverage_2",
+  "coercion_threats", "harms", "last_incident_date",
+  // NARRATIVE_FRAMEWORK's follow-ups can be triggered from any of several
+  // narrative fields (family_background, dcs_actions_failures,
+  // coercion_threats, harms) — listed once, at the end of the narrative
+  // block that covers all of them, rather than tied to any one trigger.
+  "narrative_followup_medical", "narrative_followup_abuse",
   "prior_remedy_dcs_grievance", "prior_remedy_state_office", "prior_remedy_federal", "prior_remedy_court", "prior_remedy_legal_help",
   "desired_outcome",
   "doc_court_orders", "doc_dcs_records", "doc_medical_records", "doc_school_records", "doc_other_evidence",
@@ -1503,14 +1927,34 @@ const LETTER_PATHS = [
 // every line of the draft back to the exact raw input that produced it —
 // the typed text, the voice transcript's source string, and the encrypted
 // recording id — so nothing in a letter is ever unverifiable.
+// Placement rounds are numbered dynamically at runtime (see
+// Intake._maybeInjectNextPlacementRound) and so can't be enumerated ahead of
+// time the way every other field can via a static LETTER_PATHS entry — this
+// derives however many rounds actually got answered, in order, straight
+// from whichever object (answers or provenance) is passed in.
+function placementRoundNumbers(obj) {
+  const nums = new Set();
+  for (const key of Object.keys(obj)) {
+    const m = /^placement_(\d+)_(?:when|type|notes)$/.exec(key);
+    if (m) nums.add(Number(m[1]));
+  }
+  return Array.from(nums).sort((a, b) => a - b);
+}
+
 function buildComplaintLetter(answers, provenance = {}) {
   const today = new Date().toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
   const v = (p) => { const s = answers[p]; return s == null ? "" : String(s).trim(); };
   const sec = (title, body) => `\n${title}\n${"-".repeat(title.length)}\n${body || "(not provided)"}`;
   const missing = LETTER_REQUIRED_FIELDS.filter((f) => !v(f.path));
+  const placementRounds = placementRoundNumbers(answers);
+  const placementPaths = placementRounds.flatMap((n) => [`placement_${n}_when`, `placement_${n}_type`, `placement_${n}_notes`]);
+  // Spliced in right before "alternatives_asked" — the same spot placement
+  // history occupies in the letter body (section 5, right after section 4).
+  const altIdx = LETTER_PATHS.indexOf("alternatives_asked");
+  const orderedPaths = [...LETTER_PATHS.slice(0, altIdx), ...placementPaths, ...LETTER_PATHS.slice(altIdx)];
 
   const sources = [];
-  for (const p of LETTER_PATHS) {
+  for (const p of orderedPaths) {
     const cell = provenance[p];
     if (!cell || cell.value == null) continue;
     sources.push({
@@ -1549,27 +1993,48 @@ function buildComplaintLetter(answers, provenance = {}) {
       `Initials: ${v("child_initials") || "(not provided)"}\n` +
       `Age: ${v("child_age") || "(not provided)"}\n` +
       `Race/ethnicity: ${v("child_race_ethnicity") || "(not provided)"}\n` +
-      `Disability/diagnosis: ${v("child_disability") || "(none provided)"}`),
+      `Disability/diagnosis: ${(v("child_disability_has") === "Yes" || v("child_disability_has") === "Sí") ? (v("child_disability_explain") || "(described, not detailed)") : "(none reported)"}`),
     sec("3. Background",
-      `Home language: ${v("home_language") || "(not provided)"}\n` +
+      `Home language: ${v("home_language") === "Other" && v("home_language_other") ? v("home_language_other") : (v("home_language") || "(not provided)")}\n` +
       `Date DCS custody began: ${v("custody_start_date") || "(not provided)"}\n` +
       `DCS county: ${v("dcs_county") || "(not provided)"}\n` +
       `DCS case number: ${v("dcs_case_number") || "(not provided)"}`),
     sec("4. Family background", v("family_background")),
-    sec("5. Placement history", v("placement_history")),
+    sec("5. Placement history", placementRounds.length
+      ? placementRounds.map((n, i) => {
+          const when = v(`placement_${n}_when`) || "(not provided)";
+          const type = v(`placement_${n}_type`) || "(not provided)";
+          const notes = v(`placement_${n}_notes`);
+          return `${i + 1}. ${when} — ${type}${notes ? ` — ${notes}` : ""}`;
+        }).join("\n")
+      : ""),
     sec("6. Family-based options asked for", v("alternatives_asked")),
-    sec("7. What DCS did or failed to do", v("dcs_actions_failures")),
+    // dcs_actions_failures_coverage_{1,2}: COVERAGE_FRAMEWORKS' who/when
+    // follow-ups, asked only when the main answer didn't already cover them
+    // — folded into the same section as the answer they supplement.
+    sec("7. What DCS did or failed to do", [
+      v("dcs_actions_failures"),
+      v("dcs_actions_failures_coverage_1"),
+      v("dcs_actions_failures_coverage_2"),
+    ].filter(Boolean).join("\n\n")),
     sec("8. Pressure or threats", v("coercion_threats")),
     sec("9. How this has affected the child", v("harms")),
-    sec("10. Most recent incident", v("last_incident_date")),
-    sec("11. Prior remedies",
+    // NARRATIVE_FRAMEWORK's follow-ups can be triggered from any of several
+    // narrative fields, not just one, so they get their own section rather
+    // than being folded into whichever field happened to trigger them.
+    sec("10. Additional details mentioned", [
+      v("narrative_followup_medical") && `Medication: ${v("narrative_followup_medical")}`,
+      v("narrative_followup_abuse") && `Abuse or injury: ${v("narrative_followup_abuse")}`,
+    ].filter(Boolean).join("\n\n")),
+    sec("11. Most recent incident", v("last_incident_date")),
+    sec("12. Prior remedies",
       `Grievance filed with DCS: ${v("prior_remedy_dcs_grievance") || "(none reported)"}\n` +
       `Contact with another state office: ${v("prior_remedy_state_office") || "(none reported)"}\n` +
       `Earlier federal complaint: ${v("prior_remedy_federal") || "(none reported)"}\n` +
       `Court or legal proceedings: ${v("prior_remedy_court") || "(none reported)"}\n` +
       `Legal help sought: ${v("prior_remedy_legal_help") || "(none reported)"}`),
-    sec("12. Desired outcome", v("desired_outcome")),
-    sec("13. Supporting documents",
+    sec("13. Desired outcome", v("desired_outcome")),
+    sec("14. Supporting documents",
       `Court orders: ${v("doc_court_orders") || "(none reported)"}\n` +
       `DCS paperwork and correspondence: ${v("doc_dcs_records") || "(none reported)"}\n` +
       `Medical or mental-health records: ${v("doc_medical_records") || "(none reported)"}\n` +
@@ -1923,8 +2388,8 @@ function keywords(str) {
 const DEMO_KNOWLEDGE = new KnowledgeStore([
   { topic: "Describing DCS actions and failures clearly", scope: { field: "dcs_actions_failures" }, tags: ["evidence", "specificity"],
     text: "Encourage specificity without pressuring for it: what was said vs what happened, whether written notice was given, names of caseworkers or supervisors if known, and approximate dates. Vague is still usable; a person's own words and timeline matter more than legal precision." },
-  { topic: "Placement history detail", scope: { field: "placement_history" }, tags: ["evidence", "specificity"],
-    text: "One line per placement, roughly in order, is enough: about when it started, what kind of placement (relative's home, foster home, group home, residential facility), and where. Exact dates aren't required, a general timeframe is fine." },
+  { topic: "Placement history detail", scope: { field: "placement_1_notes" }, tags: ["evidence", "specificity"],
+    text: "Placements are asked one at a time, in order: about when it started, what kind of placement it was, and any notes. Exact dates aren't required, a general timeframe is fine. A short note is enough here — where it was, who was involved, how it went." },
   { topic: "Language access matters", scope: { field: "home_language" }, tags: ["access", "language"],
     text: "If a family's primary language isn't English, note it. Whether the agency provided interpretation, translated documents, or otherwise accommodated language needs can itself be part of the discrimination claim." },
   { topic: "Coercion and threats, if it happened", scope: { field: "coercion_threats" }, tags: ["support", "sensitivity"],
@@ -1992,7 +2457,13 @@ function assemble({ field, discourse = [], timeline = [], knowledge = null, sche
   const parts = [
     { kind: "system", label: "Instructions", text: system },
     { kind: "focus", label: "Focus — how to steer", text: focus.system },
-    { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum })}` },
+    // digits/digitsOrKeywords must travel with the rest of the field's
+    // shape here: EchoModel reconstructs a field object from this exact
+    // JSON (see _field() below) and calls the real Steer.validate() against
+    // it, so anything validate() reads has to be whitelisted into this
+    // object or EchoModel silently validates against a field missing that
+    // constraint (found via the phone/case-number digit check not firing).
+    { kind: "field", label: "Current field", text: `CURRENT FIELD: ${JSON.stringify({ label: field.label, type: field.type, required: field.required, enum: field.enum, digits: field.digits, digitsOrKeywords: field.digitsOrKeywords })}` },
     { kind: "language", label: "Language", text: `LANGUAGE: ${lang}` },
   ];
   if (know.text) parts.push({ kind: "memory", label: `Reference — memory folded for this field (${know.items.length})`, text: `REFERENCE (folded for this field):\n${know.text}` });
@@ -2743,7 +3214,14 @@ function ensureSeeded(store, cfg = DEFAULT_CONFIG) {
 
 class Intake {
   constructor({ schema, store, model, knowledge = null, anchor = "applicant", systemPrompt = MINIMAL_SYSTEM, lang = "en" }) {
-    this.schema = schema; this.store = store; this.model = model;
+    // A fresh copy of `fields`, not the caller's array by reference: this
+    // instance splices in guided narrative follow-ups at runtime (see
+    // _maybeInjectFollowups), and when no admin-authored questions exist,
+    // `schema.fields` IS the module-level SCHEMA.fields array — splicing
+    // into that directly would permanently mutate the shared default schema
+    // for every future session on the page instead of just this one.
+    this.schema = { ...schema, fields: schema.fields.slice() };
+    this.store = store; this.model = model;
     this.knowledge = knowledge; this.anchor = anchor;
     this.systemPrompt = systemPrompt; // editable base instructions; folded in each turn
     this.lang = lang;
@@ -2786,21 +3264,59 @@ class Intake {
 
   answers() { return answersOf(this.store.fold(), this.anchor); }
 
-  // Ordered progress view for the UI's checklist.
+  // A field can name `skipIf(answers) -> bool` to opt out of being asked (or
+  // counted) when an earlier answer makes it inapplicable — e.g. the
+  // disability follow-up only when the Yes/No question above it was
+  // answered Yes. This is the one place that reads it, so every other
+  // method (progress/nextField/isComplete) sees a consistently filtered
+  // schema instead of three separate copies of the same check.
+  _isSkipped(f, a) { return Steer.isFieldSkipped(f, a); }
+  _visibleFields(a) { return this.schema.fields.filter((f) => !this._isSkipped(f, a)); }
+
+  // Ordered progress view for the UI's checklist. A skipped field is left off
+  // entirely rather than shown as an empty optional row — there's nothing
+  // for the person to answer, so nothing to check off or nudge about.
   progress() {
     const a = this.answers();
-    return this.schema.fields.map((f) => ({ ...f, value: a[f.path], done: a[f.path] != null && a[f.path] !== "" }));
+    return this._visibleFields(a).map((f) => ({ ...f, value: a[f.path], done: a[f.path] != null && a[f.path] !== "" }));
   }
 
-  // Next unanswered field in document order. Requiredness governs whether you
-  // can *finish* (isComplete), not the order questions are asked — a form that
-  // jumps its optional fields to the end feels disorienting.
+  // Next unanswered, non-skipped field in document order. Requiredness
+  // governs whether you can *finish* (isComplete), not the order questions
+  // are asked — a form that jumps its optional fields to the end feels
+  // disorienting.
   nextField() {
     const a = this.answers();
-    return this.schema.fields.find((f) => a[f.path] == null || a[f.path] === "");
+    return this._visibleFields(a).find((f) => a[f.path] == null || a[f.path] === "");
   }
 
-  isComplete() { return this.schema.fields.every((f) => !f.required || this.answers()[f.path]); }
+  isComplete() {
+    const a = this.answers();
+    return this._visibleFields(a).every((f) => !f.required || a[f.path]);
+  }
+
+  // One entry per SECTIONS key, in that order — done/total counted only over
+  // currently-visible (non-skipped) fields, so a section's own bar never
+  // implies more work than the person will actually be asked to do. `active`
+  // marks whichever section the field they're on right now belongs to; a
+  // field with no `section` (hand-added through the admin panel without
+  // picking one) simply doesn't count toward any bucket rather than
+  // crashing or silently joining one.
+  sectionProgress() {
+    const a = this.answers();
+    const visible = this._visibleFields(a);
+    const current = visible.find((f) => a[f.path] == null || a[f.path] === "");
+    return SECTIONS.map((s) => {
+      const fields = visible.filter((f) => f.section === s.key);
+      const done = fields.filter((f) => a[f.path] != null && a[f.path] !== "").length;
+      return {
+        key: s.key, label: s.label, labelEs: s.labelEs,
+        done, total: fields.length,
+        complete: fields.length > 0 && done === fields.length,
+        active: !!current && current.section === s.key,
+      };
+    });
+  }
 
   _say(role, text, meta = {}) {
     // Stamp the epoch so context.assemble can keep only the LIVE exchange (the
@@ -2814,9 +3330,17 @@ class Intake {
   // Kick off / resume. Greets, then asks the first unanswered question.
   async begin() {
     if (this.history.length === 0) {
-      const done = this.progress().filter((p) => p.done).length;
+      // Same skip-aware list the progress ring and checklist use — a raw
+      // this.schema.fields.length would count still-skipped fields (like a
+      // disability follow-up nobody has unlocked yet) in the total, so
+      // "3 of 36" and the ring's "31 remaining" (out of 34) would disagree.
+      const visible = this.progress();
+      const done = visible.filter((p) => p.done).length;
       const blurb = (this.lang === "es" && this.schema.blurbEs) ? this.schema.blurbEs : this.schema.blurb;
-      this._say("assistant", done > 0 ? this._reply("welcomeBack", { meta: { done, total: this.schema.fields.length } }) : blurb);
+      this._say("assistant", done > 0 ? this._reply("welcomeBack", { meta: { done, total: visible.length } }) : blurb);
+      if (done === 0 && this.schema.id === "ocr-complaint-tn-dcs") {
+        this._say("assistant", this.lang === "es" ? INTAKE_OVERVIEW_ES : INTAKE_OVERVIEW_EN, { banner: true });
+      }
     }
     await this._askNext();
   }
@@ -2860,8 +3384,12 @@ class Intake {
   // transcription (so the source text and the encrypted recording stay
   // linkable), typed otherwise; tests may omit it (defaults to typed).
   async submit(text, meta = {}) {
-    this._say("user", text);
     const f = this.nextField();
+    // Only tag this as "the answer" (clickable to revise later) when it's a
+    // fresh attempt at the field — not when it's a bare "yes"/"no" replying
+    // to an already-pending value, which would otherwise make the trivial
+    // "yes" bubble editable right along with the real answer above it.
+    this._say("user", text, this.pending ? {} : { field: f?.path });
     if (!f) return;
 
     const intent = Steer.classifyIntent(text, this.lang);
@@ -3038,6 +3566,43 @@ class Intake {
     this._emit("message", thinking);
   }
 
+  // A structured control (buttons, a dropdown, checkboxes) already IS the
+  // answer — unlike free text, there's nothing for the model to classify and
+  // nothing ambiguous to double-check with a "does this look right?" This
+  // still runs through the same validate()/DEF/_askNext() path as any other
+  // answer, so the audit trail and advance-to-next-field logic don't fork
+  // into a second code path.
+  async submitChoice(value) {
+    const f = this.nextField();
+    if (!f) return;
+    this._say("user", value, { field: f.path });
+    const err = validate(f, value, this.lang);
+    if (err) { this._say("assistant", err, { support: true }); return; }
+    this.pending = { field: f, value, source: value, inputKind: "typed", voiceClipId: null };
+    return this._confirm();
+  }
+
+  // "Always we can decline": free text has never been a reliable way to skip
+  // a question — real phrasing ("I don't have it", "not sure", "couldn't
+  // tell you") has endless variants a fixed keyword list will always miss
+  // some of (see Steer's skip lexicon). This is the button-driven escape
+  // hatch that doesn't depend on guessing the right words. It deliberately
+  // bypasses validate()'s type-specific format checks (digit count, email
+  // shape, date parsing) the same way the free-text skip branch in
+  // _classifyAndReply does — a decline is exempt from those by definition,
+  // not a malformed attempt at a real answer. A digits field spells out its
+  // own accepted escape word (digitsOrKeywords[0], e.g. "unknown") so the
+  // stored text stays meaningful instead of a generic placeholder.
+  async declineField() {
+    const f = this.nextField();
+    if (!f || f.required) return;
+    const value = (f.digitsOrKeywords && f.digitsOrKeywords[0])
+      || (this.lang === "es" ? "No aplica" : "N/A");
+    this._say("user", value, { field: f.path });
+    this.pending = { field: f, value, source: value, inputKind: "typed", voiceClipId: null };
+    return this._confirm();
+  }
+
   // Store the confirmed answer as one DEF operator, then advance. Bumping the
   // epoch closes the live window: the turns that produced this answer are now
   // redundant with fold(timeline) and fold away into the digest next turn.
@@ -3055,7 +3620,107 @@ class Intake {
     this._say("assistant", this._reply("confirmed"));
     this._emit("stored", { field, value, event: ev });
     this._checkFilingDeadline(field, value);
+    this._maybeInjectFollowups(field, value);
+    this._maybeInjectCoverageFollowup(field, value);
+    this._maybeInjectNextPlacementRound(field, value);
     return this._askNext();
+  }
+
+  // Placement history is a repeating group (see placementRoundFields):
+  // answering "was there another placement?" (placement_more_N) yes splices
+  // round N+1's four questions in right after it, growing the chain by
+  // exactly one round per yes — a no just lets nextField() fall through to
+  // whatever static field comes after the chain (alternatives_asked).
+  // Idempotent for the same reason as _maybeInjectFollowups.
+  _maybeInjectNextPlacementRound(field, value) {
+    const m = /^placement_more_(\d+)$/.exec(field.path);
+    if (!m) return;
+    if (value !== "Yes" && value !== "Sí") return;
+    const next = Number(m[1]) + 1;
+    if (this.schema.fields.some((f) => f.path === `placement_${next}_when`)) return;
+    const insertAt = this.schema.fields.findIndex((f) => f.path === field.path) + 1;
+    this.schema.fields.splice(insertAt, 0, ...placementRoundFields(next));
+  }
+
+  // See NARRATIVE_FRAMEWORK: `EOReader6.surf` reads the just-confirmed text
+  // against every triggered slot; a mention of a tracked topic pulls in
+  // that topic's one follow-up question, inserted right after whichever
+  // field the mention showed up in — same DEF/nextField machinery as every
+  // other question from here on, just added to the schema at runtime
+  // instead of being present from the start. Idempotent (checks the field
+  // isn't already in the schema) so re-editing an earlier answer from the
+  // checklist doesn't stack duplicate follow-ups, and doesn't matter which
+  // of the trigger fields a topic first showed up in — only one shared
+  // follow-up exists per topic, wherever it's raised.
+  _maybeInjectFollowups(field, value) {
+    if (!NARRATIVE_FRAMEWORK.triggerFields.includes(field.path)) return;
+    const text = (value ?? "").toString();
+    if (!text) return;
+    let insertAt = this.schema.fields.findIndex((f) => f.path === field.path) + 1;
+    if (insertAt <= 0) return;
+    const reading = EOReader6.surf(text, NARRATIVE_FRAMEWORK.slots);
+    for (const r of reading) {
+      if (!r.met) continue;
+      const slot = NARRATIVE_FRAMEWORK.slots.find((s) => s.key === r.key);
+      if (this.schema.fields.some((f) => f.path === slot.followup.path)) continue;
+      this.schema.fields.splice(insertAt, 0, slot.followup);
+      insertAt++;
+    }
+  }
+
+  // See COVERAGE_FRAMEWORKS: "ask follow-ups until we get it," bounded.
+  // `field` is either a framework's own base field (dcs_actions_failures)
+  // or one of its own previously-injected `${base}_coverage_N` follow-ups —
+  // either way, `EOReader6.surf`/`fold` re-reads everything given to this
+  // framework so far, cumulatively, and decides whether one more follow-up
+  // is owed. A decline on one of the framework's own follow-ups (the same
+  // skip lexicon every optional field already honors) ends the loop right
+  // there — "until we get it" still stops the moment someone says they
+  // don't have it, rather than pivoting to ask about whichever slot is
+  // still open.
+  _maybeInjectCoverageFollowup(field, value) {
+    const m = /^(.+)_coverage_(\d+)$/.exec(field.path);
+    const baseKey = m ? m[1] : field.path;
+    const framework = COVERAGE_FRAMEWORKS[baseKey];
+    if (!framework) return;
+    if (m && Steer.classifyIntent((value ?? "").toString(), this.lang).skip) return;
+
+    // Which slots have already had a follow-up asked, regardless of
+    // whether the answer given actually satisfied that slot's own test —
+    // "when" gets asked at most once even if the reply ("sometime last
+    // spring") never matches the date pattern. Without this, a reply that
+    // never satisfies a slot's test would have the same slot re-asked
+    // right up to maxFollowups, which is asking the same question twice
+    // dressed up as "until we get it" rather than moving on.
+    const injectedFollowups = this.schema.fields.filter((f) => f.path.startsWith(`${baseKey}_coverage_`));
+    if (injectedFollowups.length >= framework.maxFollowups) return;
+    const askedSlotKeys = new Set(injectedFollowups.map((f) => f._coverageSlotKey));
+
+    const a = this.answers();
+    const parts = [a[baseKey], ...injectedFollowups.map((f) => a[f.path])];
+    const cumulative = parts.filter(Boolean).join(" ");
+    const coverage = EOReader6.surfAndFold({}, cumulative, framework.slots);
+    if (EOReader6.isSatisfied(coverage, framework.slots)) return;
+
+    const nextSlot = framework.slots.find((s) => !coverage[s.key] && !askedSlotKeys.has(s.key));
+    if (!nextSlot) return; // every still-open slot has already had its one ask
+    const path = `${baseKey}_coverage_${injectedFollowups.length + 1}`;
+    if (this.schema.fields.some((f) => f.path === path)) return;
+
+    const baseField = this.schema.fields.find((f) => f.path === baseKey);
+    const insertAt = this.schema.fields.findIndex((f) => f.path === field.path) + 1;
+    this.schema.fields.splice(insertAt, 0, {
+      path,
+      label: nextSlot.followup.label,
+      type: "text",
+      section: (baseField && baseField.section) || undefined,
+      required: false,
+      prompt: nextSlot.followup.prompt,
+      promptEs: nextSlot.followup.promptEs,
+      help: nextSlot.followup.help,
+      helpEs: nextSlot.followup.helpEs,
+      _coverageSlotKey: nextSlot.key,
+    });
   }
 
   // "If someone uses the tool and the incident is past 180 days, the
@@ -4495,6 +5160,26 @@ function buildFieldInput(field, currentValue) {
     }
     return { el: wrap, getValue: () => radios.find((r) => r.checked)?.value || "", focus: () => radios[0]?.focus() };
   }
+  if (field.type === "multiselect" && field.enum?.length) {
+    const wrap = el("div", "field-enum");
+    const picked = new Set((currentValue || "").split(",").map((s) => s.trim()).filter(Boolean));
+    const boxes = [];
+    for (const opt of field.enum) {
+      const label = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = opt;
+      cb.checked = picked.has(opt);
+      boxes.push(cb);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(opt));
+      wrap.appendChild(label);
+    }
+    return {
+      el: wrap,
+      getValue: () => boxes.filter((b) => b.checked).map((b) => b.value).join(", "),
+      focus: () => boxes[0]?.focus(),
+    };
+  }
   if (field.type === "select" && field.enum?.length) {
     const sel = document.createElement("select"); sel.className = "field-input";
     for (const opt of field.enum) sel.appendChild(new Option(opt, opt, false, opt === currentValue));
@@ -4518,6 +5203,24 @@ function buildFieldInput(field, currentValue) {
     if (currentValue) { try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {} }
     return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
   }
+  if (field.type === "date_flex") {
+    const wrap = el("div", "field-date-flex");
+    let monthOnly = /^\d{4}-\d{2}$/.test(currentValue || "");
+    const inp = document.createElement("input");
+    inp.className = "field-input";
+    inp.type = monthOnly ? "month" : "date";
+    inp.value = currentValue || "";
+    const toggle = el("button", "addr-toggle", monthOnly ? "I know the exact day" : "I only know the month");
+    toggle.type = "button";
+    toggle.onclick = () => {
+      monthOnly = !monthOnly;
+      inp.type = monthOnly ? "month" : "date";
+      inp.value = "";
+      toggle.textContent = monthOnly ? "I know the exact day" : "I only know the month";
+    };
+    wrap.appendChild(inp); wrap.appendChild(toggle);
+    return { el: wrap, getValue: () => inp.value, focus: () => inp.focus() };
+  }
   if (field.type === "textarea") {
     const inp = document.createElement("textarea"); inp.rows = 4; inp.className = "field-input";
     inp.value = currentValue || "";
@@ -4525,7 +5228,11 @@ function buildFieldInput(field, currentValue) {
   }
   const inp = document.createElement(field.type === "text" && (currentValue || "").length > 60 ? "textarea" : "input");
   if (inp.tagName === "TEXTAREA") { inp.rows = 3; inp.className = "field-input"; }
-  else { inp.type = field.type === "email" ? "email" : "text"; inp.className = "field-input"; }
+  else {
+    inp.type = field.type === "email" ? "email" : field.type === "tel" ? "tel" : "text";
+    inp.className = "field-input";
+    if (field.type === "tel") { inp.autocomplete = "tel"; inp.inputMode = "tel"; }
+  }
   inp.value = currentValue || "";
   return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
 }
@@ -4684,11 +5391,102 @@ function onIntake(kind, data) {
     flashLedger(data.event); toast("Answer saved");
   } else if (kind === "field") {
     renderSide();
+    renderQuickAnswer(data);
   } else if (kind === "context") {
     renderFold(data);
   } else if (kind === "complete") {
-    renderSide(); celebrate(); toast("All questions answered!", "success");
+    renderSide(); renderQuickAnswer(null); celebrate(); toast("All questions answered!", "success");
   }
+}
+
+// A structured control for the current field, shown just above the free-text
+// composer: buttons for a short enum, Yes/No for a boolean, a dropdown for a
+// long option list (counties, languages), checkboxes for a multi-select. This
+// is a faster, tap-first path on top of the same submitChoice()/validate()
+// pipeline — typing still works in the box underneath for anyone who prefers
+// it, needs "Other", or is answering a plain free-text field, which never
+// gets a control here and just leaves the row empty.
+function renderQuickAnswer(field) {
+  const box = $("quickAnswer");
+  box.innerHTML = "";
+  box.classList.add("hidden");
+  if (!field || !intake) return;
+  const es = intake.lang === "es";
+  const choose = (value) => { box.classList.add("hidden"); box.innerHTML = ""; intake.submitChoice(value); };
+  const decline = () => { box.classList.add("hidden"); box.innerHTML = ""; intake.declineField(); };
+
+  if (field.type === "enum" && field.enum?.length) {
+    field.enum.forEach((opt, i) => {
+      const btn = el("button", "qa-btn", (es && field.enumEs?.[i]) || opt);
+      btn.type = "button";
+      btn.onclick = () => choose(opt);
+      box.appendChild(btn);
+    });
+  } else if (field.type === "boolean") {
+    const yes = el("button", "qa-btn", es ? "Sí" : "Yes"); yes.type = "button";
+    yes.onclick = () => choose(es ? "Sí" : "Yes");
+    const no = el("button", "qa-btn", "No"); no.type = "button";
+    no.onclick = () => choose("No");
+    box.appendChild(yes); box.appendChild(no);
+  } else if (field.type === "date_flex") {
+    const row = el("div", "qa-row");
+    let monthOnly = false;
+    const inp = document.createElement("input");
+    inp.type = "date"; inp.className = "qa-select";
+    const toggle = el("button", "qa-btn", es ? "Solo sé el mes" : "I only know the month");
+    toggle.type = "button";
+    toggle.onclick = () => {
+      monthOnly = !monthOnly;
+      inp.type = monthOnly ? "month" : "date";
+      inp.value = "";
+      toggle.textContent = monthOnly ? (es ? "Sé el día exacto" : "I know the exact day") : (es ? "Solo sé el mes" : "I only know the month");
+    };
+    const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
+    go.type = "button";
+    go.onclick = () => { if (inp.value) choose(inp.value); };
+    row.appendChild(inp); row.appendChild(toggle); row.appendChild(go);
+    box.appendChild(row);
+  } else if (field.type === "select" && field.enum?.length) {
+    const row = el("div", "qa-row");
+    const sel = document.createElement("select"); sel.className = "qa-select";
+    sel.appendChild(new Option(es ? "Elige uno…" : "Choose one…", "", true, true));
+    for (const opt of field.enum) sel.appendChild(new Option(opt, opt));
+    const go = el("button", "qa-go", es ? "Elegir" : "Choose"); go.type = "button";
+    go.onclick = () => { if (sel.value) choose(sel.value); };
+    row.appendChild(sel); row.appendChild(go);
+    box.appendChild(row);
+  } else if (field.type === "multiselect" && field.enum?.length) {
+    const checks = el("div", "qa-checks");
+    const boxes = [];
+    for (const opt of field.enum) {
+      const label = document.createElement("label");
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = opt;
+      boxes.push(cb);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(opt));
+      checks.appendChild(label);
+    }
+    const go = el("button", "qa-go", es ? "Continuar" : "Continue"); go.type = "button";
+    go.onclick = () => {
+      const picked = boxes.filter((b) => b.checked).map((b) => b.value);
+      if (picked.length) choose(picked.join(", "));
+    };
+    box.appendChild(checks); box.appendChild(go);
+  }
+
+  // Every optional question gets an explicit decline chip, no matter its
+  // type — including plain free-text fields, which otherwise got no chips
+  // at all here and depended entirely on typing the right magic phrase (see
+  // Steer's skip lexicon and Intake.declineField). Required fields never
+  // get one — there's nothing to store instead of an answer they must give.
+  if (field.required === false) {
+    const skip = el("button", "qa-btn qa-decline", es ? "No lo sé / no aplica" : "I don't know / not applicable");
+    skip.type = "button";
+    skip.onclick = decline;
+    box.appendChild(skip);
+  }
+
+  if (box.children.length) box.classList.remove("hidden");
 }
 
 function renderMessage(m) {
@@ -4719,6 +5517,35 @@ function renderMessage(m) {
   const txt = document.createTextNode(m.text);
   bubble.appendChild(txt);
   if (m.value) { const val = el("span", "value"); val.textContent = "→ " + m.value; bubble.appendChild(val); }
+  // Click back into any of your own turns to revise it, instead of hunting
+  // for the same field in the "Your answers" list — same edit pathway
+  // (openInlineEditor -> Intake.editField) the checklist already uses.
+  // Whether the field actually HAS a stored value yet is checked at click
+  // time, not here at render time: this bubble renders the instant the
+  // person hits send, but the DEF event that actually stores the answer
+  // doesn't land until _confirm() runs a beat later (after "yes"), so a
+  // stored-value check made right here would always see the field's OLD
+  // (pre-this-turn) state — and for a first-time answer, "not stored yet",
+  // permanently, since a bubble never re-renders once its confirm lands.
+  if (isUser && m.field && intake) {
+    const path = m.field;
+    bubble.classList.add("editable");
+    bubble.tabIndex = 0;
+    bubble.setAttribute("role", "button");
+    bubble.setAttribute("aria-label", intake.lang === "es" ? "Editar esta respuesta" : "Edit this answer");
+    bubble.appendChild(el("i", "ph ph-pencil-simple edit-hint"));
+    const openEdit = () => {
+      const f = intake.schema.fields.find((x) => x.path === path);
+      const cur = f ? intake.answers()[f.path] : null;
+      if (!f || cur == null || cur === "") {
+        toast(intake.lang === "es" ? "Esta respuesta aún no se ha guardado." : "This answer hasn't been saved yet.", "warn");
+        return;
+      }
+      editFromChecklist(f);
+    };
+    bubble.onclick = openEdit;
+    bubble.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(); } });
+  }
   body.appendChild(bubble);
   group.appendChild(body);
   if (isUser) group.appendChild(avatar);
@@ -4768,17 +5595,29 @@ function renderSide() {
   const total = prog.length;
   const active = intake.nextField()?.path;
   const complete = done === total;
+  const es = intake.lang === "es";
+  const sections = intake.sectionProgress();
+  const activeSection = sections.find((s) => s.active);
 
   const pct = total ? Math.round((done / total) * 100) : 0;
   $("ring").style.setProperty("--p", pct);
   $("ringN").textContent = `${done}/${total}`;
-  $("progTxt").textContent = complete ? "All done — review anytime" : `${total - done} remaining`;
+  $("progTxt").textContent = complete
+    ? "All done — review anytime"
+    : activeSection
+      ? `${(es && activeSection.labelEs) || activeSection.label} · ${total - done} remaining`
+      : `${total - done} remaining`;
   $("progressBar").classList.toggle("complete", complete);
   $("phaseBadge").textContent = complete ? "Complete" : `${pct}%`;
+  renderSectionProgress(sections);
 
   const list = $("check"); list.innerHTML = "";
   $("checkCount").textContent = `${done}/${total}`;
-  for (const f of prog) {
+  // Grouped by section (not just field order) so the checklist reads as
+  // the same 3 parts as the stepper above the chat — reordering a question
+  // into a different section (via the admin panel) moves its row here too,
+  // regardless of where it physically sits in the schema's field order.
+  const renderRow = (f) => {
     const li = el("li", (f.done ? "done " : "") + (f.path === active ? "active" : ""));
     li.appendChild(el("span", "box", f.done ? "✓" : ""));
     const wrap = el("div");
@@ -4787,7 +5626,46 @@ function renderSide() {
     li.appendChild(wrap);
     li.onclick = () => editFromChecklist(f);
     list.appendChild(li);
+  };
+  for (const s of SECTIONS) {
+    const inSection = prog.filter((f) => f.section === s.key);
+    if (!inSection.length) continue;
+    list.appendChild(el("li", "check-heading", (es && s.labelEs) || s.label));
+    inSection.forEach(renderRow);
   }
+  // A hand-added admin question with no section picked yet — still shown,
+  // just without a heading, rather than silently vanishing from the list.
+  prog.filter((f) => !SECTIONS.some((s) => s.key === f.section)).forEach(renderRow);
+}
+
+// The section stepper above the chat — see SECTIONS and
+// Intake.sectionProgress(). Rebuilt on every renderSide() call (field
+// answered, edited, or the interview completing) rather than patched in
+// place: three small DOM nodes, cheap enough that a full rebuild is simpler
+// than diffing.
+function renderSectionProgress(sections) {
+  const stepper = $("sectStepper");
+  if (!stepper || !intake) return;
+  const es = intake.lang === "es";
+  stepper.innerHTML = "";
+  sections.forEach((s, i) => {
+    const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+    const cls = ["sect"];
+    if (s.active) cls.push("active");
+    else if (s.complete) cls.push("complete");
+    else if (s.done === 0) cls.push("upcoming");
+    const seg = el("div", cls.join(" "));
+    seg.setAttribute("role", "listitem");
+    seg.setAttribute("aria-label", `${(es && s.labelEs) || s.label}: ${s.done} of ${s.total}${s.active ? ", current section" : s.complete ? ", complete" : ""}`);
+    const fill = el("div", "fill"); fill.style.width = pct + "%";
+    seg.appendChild(fill);
+    const row = el("div", "row");
+    row.appendChild(el("span", "num", s.complete ? "✓" : String(i + 1)));
+    row.appendChild(el("span", "label", (es && s.labelEs) || s.label));
+    seg.appendChild(row);
+    seg.appendChild(el("div", "sub", s.total ? `${s.done}/${s.total}` : ""));
+    stepper.appendChild(seg);
+  });
 }
 
 async function editFromChecklist(f) {
@@ -4819,8 +5697,21 @@ function wireDocs() {
   drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); handleFiles(e.dataTransfer.files); });
 }
 
+// The catch-all "any other documents" question, asked last — anything
+// uploaded while it's the active question (or with no question active at
+// all, e.g. from the admin side) gets a manual title instead of an
+// auto-organized label, since there's no specific fact it's tied to.
+const CATCH_ALL_DOC_FIELD = "doc_other_evidence";
+
 async function handleFiles(fileList) {
   if (!store) return;
+  // Whatever question is on screen right now is what this upload is
+  // "about" — attaching a court order while answering the court-orders
+  // question, a photo while describing harm, and so on. Tagged at upload
+  // time so the list can auto-organize by question without asking the
+  // person to categorize anything themselves.
+  const field = intake?.nextField();
+  const isCatchAll = !field || field.path === CATCH_ALL_DOC_FIELD;
   for (const file of Array.from(fileList)) {
     if (file.size > MAX_DOC_BYTES) { toast(`"${file.name}" is over 25 MB.`, "error"); continue; }
     const row = el("li", "doc pending");
@@ -4835,7 +5726,12 @@ async function handleFiles(fileList) {
       const url = await mediaBackend().put(id, ciphertext);
       store.emit(OP.INS, {
         entity: "document", id,
-        attrs: { filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, url, key, iv, hash, status: "new" },
+        attrs: {
+          filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, url, key, iv, hash, status: "new",
+          fieldPath: isCatchAll ? null : field.path,
+          fieldLabel: isCatchAll ? null : field.label,
+          title: "",
+        },
       });
       row.remove(); toast("Uploaded " + file.name);
     } catch (e) { status.textContent = "Failed: " + e.message; row.classList.add("error"); }
@@ -4854,12 +5750,40 @@ function renderDocs() {
   for (const d of docs.reverse()) list.appendChild(docRow(d));
 }
 
+// Re-emits OP.INS for the same document id with updated attrs — INS is
+// last-write-wins per id in fold() (see the OP.INS branch above), so this
+// is the same mechanism the admin's status changes already use, just for
+// the title a person types in for one of their own catch-all uploads.
+function updateDocAttrs(d, patch) {
+  if (!store) return;
+  const { id, uploadedAt, ...attrs } = d;
+  store.emit(OP.INS, { entity: "document", id: d.id, attrs: { ...attrs, ...patch } });
+}
+
 function docRow(d) {
   const li = el("li", "doc status-" + d.status);
   const top = el("div", "drow1");
   top.appendChild(el("span", "dname", d.filename));
   top.appendChild(el("span", "dsize", fmtBytes(d.size)));
   li.appendChild(top);
+  if (d.fieldLabel) {
+    li.appendChild(el("div", "dcontext", "Attached to: " + d.fieldLabel));
+  } else {
+    const titleInput = document.createElement("input");
+    titleInput.type = "text"; titleInput.className = "dtitle-input";
+    titleInput.placeholder = "What is this document? (optional)";
+    titleInput.value = d.title || "";
+    let saved = titleInput.value;
+    const save = () => {
+      const v = titleInput.value.trim();
+      if (v === saved) return;
+      saved = v;
+      updateDocAttrs(d, { title: v });
+    };
+    titleInput.addEventListener("blur", save);
+    titleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); titleInput.blur(); } });
+    li.appendChild(titleInput);
+  }
   const bottom = el("div", "drow2");
   const view = el("button", "dview", "View"); view.onclick = () => previewDocument(d, mediaBackend());
   bottom.appendChild(view);
@@ -4971,11 +5895,21 @@ function wizardCompleteUI(shouldCelebrate) {
 }
 
 // ── Compose ──
+// scrollHeight reflects whatever's rendered in the box — typed text, or (when
+// empty) the placeholder — so this sizes correctly either way. Resetting to
+// bare "auto" instead (the box's native rows=1 height) clips a two-line
+// placeholder mid-character on narrow screens, leaving a stray sliver of its
+// second line poking through the overflow — an autosize call after every
+// reset avoids that.
+function autosizeInput(input) {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 120) + "px";
+}
 function wireCompose() {
   const input = $("input");
   const send = () => {
     const v = input.value.trim(); if (!v || !intake) return;
-    input.value = ""; input.style.height = "auto";
+    input.value = ""; autosizeInput(input);
     intake.submit(v, takeVoiceMeta());
   };
   $("send").onclick = send;
@@ -4984,8 +5918,9 @@ function wireCompose() {
     // Any genuine edit after a transcription means the outgoing text is no
     // longer (only) what the mic heard — stop attributing it as "voice".
     lastVoiceClipId = null;
-    input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 120) + "px";
+    autosizeInput(input);
   });
+  autosizeInput(input);
 }
 
 // ── "Answer several at once" bulk entry ──
@@ -5354,6 +6289,20 @@ $("ctxClose").onclick = closeCtx;
 $("ctxScrim").onclick = closeCtx;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCtx(); });
 
+// Rail drawer — "Your answers" / "Supporting docs" live in the grid's second
+// column on desktop, but below ~900px that column has nowhere to go, so it
+// becomes an on-demand slide-over instead of squeezing the chat. Opened via
+// the nav toggle (visible only at that breakpoint), closed by scrim/Escape.
+function openRail() {
+  $("railPanel").classList.add("on"); $("railScrim").classList.add("on");
+}
+function closeRail() {
+  $("railPanel").classList.remove("on"); $("railScrim").classList.remove("on");
+}
+$("railToggleBtn").onclick = openRail;
+$("railScrim").onclick = closeRail;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRail(); });
+
 // ── Controls ──
 $("modelSel").onchange = boot;
 $("langSel").onchange = boot;
@@ -5593,63 +6542,6 @@ async function startConstituentSession(lang) {
   await boot();
 }
 
-// ── Chat system (E2EE via Matrix) ──
-let chatMessages = [];
-function renderChat() {
-  const list = document.getElementById("chatMsgList");
-  if (!list) return;
-  list.innerHTML = "";
-  for (const m of chatMessages) {
-    const div = document.createElement("div");
-    const isUser = m.sender === (loginState?.userId || "you");
-    div.style.cssText = `display:flex;flex-direction:column;align-items:${isUser?"flex-end":"flex-start"};margin-bottom:6px`;
-    const bubble = document.createElement("div");
-    bubble.style.cssText = `padding:6px 10px;border-radius:9px;max-width:88%;font-size:12.5px;white-space:pre-wrap;word-break:break-word;background:${isUser?"var(--ink)":"#F2F5F7"};color:${isUser?"#fff":"var(--ink)"};${isUser?"":"border:1px solid var(--line)"}`;
-    bubble.textContent = m.content;
-    const time = document.createElement("div");
-    time.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:1px";
-    time.textContent = m.ts ? new Date(m.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}) : "";
-    div.appendChild(bubble); div.appendChild(time);
-    list.appendChild(div);
-  }
-  list.scrollTop = list.scrollHeight;
-}
-
-function wireChat() {
-  const sendBtn = document.getElementById("chatSend");
-  const input = document.getElementById("chatInput");
-  if (!sendBtn || !input) return;
-  const doSend = () => {
-    const text = input.value.trim();
-    if (!text || !store) return;
-    input.value = "";
-    if (loginState?.kind === "matrix" && store?.client) {
-      store.client.sendText(store.roomId, text).catch(() => {});
-    }
-    chatMessages.push({ sender: loginState?.userId || "you", content: text, ts: Date.now() });
-    renderChat();
-    document.getElementById("chatCount").textContent = chatMessages.length;
-  };
-  sendBtn.onclick = doSend;
-  input.onkeydown = (e) => { if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); doSend(); } };
-}
-
-function listenForChatMessages(client, roomId) {
-  if (!client) return;
-  client.on("Room.timeline", (event, room) => {
-    if (room.roomId !== roomId) return;
-    if (event.getType() === "m.room.message" && event.getContent()?.msgtype === "m.text") {
-      const sender = event.getSender();
-      const content = event.getContent().body;
-      if (content && !chatMessages.some(m => m.eventId === event.getId())) {
-        chatMessages.push({ sender, content, ts: event.getTs(), eventId: event.getId() });
-        renderChat();
-        document.getElementById("chatCount").textContent = chatMessages.length;
-      }
-    }
-  });
-}
-
 // ── Submission view ──
 // The submitted flag rides the same event log as every answer (a DEF under
 // a reserved, non-schema path) rather than a separate mechanism — it's
@@ -5666,76 +6558,22 @@ function markSubmitted() { intake.store.emit(OP.DEF, { anchor: intake.anchor, pa
 // by staff, and reviewed with Representative Behn's office before anything
 // is filed. Every field is directly editable right up until submit, and
 // still editable afterward (re-submitting just clears the flag).
-function downloadAnswers(format) {
-  if (!intake) return;
-  const answers = intake.answers();
-  const schema = intake.schema;
-  const es = intake.lang === "es";
-  const ts = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const flag = answers[SUBMITTED_FLAG_PATH];
-  delete answers[SUBMITTED_FLAG_PATH];
-
-  let content, filename, mime;
-  if (format === "json") {
-    const obj = { _disclaimer: es
-      ? "ESTO NO ES EL DOCUMENTO FINAL. Estas son tus respuestas descargables. El personal las usará para preparar un borrador formal para presentar ante la OCR."
-      : "THIS IS NOT THE FINAL DOCUMENT. These are your downloadable answers. Staff will use them to prepare a formal draft for filing with the OCR.",
-      _generated: ts, _submitted: flag || null,
-      answers: {} };
-    for (const f of schema.fields) {
-      obj.answers[f.path] = answers[f.path] || null;
-    }
-    content = JSON.stringify(obj, null, 2);
-    filename = "eoai-answers-" + ts.replace(/[: ]/g, "-") + ".json";
-    mime = "application/json";
-  } else {
-    const lines = [];
-    lines.push("==============================================");
-    lines.push(es ? "  ⚠  ESTO NO ES EL DOCUMENTO FINAL" : "  ⚠  THIS IS NOT THE FINAL DOCUMENT");
-    lines.push("==============================================");
-    lines.push("");
-    lines.push(es
-      ? "Estas son tus respuestas descargables."
-      : "These are your downloadable answers.");
-    lines.push(es
-      ? "El personal las usará para preparar un borrador formal"
-      : "Staff will use them to prepare a formal draft");
-    lines.push(es
-      ? "para presentar ante la Oficina de Derechos Civiles (OCR)."
-      : "for filing with the Office for Civil Rights (OCR).");
-    lines.push("");
-    lines.push("  " + (es ? "Generado" : "Generated") + ": " + ts);
-    if (flag) lines.push("  " + (es ? "Enviado" : "Submitted") + ": " + flag);
-    lines.push("");
-    lines.push("----------------------------------------------");
-    lines.push("");
-    for (const f of schema.fields) {
-      const label = (es && f.labelEs) ? f.labelEs : f.label;
-      const val = answers[f.path];
-      lines.push("  " + label.toUpperCase());
-      lines.push("  " + (val || (es ? "(no proporcionado)" : "(not provided)")));
-      lines.push("");
-    }
-    lines.push("==============================================");
-    content = lines.join("\n");
-    filename = "eoai-answers-" + ts.replace(/[: ]/g, "-") + ".txt";
-    mime = "text/plain";
-  }
-
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-  toast(es ? "Descargado" : "Downloaded", "success");
-}
+//
+// There is deliberately no download here. An earlier version offered a
+// plain-text export instead of JSON; that was superseded by removing the
+// download capability entirely — a person with a downloaded copy in hand is
+// a person who can email it off before staff have reviewed it, which is
+// exactly what the closing reminder above asks them not to do. They can
+// still see every answer they gave on this screen at any time.
 
 function renderSubmission() {
   const pane = document.getElementById("submissionPane");
   if (!pane || !intake) return;
   const answers = intake.answers();
-  const schema = intake.schema;
+  // Skipped fields (e.g. the disability follow-up when the answer above it
+  // was "No") never got asked — they don't belong in a review of what was
+  // actually answered.
+  const fields = intake.progress();
   const submitted = isSubmitted();
   const complete = intake.isComplete();
   const es = intake.lang === "es";
@@ -5744,42 +6582,62 @@ function renderSubmission() {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <button id="subBackBtn" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">${es ? "← Volver" : "← Back"}</button>
         <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">${es ? "Revisa tus respuestas" : "Review your answers"}</h2>
-        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH).length}/${schema.fields.length}</span>
+        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH).length}/${fields.length}</span>
       </div>
       <div style="background:var(--turn-soft);border:1px solid var(--turn);border-radius:9px;padding:10px 13px;margin:0 0 14px;font-size:12.5px;color:var(--ink);line-height:1.5">
         <b>${es ? "⚠ Esto no es el documento final." : "⚠ This is not the final document."}</b>
         ${es
-          ? "Estas son tus respuestas descargables. El personal las usará para preparar un borrador formal para presentar ante la OCR. El borrador final nunca se te mostrará aquí."
-          : "These are your downloadable answers. Staff will use them to prepare a formal draft for filing with the OCR. The final draft is never shown here."}
+          ? "Este es un resumen de tus respuestas. El personal las usará para preparar un borrador formal para presentar ante la OCR. El borrador final nunca se te mostrará aquí."
+          : "This is a summary of your answers. Staff will use them to prepare a formal draft for filing with the OCR. The final draft is never shown here."}
       </div>
       <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5">${es
-        ? "Puedes corregir cualquier respuesta ahora, o después. Descarga una copia para tus registros."
-        : "You can fix any answer now, or later. Download a copy for your records."}</p>
+        ? "Puedes corregir cualquier respuesta ahora, o después."
+        : "You can fix any answer now, or later."}</p>
+      ${complete ? `<div class="msg-banner" style="margin:0 0 16px">${es ? CLOSING_MESSAGE_ES : CLOSING_MESSAGE_EN}</div>` : ""}
       ${submitted ? `<div class="msg-banner" style="margin:0 0 16px">${es ? "Enviado para revisión. Aún puedes corregir cualquier respuesta." : "Submitted for review. You can still fix any answer."}</div>` : ""}
       ${currentStoreKind === "demo" ? `
         <div class="demo-bar" style="margin:0 0 16px">
           <span class="txt"><b>${es ? "Esto aún no está guardado de forma segura." : "This isn't saved securely yet."}</b> ${es ? "Tus respuestas viven solo en este navegador por ahora." : "Your answers live only in this browser for now."}</span>
         </div>` : ""}
-      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <button id="subDownloadBtn" style="font:inherit;font-size:12.5px;padding:7px 14px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px">${es ? "⬇ Descargar respuestas" : "⬇ Download answers"}</button>
-        <button id="subDownloadJsonBtn" style="font:inherit;font-size:12.5px;padding:7px 14px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px">${es ? "⬇ Descargar JSON" : "⬇ Download JSON"}</button>
-      </div>
-      ${schema.fields.map((f) => {
-        const val = answers[f.path];
-        const label = (es && f.labelEs) ? f.labelEs : f.label;
-        return `<div class="sub-field" data-path="${escAttr(f.path)}" style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px">
-            <span style="font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)">${escAttr(label)}</span>
-            <button class="sub-edit iconbtn" style="font-size:10.5px">${es ? "Editar" : "Edit"}</button>
-          </div>
-          <div style="font-size:13.5px;white-space:pre-wrap">${val != null && val !== "" ? escAttr(val) : `<span style="color:var(--muted);font-style:italic">${es ? "No proporcionado" : "Not provided"}</span>`}</div>
-        </div>`;
-      }).join("")}
-      ${(store?.timeline?.() || []).filter(e => e.op==="INS" && e.payload?.entity==="document").length > 0 ? `
+      ${(() => {
+        // Same 3-part grouping as the stepper and the checklist — a section
+        // with no fields left in `fields` (all skipped) just contributes no
+        // heading, same reasoning as the checklist's per-section filter.
+        const fieldCard = (f) => {
+          const val = answers[f.path];
+          const label = (es && f.labelEs) ? f.labelEs : f.label;
+          return `<div class="sub-field" data-path="${escAttr(f.path)}" style="border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;background:var(--surface)">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px">
+              <span style="font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)">${escAttr(label)}</span>
+              <button class="sub-edit iconbtn" style="font-size:10.5px">${es ? "Editar" : "Edit"}</button>
+            </div>
+            <div style="font-size:13.5px;white-space:pre-wrap">${val != null && val !== "" ? escAttr(val) : `<span style="color:var(--muted);font-style:italic">${es ? "No proporcionado" : "Not provided"}</span>`}</div>
+          </div>`;
+        };
+        const sectionBlock = (heading, list) => list.length
+          ? `<h3 style="font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:16px 0 8px">${escAttr(heading)}</h3>${list.map(fieldCard).join("")}`
+          : "";
+        const bySection = SECTIONS.map((s) => sectionBlock((es && s.labelEs) || s.label, fields.filter((f) => f.section === s.key))).join("");
+        const unsectioned = fields.filter((f) => !SECTIONS.some((s) => s.key === f.section));
+        return bySection + unsectioned.map(fieldCard).join("");
+      })()}
+      ${(() => {
+        // fold(), not the raw timeline: a title edit re-emits INS for the
+        // same document id (see updateDocAttrs), so reading the timeline
+        // directly would list one doc once per edit instead of once total.
+        const docs = store ? Object.values(store.fold().records).filter((r) => r.entity === "document") : [];
+        if (!docs.length) return "";
+        return `
         <h3 style="font-family:Fraunces,serif;font-weight:560;font-size:15px;margin:16px 0 8px">${es ? "Documentos subidos" : "Uploaded documents"}</h3>
-        ${store.timeline().filter(e => e.op==="INS" && e.payload?.entity==="document").map(e => `
-          <div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">${escAttr(e.payload.attrs.filename)} (${(e.payload.attrs.size/1024).toFixed(1)} KB)</div>
-        `).join("")}` : ""}
+        ${docs.map((r) => {
+          const a = r.attrs;
+          const note = a.fieldLabel ? (es ? "Adjuntado a: " : "Attached to: ") + a.fieldLabel : a.title;
+          return `<div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">
+            ${escAttr(a.filename)} (${(a.size/1024).toFixed(1)} KB)
+            ${note ? `<div style="color:var(--muted);font-size:11px;margin-top:2px">${escAttr(note)}</div>` : ""}
+          </div>`;
+        }).join("")}`;
+      })()}
       <div style="margin-top:18px">
         <button id="subSubmitBtn" class="login-btn primary" ${complete ? "" : "disabled"}>${submitted ? (es ? "Enviado ✓" : "Submitted ✓") : (es ? "Enviar para revisión" : "Submit for review")}</button>
         ${!complete ? `<p style="color:var(--muted);font-size:12px;margin-top:6px">${es ? "Responde todo lo obligatorio antes de enviar." : "Finish the required questions before submitting."}</p>` : ""}
@@ -5792,7 +6650,7 @@ function renderSubmission() {
   pane.querySelectorAll(".sub-edit").forEach((btn) => {
     btn.onclick = async () => {
       const path = btn.closest(".sub-field").dataset.path;
-      const field = schema.fields.find((f) => f.path === path);
+      const field = fields.find((f) => f.path === path);
       const cur = intake.answers()[path] ?? "";
       const next = await openInlineEditor(field, cur);
       if (next == null) return;
@@ -5805,12 +6663,6 @@ function renderSubmission() {
   if (submitBtn && complete && !submitted) {
     submitBtn.onclick = () => { markSubmitted(); toast(es ? "Enviado para revisión" : "Submitted for review", "success"); renderSubmission(); };
   }
-
-  // Download buttons
-  const dlTxtBtn = document.getElementById("subDownloadBtn");
-  const dlJsonBtn = document.getElementById("subDownloadJsonBtn");
-  if (dlTxtBtn) dlTxtBtn.onclick = () => downloadAnswers("txt");
-  if (dlJsonBtn) dlJsonBtn.onclick = () => downloadAnswers("json");
 }
 
 // ── Login flow ──
@@ -6555,14 +7407,20 @@ async function boot() {
       const answersRoom = await ensureAnswerRoom(client);
       configStore = await new MatrixStore(client).open(configRoomId);
       store = await new MatrixStore(client).open(answersRoom);
-      listenForChatMessages(client, answersRoom);
     } catch (e) { console.error(e); doDemoLogin(); return; }
   } else {
     configStore = await new DemoStore("@admin:local").open("!intake-config:local");
     store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
   }
 
-  document.getElementById("navAdmin").classList.toggle("hidden", !isAdmin(store.user));
+  // The event log and the "every answer is one DEF" internals note are
+  // backend/implementation detail — useful for an admin poking at the tool,
+  // meaningless (and a little alarming, mid-disclosure) to a parent filling
+  // it out. Same admin-only gate as the rest of navAdmin's debug tooling.
+  const showInternals = isAdmin(store.user);
+  document.getElementById("navAdmin").classList.toggle("hidden", !showInternals);
+  document.getElementById("eventLogCard").classList.toggle("hidden", !showInternals);
+  document.getElementById("internalsFoot").classList.toggle("hidden", !showInternals);
 
   // The admin account never fills out the intake — it only reviews what
   // constituents have submitted. Any admin login (the local demo account or
@@ -6659,6 +7517,13 @@ onIntake = function(kind, data) {
   if (kind === "complete") {
     document.getElementById("submissionBtn").style.display = "";
     renderSubmission();
+    // The finished interview's own transcript — every question, every typo'd
+    // "yes", every mechanical nudge — is not something a parent should have
+    // to scroll back through as their "you're done" screen. The one-way
+    // review pane (label + answer, nothing else) replaces it automatically,
+    // same as clicking "View my submission" by hand.
+    document.getElementById("appWrap").classList.add("hidden");
+    document.getElementById("submissionPane").classList.remove("hidden");
   }
   if (_origOnIntake) _origOnIntake(kind, data);
 };
@@ -6821,7 +7686,8 @@ function renderQPanel() {
   fields.forEach((f, i) => {
     const card = document.createElement("div"); card.className = "q";
     const head = document.createElement("div"); head.className = "qhead";
-    head.innerHTML = `<span class="qnum">${i+1}</span><span class="qlbl">${f.label}</span><span class="qtype">${f.type}</span>${f.required?'<span class="req">required</span>':''}<span class="qspacer"></span>`;
+    const sectionMeta = SECTIONS.find((s) => s.key === f.section);
+    head.innerHTML = `<span class="qnum">${i+1}</span><span class="qlbl">${f.label}</span><span class="qtype">${f.type}</span>${sectionMeta ? `<span class="qsection">${escAttr(sectionMeta.label)}</span>` : '<span class="qsection qsection-none">No section</span>'}${f.required?'<span class="req">required</span>':''}<span class="qspacer"></span>`;
     const mv = document.createElement("div"); mv.style.cssText = "display:flex;gap:4px";
     if (i > 0) { const u = document.createElement("button"); u.className="iconbtn"; u.textContent="▲"; u.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i-1);}; mv.appendChild(u); }
     if (i < fields.length-1) { const d = document.createElement("button"); d.className="iconbtn"; d.textContent="▼"; d.onclick=e=>{e.stopPropagation();moveFieldQ(f.path,i,i+1);}; mv.appendChild(d); }
@@ -6837,6 +7703,12 @@ function renderQPanel() {
     card.appendChild(head);
     const b = document.createElement("div"); b.className = "qbody";
     b.innerHTML = `<div class="fieldgrp"><label class="lab">Label</label><input class="f" id="ql_${f.path}" value="${escAttr(f.label)}"></div>
+      <div class="fieldgrp"><label class="lab">Section</label>
+        <select class="f" id="qs_${f.path}">
+          <option value="" ${!f.section ? "selected" : ""}>No section</option>
+          ${SECTIONS.map((s) => `<option value="${s.key}" ${f.section === s.key ? "selected" : ""}>${escAttr(s.label)}</option>`).join("")}
+        </select>
+      </div>
       <div class="fieldgrp"><label class="lab">Prompt (English)</label><textarea class="f" id="qp_${f.path}" rows="2">${escAttr(f.prompt)}</textarea></div>
       <div class="fieldgrp"><label class="lab">Help (English)</label><textarea class="f" id="qh_${f.path}" rows="2">${escAttr(f.help)}</textarea></div>
       <div class="fieldgrp"><label class="lab">Prompt (Español)</label><textarea class="f" id="qpEs_${f.path}" rows="2">${escAttr(f.promptEs || "")}</textarea></div>
@@ -6904,10 +7776,12 @@ function saveFieldQ(btn) {
   // type:"text", required:false, which downgraded (and lost the enum
   // options of) any non-text field the moment its prompt was edited.
   const existing = foldConfig(configStore.timeline()).schema.fields.find((f) => f.path === path) || {};
+  const sectionVal = document.getElementById("qs_"+path)?.value || "";
   putField(configStore, {
     ...existing,
     path,
     label: (document.getElementById("ql_"+path)?.value || path).trim(),
+    section: sectionVal || undefined,
     prompt: (document.getElementById("qp_"+path)?.value || "").trim(),
     help: (document.getElementById("qh_"+path)?.value || "").trim(),
     promptEs: (document.getElementById("qpEs_"+path)?.value || "").trim(),
@@ -7064,7 +7938,6 @@ document.addEventListener("DOMContentLoaded", () => {
   wireBulk();
   wireVoice();
   wireDocs();
-  wireChat();
   wireNewNav();
   wireQPanelDirtyTracking();
   initUserWizard();

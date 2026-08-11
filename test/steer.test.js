@@ -37,6 +37,15 @@ test("a real answer is not misread as yes/no/help", () => {
   assert.equal(i.help, false);
 });
 
+test("an ordinary sentence starting with 'I' is not misread as 'n/a' (regression: n/a normalizes to the single-character tokens 'n' and 'a', which used to fuzzy-match the pronoun 'I' within edit-distance 1 — a near-wildcard against any short common word)", () => {
+  assert.equal(Steer.classifyIntent("I called the office in March.", "en").skip, false);
+  assert.equal(Steer.classifyIntent("I am not sure what happened next.", "en").skip, false);
+  assert.equal(Steer.classifyIntent("Sometime last spring, I think.", "en").skip, false);
+  // The real phrase must still work, typed exactly or with real-word case.
+  assert.equal(Steer.classifyIntent("n/a", "en").skip, true);
+  assert.equal(Steer.classifyIntent("N/A", "en").skip, true);
+});
+
 test("distress phrases fire regardless of active UI language", () => {
   assert.equal(Steer.classifyIntent("I want to kill myself", "es").distress, true);
   assert.equal(Steer.classifyIntent("ya no puedo mas, quiero morir", "en").distress, true);
@@ -363,4 +372,27 @@ test("address fields never block on format — only on being empty when required
   assert.equal(Steer.validate(field, "c/o my sister, 12 Elm, Nashville TN 3720", "en"), null);
   assert.equal(Steer.validate(field, "", "en"), Steer.VALIDATION_MESSAGES.en.required);
   assert.equal(Steer.validate({ ...field, required: false }, "", "en"), null);
+});
+
+test("isFieldSkipped: skipUnless is plain data, so it still works after a JSON round-trip (the admin panel's putField/foldConfig path)", () => {
+  const field = { path: "child_disability_explain", skipUnless: { field: "child_disability_has", oneOf: ["Yes", "Sí"] } };
+  // Simulates exactly what happens when a field is saved through the admin
+  // question-editor: putField emits a DEF event, which DemoStore/MatrixStore
+  // persist as JSON, and foldConfig reconstructs the field from that JSON.
+  // A function-valued `skipIf` would not survive this; skipUnless does.
+  const roundTripped = JSON.parse(JSON.stringify(field));
+  assert.equal(Steer.isFieldSkipped(roundTripped, { child_disability_has: "No" }), true);
+  assert.equal(Steer.isFieldSkipped(roundTripped, { child_disability_has: "Yes" }), false);
+  assert.equal(Steer.isFieldSkipped(roundTripped, { child_disability_has: "Sí" }), false);
+  assert.equal(Steer.isFieldSkipped(roundTripped, {}), true);
+});
+
+test("isFieldSkipped: a field with neither skipUnless nor skipIf is never skipped", () => {
+  assert.equal(Steer.isFieldSkipped({ path: "complainant_name" }, {}), false);
+});
+
+test("isFieldSkipped: a legacy function-valued skipIf (never persisted through config-room storage) still works", () => {
+  const field = { path: "x", skipIf: (a) => a.y !== "yes" };
+  assert.equal(Steer.isFieldSkipped(field, { y: "yes" }), false);
+  assert.equal(Steer.isFieldSkipped(field, { y: "no" }), true);
 });
