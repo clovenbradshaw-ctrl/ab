@@ -118,9 +118,20 @@
 
   // Edit-distance tolerance scales with word length so short words ("no",
   // "si") still require a near-exact hit rather than matching anything.
+  //
+  // A 1-character target is the one length this scale can't safely give
+  // ANY tolerance to: "n" and "a" (what "n/a" normalizes and splits into —
+  // see phraseFuzzyPresentIn) sit within edit-distance 1 of nearly any
+  // other single letter, which turns a specific decline phrase into a
+  // near-wildcard against short, extremely common words — measured:
+  // "I called the office in March." and "I am not sure what happened
+  // next." both false-positived as "n/a" (matching "n"/"a" against the
+  // pronoun "I") before this floor was added. "no"/"si" (2 characters)
+  // still need the same tolerance="1" every other short word gets, or the
+  // typo-tolerance tests for "nno"->"no" and "sii"->"si" stop passing.
   function wordMatches(word, target) {
     if (!word || !target) return false;
-    const tolerance = target.length <= 5 ? 1 : 2;
+    const tolerance = target.length <= 1 ? 0 : target.length <= 5 ? 1 : 2;
     return levenshtein(word, target) <= tolerance;
   }
 
@@ -174,7 +185,7 @@
       // fields, where a real answer legitimately starting with "none" or
       // "n/a" ("N/A — no case number was assigned") must be stored as
       // written, not swallowed as a decline.
-      skip: ["skip this", "skip it", "n/a", "not applicable", "i dont have one", "i don't have one", "dont have one", "don't have one", "i dont have any", "i don't have any", "none", "prefer not to say", "rather not say"],
+      skip: ["skip this", "skip it", "n/a", "not applicable", "i dont have one", "i don't have one", "dont have one", "don't have one", "i dont have any", "i don't have any", "i dont have it", "i don't have it", "dont have it", "don't have it", "none", "prefer not to say", "rather not say"],
     },
     es: {
       yes: ["si", "sí", "vale", "correcto", "claro", "asi es", "así es", "dale", "esta bien", "está bien"],
@@ -333,8 +344,14 @@
   // that reads like a book title, not a name — worse than leaving it alone.
   // Only apply name-casing to text that actually looks like a name: a
   // handful of words, no digits, no sentence punctuation.
+  //
+  // A middle initial ("Frank E. Smith") carries a period that isn't
+  // sentence punctuation — strip just that shape (a single letter followed
+  // by a period) before the punctuation check, so a real name with a
+  // middle initial isn't rejected as a run-on sentence.
   function looksLikeName(text) {
-    return text.length <= 60 && !/[0-9]/.test(text) && !/[,.!?;:]/.test(text) && text.trim().split(/\s+/).length <= 6;
+    const withoutInitials = text.replace(/\b([A-Za-zÀ-ÿ])\.(?=\s|$)/g, "$1");
+    return text.length <= 60 && !/[0-9]/.test(text) && !/[,.!?;:]/.test(withoutInitials) && text.trim().split(/\s+/).length <= 6;
   }
 
   function tidyText(text, lang = "en", field = null) {
@@ -362,6 +379,7 @@
       email: "That doesn't look like an email address — mind checking it?",
       date: "I couldn't read that as a date. A format like 1990-04-23 works well.",
       number: "That should be a number.",
+      digits: (n) => `That should be exactly ${n} digits.`,
       enumMsg: (opts) => `Please pick one of: ${opts.join(", ")}.`,
       // Shown by the address widget as a soft hint next to the ZIP box, never
       // returned by validate() — see the note there on why an address never
@@ -373,6 +391,7 @@
       email: "Eso no parece una dirección de correo electrónico — ¿puedes revisarla?",
       date: "No pude leer eso como una fecha. Un formato como 1990-04-23 funciona bien.",
       number: "Eso debería ser un número.",
+      digits: (n) => `Eso debería tener exactamente ${n} dígitos.`,
       enumMsg: (opts) => `Por favor elige una opción: ${opts.join(", ")}.`,
       zip: "Un código postal de EE. UU. tiene 5 dígitos, como 37201.",
     },
@@ -383,9 +402,31 @@
     const v = (value ?? "").toString().trim();
     if (field.required && !v) return M.required;
     if (field.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return M.email;
-    if (field.type === "date" && v && isNaN(Date.parse(v))) return M.date;
+    // "date_flex" is the same field, just answerable to month precision
+    // ("2024-03") instead of always requiring an exact day — Date.parse
+    // already accepts that shorter ISO form, so no separate check is needed.
+    if ((field.type === "date" || field.type === "date_flex") && v && isNaN(Date.parse(v))) return M.date;
     if (field.type === "number" && v && isNaN(Number(v))) return M.number;
-    if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase())) return M.enumMsg(field.enum);
+    // `digits: N` requires the value, once non-digit formatting characters
+    // are stripped, to contain exactly N digits — used for phone numbers and
+    // the DCS case number. `digitsOrKeywords` names literal escape words
+    // (e.g. "unknown") that bypass the digit check entirely, for a field
+    // that's allowed to be answered with an honest "I don't know" instead of
+    // a number.
+    if (field.digits && v) {
+      const isEscape = field.digitsOrKeywords && field.digitsOrKeywords.some((k) => k.toLowerCase() === v.toLowerCase());
+      if (!isEscape && (v.match(/\d/g) || []).length !== field.digits) return M.digits(field.digits);
+    }
+    // A multiselect's stored value is several enum options joined with
+    // ", " (see the checkbox control in index.html's renderQuickAnswer) —
+    // each piece has to be a real option, not the joined string as a whole.
+    if (field.type === "multiselect" && field.enum && v) {
+      const bad = v.split(",").map((s) => s.trim()).filter(Boolean)
+        .filter((piece) => !field.enum.some((o) => o.toLowerCase() === piece.toLowerCase()));
+      if (bad.length) return M.enumMsg(field.enum);
+    } else if (field.enum && v && !field.enum.some((o) => o.toLowerCase() === v.toLowerCase())) {
+      return M.enumMsg(field.enum);
+    }
     // Note: `type: "address"` deliberately falls through to required-only.
     // A malformed ZIP is surfaced as a soft hint beside the box (M.zip) and
     // never as a blocking error, because a mailing address is exactly the
@@ -544,6 +585,25 @@
     return [line1, get("city"), region].filter(Boolean).join(", ");
   }
 
+  // ---- conditional fields (repeating groups, follow-ups) --------------------
+  // A field can carry `skipUnless: { field: <path>, oneOf: [<values>] }` to
+  // opt out of being asked unless an earlier answer matches. This is
+  // deliberately DATA, not a function: fields defined in index.html's
+  // SCHEMA get round-tripped through the admin's question-editor panel
+  // (putField -> a JSON event -> foldConfig), and a function property is
+  // silently dropped by JSON serialization. A field authored with the old
+  // `skipIf(answers) -> bool` shape (a plain function, not going through
+  // config-room storage) still works here too, so nothing already holding
+  // one breaks.
+  function isFieldSkipped(field, answers) {
+    if (typeof field.skipIf === "function") return field.skipIf(answers);
+    if (field.skipUnless) {
+      const v = answers[field.skipUnless.field];
+      return !field.skipUnless.oneOf.includes(v);
+    }
+    return false;
+  }
+
   return {
     createState, applyForce, tierOf,
     classifyIntent, matchesAny, normalize, levenshtein,
@@ -551,5 +611,6 @@
     VALIDATION_MESSAGES, validate,
     tidyText,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
+    isFieldSkipped,
   };
 });

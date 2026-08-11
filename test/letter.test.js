@@ -30,7 +30,21 @@ function validAnswerFor(field) {
   if (field.type === "enum") return field.enum[0];
   if (field.type === "email") return "person@example.com";
   if (field.type === "number") return "5";
-  if (field.type === "date") return "2026-01-01";
+  if (field.type === "date" || field.type === "date_flex") return "2026-01-01";
+  if (field.type === "tel") return "615-555-0148";
+  // "No" keeps the default walk from ever triggering the disability
+  // follow-up's skipIf — same reasoning as picking enum[0] for select
+  // below rather than something that would open a conditional field.
+  if (field.type === "boolean") return "No";
+  if ((field.type === "select" || field.type === "multiselect") && field.enum?.length) return field.enum[0];
+  // dcs_actions_failures is a COVERAGE_FRAMEWORKS key (see index.html) — a
+  // generic answer with no date or name in it legitimately triggers a
+  // coverage follow-up that these "walk every field" helpers don't know to
+  // answer, desyncing everything after it. Answering with both up front
+  // keeps the walk on the schema's static field list, same reasoning as
+  // "No" above for the disability skipUnless.
+  if (field.path === "dcs_actions_failures") return "In March 2024, Caseworker Jane Smith did not respond to my calls.";
+  if (field.digits && !field.required) return "unknown";
   return "Test answer for " + field.label;
 }
 
@@ -86,6 +100,20 @@ test("missing is empty when every required field has a value", () => {
   const engine = loadEngine();
   const { missing } = engine.buildComplaintLetter(fullAnswers(engine));
   assert.equal(host(missing).length, 0);
+});
+
+test("placement history: dynamically-numbered rounds render as a numbered list in letter order, beyond what LETTER_PATHS knows about statically", () => {
+  const engine = loadEngine();
+  const answers = {
+    ...fullAnswers(engine),
+    placement_1_when: "2024-03-01", placement_1_type: "A relative's home (kinship placement)", placement_1_notes: "Grandmother's house",
+    placement_2_when: "2024-06-01", placement_2_type: "A foster home", placement_2_notes: "",
+    placement_3_when: "2024-11-01", placement_3_type: "A residential or treatment facility", placement_3_notes: "Current placement",
+  };
+  const { letter } = engine.buildComplaintLetter(answers);
+  assert.match(letter, /1\. 2024-03-01 — A relative's home \(kinship placement\) — Grandmother's house/);
+  assert.match(letter, /2\. 2024-06-01 — A foster home\n/);
+  assert.match(letter, /3\. 2024-11-01 — A residential or treatment facility — Current placement/);
 });
 
 // Fabricate a folded provenance map the way fold() would: a cell per path,

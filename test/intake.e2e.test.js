@@ -13,6 +13,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadEngine } = require("./_extract-engine.js");
+const Steer = require("../vendor/steer.js");
 
 function makeStore(engine) {
   const events = [];
@@ -34,8 +35,45 @@ function validAnswerFor(field) {
   if (field.type === "enum") return field.enum[0];
   if (field.type === "email") return "person@example.com";
   if (field.type === "number") return "5";
-  if (field.type === "date") return "2026-01-01";
+  if (field.type === "date" || field.type === "date_flex") return "2026-01-01";
+  if (field.type === "tel") return "615-555-0148";
+  // "No" keeps the default walk from ever triggering the disability
+  // follow-up's skipIf — same reasoning as picking enum[0] for select
+  // below rather than something that would open a conditional field.
+  if (field.type === "boolean") return "No";
+  if ((field.type === "select" || field.type === "multiselect") && field.enum?.length) return field.enum[0];
+  // dcs_actions_failures is a COVERAGE_FRAMEWORKS key (see index.html) — a
+  // generic answer with no date or name in it legitimately triggers a
+  // coverage follow-up that these "walk every field" helpers don't know to
+  // answer, desyncing everything after it. Answering with both up front
+  // keeps the walk on the schema's static field list, same reasoning as
+  // "No" above for the disability skipUnless.
+  if (field.path === "dcs_actions_failures") return "In March 2024, Caseworker Jane Smith did not respond to my calls.";
+  if (field.digits && !field.required) return "unknown";
   return "Test answer for " + field.label;
+}
+
+// Same idea as validAnswerFor, but skip-aware: a field whose skipIf(answers)
+// is true given the answers accumulated so far is never asked by the real
+// engine (see Intake.nextField()'s own skip logic in index.html), so a
+// naive "one line per field" walk would feed that field's answer to
+// whatever field actually comes next instead — silently misaligning every
+// answer after it. This mirrors the engine's skip check so a line-per-field
+// test setup always lines up with what will actually be asked.
+function linesUpTo(fields, stopIndex, confirmWord = "yes") {
+  const lines = [];
+  const answers = {};
+  for (let i = 0; i < stopIndex; i++) {
+    const f = fields[i];
+    if (Steer.isFieldSkipped(f, answers)) continue;
+    const ans = validAnswerFor(f);
+    lines.push(ans, confirmWord);
+    answers[f.path] = ans;
+  }
+  return lines;
+}
+function linesForAll(fields, confirmWord = "yes") {
+  return linesUpTo(fields, fields.length, confirmWord);
 }
 
 // confirming is a template (see vendor/steer.js), not a literal from the
@@ -137,7 +175,7 @@ test("180-day filing deadline: an old incident date triggers the exact required 
   // throwaway valid answer, then answer the deadline field itself with a
   // date far outside the 180-day window.
   const lines = [];
-  for (let i = 0; i < deadlineIndex; i++) { lines.push(validAnswerFor(fields[i])); lines.push("yes"); }
+  lines.push(...linesUpTo(fields, deadlineIndex, "yes"));
   lines.push("2000-01-01");
   lines.push("yes");
 
@@ -160,7 +198,7 @@ test("180-day filing deadline: a recent incident date does not trigger the warni
   const deadlineIndex = fields.findIndex((f) => f.path === engine.DEADLINE_CHECK_FIELD);
   const recent = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10); // 10 days ago
   const lines = [];
-  for (let i = 0; i < deadlineIndex; i++) { lines.push(validAnswerFor(fields[i])); lines.push("yes"); }
+  lines.push(...linesUpTo(fields, deadlineIndex, "yes"));
   lines.push(recent);
   lines.push("yes");
 
@@ -173,7 +211,7 @@ test("closing block uses the exact mandatory Rep. Behn's-office wording, rendere
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
   const lines = [];
-  for (const f of fields) { lines.push(validAnswerFor(f)); lines.push("yes"); }
+  lines.push(...linesForAll(fields, "yes"));
   const { intake } = await converse(engine, "en", lines);
   const last = intake.history[intake.history.length - 1];
   assert.equal(last.text, engine.CLOSING_MESSAGE_EN);
