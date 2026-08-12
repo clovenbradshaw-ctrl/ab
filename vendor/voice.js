@@ -17,13 +17,16 @@
 //                       the first mic tap, so by the time someone actually
 //                       wants to speak, the (large, one-time) download is
 //                       already done or well underway.
-//   onPartial (opt)  — while recording, a timer re-transcribes everything
-//                       heard so far and reports it, so the compose box
-//                       fills in as the person talks instead of staying
-//                       blank until they stop. Whisper has no incremental
-//                       mode, so each tick re-hears the whole clip-to-date;
-//                       stop() still re-runs the final, complete clip once
-//                       so a partial preview is never the answer of record.
+//   onPartial (opt)  — while recording, a timer re-transcribes recent audio
+//                       and reports it, so the compose box fills in as the
+//                       person talks instead of staying blank until they
+//                       stop. Whisper has no incremental mode, so each tick
+//                       re-hears the last PARTIAL_WINDOW_S seconds (not the
+//                       whole clip-to-date — that would make each tick
+//                       slower the longer someone talks, and streaming would
+//                       stall out on a long recording); stop() still re-runs
+//                       the final, complete clip once so a partial preview
+//                       is never the answer of record.
 //                       Only actually runs when a device looks capable
 //                       enough to absorb a repeated ASR pass without
 //                       janking the UI (see isCapableDevice()) — on a
@@ -43,6 +46,16 @@
   const SR = 16000; // whisper's native rate
   const MODEL = "onnx-community/whisper-base";
   const TRANSFORMERS = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm";
+  // How much trailing audio a partial pass actually hears. Re-transcribing
+  // the whole clip-to-date every tick is O(n) in recording length, so on a
+  // long recording each tick eventually takes longer than
+  // partialIntervalMs and starts getting dropped by the streamBusy guard —
+  // "live" streaming would silently stall out exactly when someone records
+  // something long. Capping the ASR call to the most recent PARTIAL_WINDOW_S
+  // seconds keeps each tick's cost roughly constant no matter how long the
+  // recording has run so far; stop()'s final pass still hears the entire
+  // clip, so nothing spoken is ever lost from the answer of record.
+  const PARTIAL_WINDOW_S = 20;
 
   // The heavy pieces load lazily, exactly once, and only when the mic is
   // first used.
@@ -175,9 +188,11 @@
       try {
         const snapshot = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
         const mono = await decodeMono(snapshot);
-        if (mono.length && state === "recording") {
+        const windowSamples = PARTIAL_WINDOW_S * SR;
+        const heard = mono.length > windowSamples ? mono.subarray(mono.length - windowSamples) : mono;
+        if (heard.length && state === "recording") {
           const asr = await loadASR(onProgress);
-          const out = await asr(mono, {
+          const out = await asr(heard, {
             chunk_length_s: 30, stride_length_s: 5, return_timestamps: false,
             language: lang === "es" ? "spanish" : "english",
           });
@@ -220,6 +235,11 @@
           releaseMic();
           const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
           chunks = [];
+          // A partial pass can still be mid-flight here — it shares the one
+          // cached ASR pipeline instance, and two concurrent calls into it
+          // would fight over the same inference session. Wait it out before
+          // starting the final, authoritative pass rather than racing it.
+          while (streamBusy) await new Promise((r) => setTimeout(r, 50));
           try {
             set("transcribing");
             const mono = await decodeMono(blob);
