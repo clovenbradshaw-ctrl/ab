@@ -329,6 +329,8 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .voice-note.hidden{display:none}
 .compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
 @keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
+.compose .voice-wave{flex:1;height:34px;width:100%;display:block}
+.compose .voice-wave.hidden{display:none}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
@@ -866,6 +868,7 @@ nav .setup .rail-toggle{display:inline-flex}
         <div class="compose">
           <div class="input-wrap">
             <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
+            <canvas id="voiceWave" class="voice-wave hidden" height="34" aria-hidden="true"></canvas>
             <div class="input-actions">
               <button id="micBtn" title="Speak your answer" type="button" hidden><i class="ph ph-microphone"></i></button>
               <button id="attachBtn" title="Attach a file" type="button"><i class="ph ph-paperclip"></i></button>
@@ -6429,9 +6432,65 @@ function autoDownloadVoiceModel() {
   }, { timeout: 4000 });
 }
 
+// Live waveform while recording — reads the exact same MediaStream
+// MediaRecorder is writing (see voice.js's exposed `stream` getter), never a
+// second getUserMedia call. Transcription is a separate, much slower path
+// (see voice.js's onPartial/stop); this is purely visual feedback that
+// something is actually being heard, drawn every animation frame off a
+// Web Audio AnalyserNode's live time-domain samples.
+let waveRAF = null, waveAudioCtx = null, waveAnalyser = null, waveSource = null;
+
+function startWaveform(stream) {
+  const canvas = document.getElementById("voiceWave");
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!canvas || !stream || !AC) return;
+  stopWaveform();
+  waveAudioCtx = new AC();
+  waveSource = waveAudioCtx.createMediaStreamSource(stream);
+  waveAnalyser = waveAudioCtx.createAnalyser();
+  waveAnalyser.fftSize = 1024;
+  waveSource.connect(waveAnalyser);
+  const data = new Uint8Array(waveAnalyser.fftSize);
+  const ctx2d = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  const seal = getComputedStyle(document.documentElement).getPropertyValue("--seal").trim() || "#2E6F5E";
+  const draw = () => {
+    waveRAF = requestAnimationFrame(draw);
+    waveAnalyser.getByteTimeDomainData(data);
+    const w = canvas.width, h = canvas.height;
+    ctx2d.clearRect(0, 0, w, h);
+    ctx2d.beginPath();
+    const slice = w / data.length;
+    let x = 0;
+    for (let i = 0; i < data.length; i++) {
+      const y = h / 2 + (data[i] / 128 - 1) * (h / 2) * 0.9;
+      if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+      x += slice;
+    }
+    ctx2d.strokeStyle = seal;
+    ctx2d.lineWidth = 2 * dpr;
+    ctx2d.stroke();
+  };
+  draw();
+}
+
+function stopWaveform() {
+  if (waveRAF) cancelAnimationFrame(waveRAF);
+  waveRAF = null;
+  try { waveSource && waveSource.disconnect(); } catch {}
+  try { waveAnalyser && waveAnalyser.disconnect(); } catch {}
+  try { waveAudioCtx && waveAudioCtx.close(); } catch {}
+  waveSource = null; waveAnalyser = null; waveAudioCtx = null;
+  const canvas = document.getElementById("voiceWave");
+  if (canvas) { const c = canvas.getContext("2d"); if (c) c.clearRect(0, 0, canvas.width, canvas.height); }
+}
+
 function wireVoice() {
   const btn = document.getElementById("micBtn");
   const input = document.getElementById("input");
+  const wave = document.getElementById("voiceWave");
   if (!btn) return;
   if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
   btn.hidden = false;
@@ -6455,9 +6514,18 @@ function wireVoice() {
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
           input.classList.toggle("streaming", s === "recording");
-          if (s === "recording") setVoiceNote(voiceCopy("recording"));
-          else if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
-          else setVoiceNote(voiceCopy("consent"));
+          // While recording, the waveform replaces the textarea in the same
+          // flex slot — the live partial transcript (onPartial below) still
+          // lands in the textarea's value underneath, so nothing is lost
+          // the moment recording stops and the textarea reappears.
+          if (wave) wave.classList.toggle("hidden", s !== "recording");
+          input.classList.toggle("hidden", s === "recording");
+          if (s === "recording") { setVoiceNote(voiceCopy("recording")); startWaveform(voiceInstance && voiceInstance.stream); }
+          else {
+            stopWaveform();
+            if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
+            else setVoiceNote(voiceCopy("consent"));
+          }
         },
         onProgress: (frac) => {
           voiceModelDownloaded = frac >= 1;
