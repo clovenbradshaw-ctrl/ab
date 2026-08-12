@@ -429,10 +429,11 @@ test("placement history: a repeating group — 'another placement?' answered yes
   const idx = fields.findIndex((f) => f.path === "placement_1_when");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
-  // Round 1: date, type (first select option), notes, then "yes" to another one.
+  // Round 1: date, type (first select option), location, notes, then "yes" to another one.
   lines.push(
     "2024-03-01", "yes",
     "A foster home", "yes",
+    "Nashville", "yes",
     "Stayed about two months.", "yes",
     "Yes", "yes",
   );
@@ -445,6 +446,7 @@ test("placement history: a repeating group — 'another placement?' answered yes
   // Round 2: this time say no to a third round.
   await intake.submit("2024-05-01"); await intake.submit("yes");
   await intake.submit("A group home"); await intake.submit("yes");
+  await intake.submit("Memphis"); await intake.submit("yes");
   await intake.submit("Not applicable"); await intake.submit("yes");
   await intake.submit("No"); await intake.submit("yes");
   assert.equal(intake.answers().placement_2_when, "2024-05-01");
@@ -517,15 +519,15 @@ test("date field: an unparseable free-text date gets the specific date validatio
   assert.equal(turns[turns.length - 1].reply, engine.Steer.VALIDATION_MESSAGES.en.date);
 });
 
-test("number field: a non-numeric free-text answer gets the specific number validation message in Demo mode", async () => {
-  const engine = loadEngine();
-  const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_age");
-  const lines = [];
-  lines.push(...linesUpTo(fields, idx, "yes"));
-  lines.push("about 7ish");
-  const { turns } = await converse(engine, "en", lines);
-  assert.equal(turns[turns.length - 1].reply, engine.Steer.VALIDATION_MESSAGES.en.number);
+test("number field: a non-numeric free-text answer gets the specific number validation message", () => {
+  // The schema has no number-type field of its own anymore (child_age
+  // became child_dob, a date_flex), but "number" is still a supported field
+  // type in the generic engine (see buildFieldInput/renderQuickAnswer in
+  // index.html) — validate() directly against a synthetic field, same as
+  // any admin-authorable field type would be checked.
+  const field = { path: "synthetic_number", label: "A number field", type: "number", required: true };
+  assert.equal(Steer.validate(field, "about 7ish", "en"), Steer.VALIDATION_MESSAGES.en.number);
+  assert.equal(Steer.validate(field, "7", "en"), null);
 });
 
 test("distress: a real first-person crisis phrase mid-conversation still shows the safety line and stores nothing new", async () => {
