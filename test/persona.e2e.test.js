@@ -207,37 +207,66 @@ test("enum field: exact and case-insensitive matches still confirm and store nor
 test("multiselect field: multiple race/ethnicity picks are stored as one comma-joined value", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_race_ethnicity");
+  const idx = fields.findIndex((f) => f.path === "child_1_race_ethnicity");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("Black or African American, Hispanic or Latino", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_race_ethnicity, "Black or African American, Hispanic or Latino");
+  assert.equal(intake.answers().child_1_race_ethnicity, "Black or African American, Hispanic or Latino");
 });
 
 test("conditional field: the disability follow-up is skipped (never asked) when the Yes/No question is answered No", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_disability_has");
+  const idx = fields.findIndex((f) => f.path === "child_1_disability_has");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("No", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_disability_has, "No");
-  assert.equal(intake.answers().child_disability_explain, undefined);
-  assert.equal(intake.nextField().path, "custody_start_date");
+  assert.equal(intake.answers().child_1_disability_has, "No");
+  assert.equal(intake.answers().child_1_disability_explain, undefined);
+  assert.equal(intake.nextField().path, "child_more_1");
 });
 
 test("conditional field: the disability follow-up is asked and stored when the Yes/No question is answered Yes", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_disability_has");
+  const idx = fields.findIndex((f) => f.path === "child_1_disability_has");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("Yes", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_disability_has, "Yes");
-  assert.equal(intake.nextField().path, "child_disability_explain");
+  assert.equal(intake.answers().child_1_disability_has, "Yes");
+  assert.equal(intake.nextField().path, "child_1_disability_explain");
+});
+
+test("repeating group: 'another child?' answered yes adds a second child round, answered no moves on", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "child_1_initials");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push(
+    "A.B.", "yes",
+    "2015-04-10", "yes",
+    "White", "yes",
+    "No", "yes",
+    "Yes", "yes",
+  );
+  const { intake } = await converse(engine, "en", lines);
+  assert.equal(intake.answers().child_1_initials, "A.B.");
+  assert.equal(intake.answers().child_more_1, "Yes");
+  assert.equal(intake.nextField().path, "child_2_initials");
+
+  await intake.submit("C.D."); await intake.submit("yes");
+  await intake.submit("2017-09-01"); await intake.submit("yes");
+  await intake.submit("Black or African American"); await intake.submit("yes");
+  await intake.submit("No"); await intake.submit("yes");
+  await intake.submit("No"); await intake.submit("yes");
+  assert.equal(intake.answers().child_2_initials, "C.D.");
+  assert.equal(intake.answers().child_more_2, "No");
+  assert.equal(intake.answers().child_3_initials, undefined);
+  assert.equal(intake.nextField().path, "custody_start_date");
 });
 
 test("conditional field: the home-language 'other' follow-up is skipped unless Other is picked", async () => {
