@@ -83,6 +83,53 @@ function linesForAll(fields, confirmWord = "yes") {
   return linesUpTo(fields, fields.length, confirmWord);
 }
 
+// Pulls the offered topic keys back out of a COVERAGE_SYSTEM prompt (see
+// index.html's `${COVERAGE_SYSTEM}\n\nTOPICS:\n${topics}` assembly) so a
+// fake model's decision function can tell which framework it's being asked
+// about without hardcoding NARRATIVE_FRAMEWORK/COVERAGE_FRAMEWORKS' slot
+// keys itself.
+function topicKeysFromSystem(sys) {
+  return [...sys.matchAll(/^- (\w+):/gm)].map((m) => m[1]);
+}
+
+// Stands in for a real backend (WebLLM/Ollama) in the coverage-judgment
+// tests below: routes ordinary field turns to a real EchoModel (so the
+// rest of the conversation behaves exactly like every other test here),
+// but answers a coverage-judgment call (identifiable by COVERAGE_SYSTEM's
+// "TOPICS:" marker) with whatever `decide(userText, offeredKeys)` returns.
+// Deliberately NOT an EchoModel subclass — Intake._metSlotKeys branches on
+// `this.model instanceof EchoModel` specifically to skip the semantic path
+// for the zero-model fallback, so this class has to be a plain, separate
+// class for these tests to actually exercise that branch.
+class FakeSemanticModel {
+  constructor(engine, decide) {
+    this._echo = new engine.EchoModel();
+    this._decide = decide;
+  }
+  async chat(messages) {
+    const sys = messages.find((m) => m.role === "system")?.content || "";
+    if (sys.includes("TOPICS:")) {
+      const userText = messages.find((m) => m.role === "user")?.content || "";
+      const keys = topicKeysFromSystem(sys);
+      return JSON.stringify({ covered: this._decide(userText, keys) });
+    }
+    return this._echo.chat(messages);
+  }
+}
+
+// Same idea, but the coverage-judgment call always throws — simulating a
+// crashed/unreachable backend on exactly that one call — to prove
+// Intake._judgeCoverage's failure path falls back to the deterministic
+// keyword/regex match instead of stalling the conversation.
+class BrokenCoverageModel {
+  constructor(engine) { this._echo = new engine.EchoModel(); }
+  async chat(messages) {
+    const sys = messages.find((m) => m.role === "system")?.content || "";
+    if (sys.includes("TOPICS:")) throw new Error("simulated coverage-judgment outage");
+    return this._echo.chat(messages);
+  }
+}
+
 test("name field: all-lowercase input is title-cased per word, not just the sentence start", async () => {
   const engine = loadEngine();
   const { intake } = await converse(engine, "en", ["frank smith", "yes"]);
@@ -300,6 +347,69 @@ test("coverage framework: declining the first coverage follow-up ends the loop i
   await intake.submit("not applicable"); await intake.submit("yes");
   assert.equal(intake.nextField().path, "coercion_threats");
   assert.equal(intake.schema.fields.some((f) => f.path === "dcs_actions_failures_coverage_2"), false);
+});
+
+test("semantic coverage: a real model recognizes a paraphrased medication mention the keyword list would miss", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "family_background");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("He's been on pills for his seizures and I'm not sure DCS is giving them on schedule.", "yes");
+  const model = new FakeSemanticModel(engine, (text, keys) =>
+    keys.filter((k) => k === "medical" && /pills|seizures/i.test(text)));
+  const { intake } = await converse(engine, "en", lines, { model });
+  assert.equal(intake.nextField().path, "narrative_followup_medical");
+});
+
+test("semantic coverage: (for contrast) the same paraphrase does NOT trigger the keyword/regex fallback", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "family_background");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("He's been on pills for his seizures and I'm not sure DCS is giving them on schedule.", "yes");
+  const { intake } = await converse(engine, "en", lines); // default EchoModel
+  assert.notEqual(intake.nextField().path, "narrative_followup_medical");
+});
+
+test("semantic coverage: a real model recognizes an approximate timeframe the date regex would miss, and only asks for 'who'", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "dcs_actions_failures");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("Right after his last birthday, the caseworker never called me back.", "yes");
+  const model = new FakeSemanticModel(engine, (text, keys) => keys.filter((k) => k === "when"));
+  const { intake } = await converse(engine, "en", lines, { model });
+  const next = intake.nextField();
+  assert.equal(next.path, "dcs_actions_failures_coverage_1");
+  assert.equal(next.label, "Follow-up: who");
+});
+
+test("semantic coverage: recognizing both 'when' and 'who' from a paraphrase skips the coverage follow-ups entirely", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "dcs_actions_failures");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("Right after his birthday last spring, my regular caseworker never called me back.", "yes");
+  const model = new FakeSemanticModel(engine, (text, keys) => keys.filter((k) => k === "when" || k === "who"));
+  const { intake } = await converse(engine, "en", lines, { model });
+  assert.equal(intake.nextField().path, "coercion_threats");
+});
+
+test("semantic coverage: a failed judgment call falls back to the deterministic keyword/regex path instead of stalling", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "dcs_actions_failures");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("The caseworker never called me back about the school issue.", "yes");
+  const model = new BrokenCoverageModel(engine);
+  const { intake } = await converse(engine, "en", lines, { model });
+  // Same outcome as the plain-EchoModel test above for this identical input.
+  assert.equal(intake.nextField().path, "dcs_actions_failures_coverage_1");
 });
 
 test("narrative follow-up: no tracked topic mentioned means neither follow-up is inserted", async () => {
