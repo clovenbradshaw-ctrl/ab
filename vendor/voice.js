@@ -407,7 +407,10 @@
       set("idle");
     }
 
-    return { start, stop, cancel, get state() { return state; } };
+    // Exposed so a caller can drive its own visualization (e.g. a live
+    // waveform) off the exact same MediaStream the recorder is reading,
+    // instead of opening a second getUserMedia stream just to look at it.
+    return { start, stop, cancel, get state() { return state; }, get stream() { return stream; } };
   }
 
   return { isSupported, createVoice, autoDownload };
