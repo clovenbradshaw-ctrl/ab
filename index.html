@@ -2589,22 +2589,29 @@ const DEMO_KNOWLEDGE = new KnowledgeStore([
 
 
 
-// This is the ENTIRE instruction the model ever gets, and note what it is
-// NOT asked to do: write anything. A fixed, hand-written script (see
-// vendor/steer.js — Steer.pickReply) is the only source of text the
-// person ever reads. The model's one job is to classify the latest
-// message about the current field, in whichever of the two supported
-// languages (or mix — code-switching is common) the person is using, and
-// however typo-ridden it is.
+// This is nearly the ENTIRE instruction the model ever gets, and note what
+// it is NOT asked to do: write the person's answer for them. A fixed,
+// hand-written script (see vendor/steer.js — Steer.pickReply) is still the
+// only source of the mechanical confirm/error/safety text the person reads
+// — what's below adds exactly one narrow exception, `followup`, and only
+// for CURRENT FIELDs that are open-ended narrative questions with no fixed
+// answer shape (no enum, no date, no digits — see the field's `type` in
+// CURRENT FIELD). The model's job is still to classify the latest message,
+// in whichever of the two supported languages (or mix — code-switching is
+// common) the person is using, and however typo-ridden it is; `followup` is
+// a targeted question about what's missing, never a rewrite, summary, or
+// invented detail, and the stored answer always comes from the person's own
+// later words, confirmed the same way as any other field.
 const MINIMAL_SYSTEM =
-`You are the classification step behind a trauma-informed intake conversation. You never write a reply — a separate fixed script shows the person text, never you. Your only job is to read their latest message about CURRENT FIELD and classify it.
+`You are the classification step behind a trauma-informed intake conversation. A separate fixed script shows the person almost all of their text — you never write their stored answer for them. Your job is to read their latest message about CURRENT FIELD and classify it.
 The person may write in English or Spanish, sometimes both, often with typos or informal grammar — read past all of that for meaning.
 - support: true only if this message is a question, confusion, or a request for help rather than an attempt to answer.
 - distress: true only if the message itself signals the person may be in crisis or in immediate danger right now — not merely for describing past hardship, abuse, or trauma, which is expected and should NOT set this true.
-- ready: true once the message contains a usable answer for CURRENT FIELD.
+- ready: true once the message contains a genuine, on-topic attempt at CURRENT FIELD. For an open-ended narrative question (no enum, no fixed format), a single vague word, a placeholder like "idk" or a stray keystroke, or text that doesn't actually address the question must NOT be marked ready — that's thin, not usable, even if it's non-empty.
 - extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
-Never invent facts about the person. When uncertain, leave ready false rather than guessing.
-Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean}`;
+- followup: OPTIONAL, and only for an open-ended narrative CURRENT FIELD (never for an enum/date/digits field, which already gets an exact, fixed error message). When ready is false and support is false — they tried to answer but it's too thin, vague, or unclear to use — write ONE short, warm, specific question in their own language that names what's missing and invites them to say more, grounded only in what they already wrote. Never invent facts about their situation, never write or imply an answer on their behalf. Leave this null whenever ready is true, whenever support is true, or for any field with a fixed answer shape.
+Never invent facts about the person. When uncertain whether an answer is usable, leave ready false rather than guessing.
+Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean,"followup":string|null}`;
 
 // A second, equally narrow classify-only prompt, for a different question:
 // given text the person has already written, and a short list of topics a
@@ -3757,7 +3764,13 @@ class Intake {
       return;
     }
 
-    thinking.text = this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    // For an open-ended narrative field, a real model backend can offer a
+    // targeted "here's what's still missing" question instead of the
+    // generic canned nudge below — see MINIMAL_SYSTEM's `followup` and
+    // _parseClassification, which only ever populates it for exactly this
+    // kind of field. Still never the stored answer itself: this only ever
+    // reaches the "not ready yet" branch, never the confirm/store path above.
+    thinking.text = parsed.followup || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
     thinking.streaming = false; thinking.support = true;
     this._emit("message", thinking);
   }
@@ -4100,14 +4113,20 @@ class Intake {
     const m = (raw || "").match(/\{[\s\S]*\}/);
     if (m) { try {
       const j = JSON.parse(m[0]);
-      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress };
+      // `followup` only ever applies to open-ended narrative fields (no
+      // fixed answer shape) — an enum/date/digits field already gets an
+      // exact, reviewed error message from Steer.validate, so a model-
+      // authored `followup` there is ignored even if one came back.
+      const isNarrative = field.type === "text" && !field.enum && !field.digits;
+      const followup = (isNarrative && typeof j.followup === "string" && j.followup.trim()) ? j.followup.trim() : null;
+      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress, followup };
     } catch {} }
     // No parseable envelope: rather than dead-ending the conversation on a
     // fallible small model, fall back to the person's own raw text if it
     // already satisfies the field on its own.
     const err = validate(field, userText, this.lang);
-    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false };
-    return { support: true, ready: false, extracted: null, distress: false };
+    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false, followup: null };
+    return { support: true, ready: false, extracted: null, distress: false, followup: null };
   }
 }
 
