@@ -1681,10 +1681,16 @@ const OCR_FILING_WINDOW_DAYS = 180;
 // few sentences to read against a standing list of what's expected).
 // Uncovered slots become follow-up questions, asked one at a time, until the
 // framework is satisfied or a cap is hit — never an open-ended interrogation.
-// This never calls `this.model`: it runs against the CONFIRMED text inside
-// _confirm(), synchronously, so it works identically whether the active
-// backend is EchoModel, WebLLM, or Ollama, and keeps working if a local
-// model never loads at all.
+// Deciding which slots are covered runs against the CONFIRMED text inside
+// _confirm(), via Intake._metSlotKeys: when a real backend is loaded
+// (WebLLM/Ollama), it asks the model to read for meaning (see
+// COVERAGE_SYSTEM/_judgeCoverage below) — the model's only say in this is
+// WHICH of these fixed, pre-written follow-ups to ask next, never what
+// words to use; it stays exactly as bound by MINIMAL_SYSTEM's "never write
+// a reply" rule. Falls back to the original deterministic EOReader6.surf
+// keyword/regex match (each slot's `test`/`keywords`) whenever there's no
+// real model to ask — EchoModel, or a judge call that fails — so the loop
+// still works identically with no local model loaded at all.
 //
 // Two kinds of framework live here:
 //
@@ -1706,6 +1712,11 @@ const NARRATIVE_FRAMEWORK = {
     {
       key: "medical",
       keywords: ["medicine", "medication", "medications", "meds", "prescription", "prescribed", "dose", "dosage"],
+      // Used only by the semantic path (see COVERAGE_SYSTEM/_judgeCoverage) —
+      // a real model reads for meaning instead of matching these literal
+      // words, so it also catches a paraphrase like "they gave him pills for
+      // his seizures" that the keyword list above would miss.
+      judge: "the person has mentioned any medication, prescription, or dosage involving the child",
       followup: {
         path: "narrative_followup_medical",
         label: "Follow-up: medication",
@@ -1721,6 +1732,7 @@ const NARRATIVE_FRAMEWORK = {
     {
       key: "abuse",
       keywords: ["abuse", "abused", "hit", "hitting", "hurt", "hurting", "bruise", "bruises", "bruising", "injury", "injuries"],
+      judge: "the person has described anything that sounds like physical abuse or injury to the child",
       followup: {
         path: "narrative_followup_abuse",
         label: "Follow-up: abuse or injury",
@@ -1759,6 +1771,7 @@ const COVERAGE_FRAMEWORKS = {
         // asks one extra (skippable) question. Either way costs little.
         test: (t) => /\b(19|20)\d{2}\b/.test(t) || /\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/.test(t) ||
           /\b(january|february|march|april|may|june|july|august|september|october|november|december|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/.test(t),
+        judge: "the person has given at least an approximate sense of when this happened — a year, season, month, or specific date",
         followup: {
           label: "Follow-up: when",
           prompt: "Do you remember about when this happened — even just the month, season, or year is fine?",
@@ -1774,6 +1787,7 @@ const COVERAGE_FRAMEWORKS = {
         // `when` above, and for the same reason acceptable in either
         // direction here.
         test: (t, rawText) => /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(rawText || ""),
+        judge: "the person has named or otherwise identified a specific caseworker or supervisor involved (a name, even just a first name, counts)",
         followup: {
           label: "Follow-up: who",
           prompt: "Do you remember the name of the caseworker or supervisor involved, even just a first name?",
@@ -2424,6 +2438,21 @@ The person may write in English or Spanish, sometimes both, often with typos or 
 - extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
 Never invent facts about the person. When uncertain, leave ready false rather than guessing.
 Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean}`;
+
+// A second, equally narrow classify-only prompt, for a different question:
+// given text the person has already written, and a short list of topics a
+// full account of that subject would touch, which topics does their own
+// text already address? This is what lets the narrative follow-up loop
+// (see NARRATIVE_FRAMEWORK/COVERAGE_FRAMEWORKS) actually understand a
+// longform answer instead of pattern-matching it for keywords — but same
+// as MINIMAL_SYSTEM, it still never writes anything the person reads: it
+// only decides WHICH pre-written, already-reviewed follow-up question (if
+// any) gets asked next. See Intake._judgeCoverage.
+const COVERAGE_SYSTEM =
+`You are the follow-up-coverage step behind a trauma-informed intake conversation. You never write anything the person reads — a separate fixed script asks any follow-up question, never you. Your only job is to read what someone has written and decide which of the listed TOPICS their own words already address, even loosely, indirectly, or by clear implication.
+The person may write in English or Spanish, sometimes both, often with typos or informal grammar — read past all of that for meaning.
+Never mark a topic covered on a guess — if it's genuinely unclear whether they addressed it, leave it uncovered.
+Reply with ONLY a JSON object: {"covered": ["<topic key>", ...]} — using only the topic keys given below, or an empty array if none are covered.`;
 
 function assemble({ field, discourse = [], timeline = [], knowledge = null, schema = null, anchor = "_root", budget = {}, system = MINIMAL_SYSTEM, pending = null, lang = "en" }) {
   const B = { knowledge: 700, digest: 400, liveTurns: 6, ...budget };
@@ -3609,7 +3638,7 @@ class Intake {
   // The DEF payload carries the full audit provenance (raw source text,
   // typed vs voice-transcribed, and the encrypted recording id) so the
   // assembled letter can trace every line back to what was said.
-  _confirm() {
+  async _confirm() {
     const { field, value, source, inputKind, voiceClipId } = this.pending;
     const ev = this.store.emit(OP.DEF, {
       anchor: this.anchor, path: field.path, value,
@@ -3620,8 +3649,8 @@ class Intake {
     this._say("assistant", this._reply("confirmed"));
     this._emit("stored", { field, value, event: ev });
     this._checkFilingDeadline(field, value);
-    this._maybeInjectFollowups(field, value);
-    this._maybeInjectCoverageFollowup(field, value);
+    await this._maybeInjectFollowups(field, value);
+    await this._maybeInjectCoverageFollowup(field, value);
     this._maybeInjectNextPlacementRound(field, value);
     return this._askNext();
   }
@@ -3652,33 +3681,72 @@ class Intake {
   // checklist doesn't stack duplicate follow-ups, and doesn't matter which
   // of the trigger fields a topic first showed up in — only one shared
   // follow-up exists per topic, wherever it's raised.
-  _maybeInjectFollowups(field, value) {
+  async _maybeInjectFollowups(field, value) {
     if (!NARRATIVE_FRAMEWORK.triggerFields.includes(field.path)) return;
     const text = (value ?? "").toString();
     if (!text) return;
     let insertAt = this.schema.fields.findIndex((f) => f.path === field.path) + 1;
     if (insertAt <= 0) return;
-    const reading = EOReader6.surf(text, NARRATIVE_FRAMEWORK.slots);
-    for (const r of reading) {
-      if (!r.met) continue;
-      const slot = NARRATIVE_FRAMEWORK.slots.find((s) => s.key === r.key);
-      if (this.schema.fields.some((f) => f.path === slot.followup.path)) continue;
+    const metKeys = await this._metSlotKeys(text, NARRATIVE_FRAMEWORK.slots);
+    for (const key of metKeys) {
+      const slot = NARRATIVE_FRAMEWORK.slots.find((s) => s.key === key);
+      if (!slot || this.schema.fields.some((f) => f.path === slot.followup.path)) continue;
       this.schema.fields.splice(insertAt, 0, slot.followup);
       insertAt++;
+    }
+  }
+
+  // Shared by _maybeInjectFollowups and _maybeInjectCoverageFollowup: which
+  // of `slots` does `text` satisfy? Prefers asking the model to actually
+  // read the text (see COVERAGE_SYSTEM) whenever a real backend is loaded —
+  // falls back to the original deterministic EOReader6.surf keyword/regex
+  // match whenever there's no model to ask (EchoModel) or the judge call
+  // itself fails, so the loop never stalls on a model outage.
+  async _metSlotKeys(text, slots) {
+    if (!(this.model instanceof EchoModel)) {
+      const covered = await this._judgeCoverage(text, slots);
+      if (covered) return [...covered];
+    }
+    return EOReader6.surf(text, slots).filter((r) => r.met).map((r) => r.key);
+  }
+
+  // Ask the active model which of `slots` the given text already covers,
+  // per COVERAGE_SYSTEM's classify-only contract — same shape as every
+  // other model call here (JSON in, JSON out, nothing shown to the person
+  // comes from this). Returns a Set of covered slot keys, or null if the
+  // call failed or came back unparseable, so callers know to fall back to
+  // the deterministic path rather than treating "no answer" as "nothing
+  // covered."
+  async _judgeCoverage(text, slots) {
+    const topics = slots.map((s) => `- ${s.key}: ${s.judge || s.followup?.label || s.key}`).join("\n");
+    const messages = [
+      { role: "system", content: `${COVERAGE_SYSTEM}\n\nTOPICS:\n${topics}` },
+      { role: "user", content: text },
+    ];
+    try {
+      const raw = await this.model.chat(messages);
+      const m = (raw || "").match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const parsed = JSON.parse(m[0]);
+      if (!Array.isArray(parsed.covered)) return null;
+      return new Set(parsed.covered.filter((k) => slots.some((s) => s.key === k)));
+    } catch (e) {
+      console.error("[Intake] coverage judgment failed:", e);
+      return null;
     }
   }
 
   // See COVERAGE_FRAMEWORKS: "ask follow-ups until we get it," bounded.
   // `field` is either a framework's own base field (dcs_actions_failures)
   // or one of its own previously-injected `${base}_coverage_N` follow-ups —
-  // either way, `EOReader6.surf`/`fold` re-reads everything given to this
-  // framework so far, cumulatively, and decides whether one more follow-up
-  // is owed. A decline on one of the framework's own follow-ups (the same
+  // either way, `_metSlotKeys` re-reads everything given to this framework
+  // so far, cumulatively, and decides whether one more follow-up is owed.
+  // A decline on one of the framework's own follow-ups (the same
   // skip lexicon every optional field already honors) ends the loop right
   // there — "until we get it" still stops the moment someone says they
   // don't have it, rather than pivoting to ask about whichever slot is
   // still open.
-  _maybeInjectCoverageFollowup(field, value) {
+  async _maybeInjectCoverageFollowup(field, value) {
     const m = /^(.+)_coverage_(\d+)$/.exec(field.path);
     const baseKey = m ? m[1] : field.path;
     const framework = COVERAGE_FRAMEWORKS[baseKey];
@@ -3699,10 +3767,10 @@ class Intake {
     const a = this.answers();
     const parts = [a[baseKey], ...injectedFollowups.map((f) => a[f.path])];
     const cumulative = parts.filter(Boolean).join(" ");
-    const coverage = EOReader6.surfAndFold({}, cumulative, framework.slots);
-    if (EOReader6.isSatisfied(coverage, framework.slots)) return;
+    const metKeys = new Set(await this._metSlotKeys(cumulative, framework.slots));
+    if (framework.slots.every((s) => metKeys.has(s.key))) return;
 
-    const nextSlot = framework.slots.find((s) => !coverage[s.key] && !askedSlotKeys.has(s.key));
+    const nextSlot = framework.slots.find((s) => !metKeys.has(s.key) && !askedSlotKeys.has(s.key));
     if (!nextSlot) return; // every still-open slot has already had its one ask
     const path = `${baseKey}_coverage_${injectedFollowups.length + 1}`;
     if (this.schema.fields.some((f) => f.path === path)) return;
