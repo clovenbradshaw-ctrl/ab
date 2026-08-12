@@ -599,7 +599,14 @@
     if (typeof field.skipIf === "function") return field.skipIf(answers);
     if (field.skipUnless) {
       const v = answers[field.skipUnless.field];
-      return !field.skipUnless.oneOf.includes(v);
+      if (v == null) return true;
+      // A multiselect's stored value is several picks comma-joined (see the
+      // checkbox control in index.html's renderQuickAnswer) — split so
+      // skipUnless can match on any one pick, not just an exact whole-string
+      // equal. A single-value answer splits to itself, so this is a no-op
+      // for every other field type.
+      const picks = String(v).split(",").map((s) => s.trim());
+      return !field.skipUnless.oneOf.some((opt) => picks.includes(opt));
     }
     return false;
   }
