@@ -301,7 +301,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .quick-answer .qa-btn:hover{border-color:var(--seal);background:var(--seal-soft)}
 .quick-answer .qa-decline{font-weight:500;color:var(--muted);border-style:dashed}
 .quick-answer .qa-decline:hover{border-color:var(--muted);background:#F2F5F7}
-.quick-answer select.qa-select{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:260px}
+.quick-answer .qa-select{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:260px}
 .quick-answer .qa-go{font:600 13px Inter;padding:7px 14px;border-radius:8px;border:none;background:var(--ink);color:#fff;cursor:pointer}
 .quick-answer .qa-checks{display:flex;flex-direction:column;gap:4px;width:100%}
 .quick-answer .qa-checks label{display:flex;align-items:center;gap:7px;font-size:13px;padding:4px 2px;cursor:pointer}
@@ -5444,7 +5444,28 @@ function renderQuickAnswer(field) {
     const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
     go.type = "button";
     go.onclick = () => { if (inp.value) choose(inp.value); };
+    inp.onkeydown = (e) => { if (e.key === "Enter" && inp.value) { e.preventDefault(); choose(inp.value); } };
     row.appendChild(inp); row.appendChild(toggle); row.appendChild(go);
+    box.appendChild(row);
+  } else if (field.type === "date") {
+    const row = el("div", "qa-row");
+    const inp = document.createElement("input");
+    inp.type = "date"; inp.className = "qa-select";
+    const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
+    go.type = "button";
+    go.onclick = () => { if (inp.value) choose(inp.value); };
+    inp.onkeydown = (e) => { if (e.key === "Enter" && inp.value) { e.preventDefault(); choose(inp.value); } };
+    row.appendChild(inp); row.appendChild(go);
+    box.appendChild(row);
+  } else if (field.type === "number") {
+    const row = el("div", "qa-row");
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.className = "qa-select"; inp.inputMode = "numeric"; inp.min = "0";
+    const go = el("button", "qa-go", es ? "Usar este número" : "Use this number");
+    go.type = "button";
+    go.onclick = () => { if (inp.value !== "") choose(inp.value); };
+    inp.onkeydown = (e) => { if (e.key === "Enter" && inp.value !== "") { e.preventDefault(); choose(inp.value); } };
+    row.appendChild(inp); row.appendChild(go);
     box.appendChild(row);
   } else if (field.type === "select" && field.enum?.length) {
     const row = el("div", "qa-row");
