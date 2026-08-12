@@ -2301,9 +2301,16 @@ class MatrixStore extends BaseStore {
     if (!sdk) throw new Error("matrix-js-sdk not loaded");
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
+    // useAuthorizationHeader: the SDK defaults to putting the access token
+    // in the URL as ?access_token=..., including on /upload — a homeserver
+    // that requires modern Bearer auth (the same reason MatrixMedia.get()
+    // already sends an explicit Authorization header for downloads) rejects
+    // that silently, which reads as "uploads/documents don't work" with no
+    // obvious cause. Every client built from a real access token sends the
+    // header instead, everywhere in this file.
     const client = sdk.createClient({
       baseUrl: homeserver, accessToken: res.access_token,
-      userId: res.user_id, deviceId: res.device_id,
+      userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     await client.startClient({ initialSyncLimit: 100 });
@@ -6760,9 +6767,11 @@ async function registerSilentAccount(homeserver) {
 // homeserver, since this runs before any wizard state exists.
 async function setupSilentClient(homeserver, registered) {
   const sdk = window.matrixcs;
+  // useAuthorizationHeader — see MatrixStore.login's comment on why every
+  // real client built here sends it.
   const client = sdk.createClient({
     baseUrl: homeserver, accessToken: registered.access_token,
-    userId: registered.user_id, deviceId: registered.device_id,
+    userId: registered.user_id, deviceId: registered.device_id, useAuthorizationHeader: true,
   });
   await initClientCrypto(client);
   client.startClient({ initialSyncLimit: 50 });
@@ -6813,7 +6822,8 @@ async function tryResumeSilentAccount(saved) {
   const sdk = window.matrixcs;
   if (!sdk || !saved?.accessToken) return null;
   try {
-    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId });
+    // useAuthorizationHeader — see MatrixStore.login's comment.
+    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId, useAuthorizationHeader: true });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
     await new Promise((resolve, reject) => {
@@ -7448,9 +7458,10 @@ async function suCreateAccount() {
 async function suSetupClientFromRegistration(data) {
   try {
     const sdk = window.matrixcs;
+    // useAuthorizationHeader — see MatrixStore.login's comment.
     const client = sdk.createClient({
       baseUrl: MATRIX_ORG_HS, accessToken: data.access_token,
-      userId: data.user_id, deviceId: data.device_id
+      userId: data.user_id, deviceId: data.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
@@ -7682,9 +7693,10 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
     if (!sdk) throw new Error("Matrix SDK not loaded");
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
+    // useAuthorizationHeader — see MatrixStore.login's comment.
     const client = sdk.createClient({
       baseUrl: homeserver, accessToken: res.access_token,
-      userId: res.user_id, deviceId: res.device_id
+      userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
