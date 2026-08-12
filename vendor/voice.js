@@ -33,9 +33,13 @@
 //                       constrained device this silently degrades to the
 //                       pre-streaming behavior: one pass, on stop().
 //
-// The model itself is requested in a quantized form (see dtypeFor()) —
-// smaller download, faster inference, on every device — rather than the
-// library's full-precision default.
+// The model is loaded at the library's own default precision — an earlier
+// version requested 8-bit/fp16 quantization to shrink the download, but
+// quantized ONNX speech weights are a known source of degenerate output
+// (a short hallucinated phrase in place of a real transcript) that a
+// try/catch around the *load* can't catch, since the quantized model still
+// loads fine and only produces bad transcriptions. Full precision is a
+// larger one-time download in exchange for output you can trust.
 
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -57,6 +61,142 @@
   // clip, so nothing spoken is ever lost from the answer of record.
   const PARTIAL_WINDOW_S = 20;
 
+  // ---- WebM duration fix ----
+  // Chrome's MediaRecorder writes WebM files with no Duration in the
+  // Segment/Info header — a long-standing, well-known Chromium bug
+  // (crbug.com/642012). decodeAudioData() on a blob assembled from such a
+  // recording can decode to a bogus/near-zero duration, so a real recording
+  // silently turns into next to no audio for the model to hear — which is
+  // exactly the shape of bug that has Whisper output a short throwaway
+  // phrase instead of an actual transcript, every time, regardless of what
+  // was said. This is a straight, trimmed port of the well-tested community
+  // fix (npm: fix-webm-duration, used by e.g. huggingface/whisper-web) — a
+  // small hand-rolled EBML reader/writer, not a homegrown parser. Trimmed to
+  // just the element IDs needed to reach Segment -> Info -> {TimecodeScale,
+  // Duration}; every other element is carried through as opaque bytes,
+  // which is safe because the parser never needs to interpret anything it
+  // doesn't recurse into.
+  const EBML_SECTIONS = {
+    0x8538067: { type: "Container" }, // Segment
+    0x549a966: { type: "Container" }, // Info
+    0xad7b1: { type: "Uint" }, // TimecodeScale
+    0x489: { type: "Float" }, // Duration
+  };
+
+  function EbmlBase() {}
+  EbmlBase.prototype.setSource = function (source) { this.source = source; this.updateBySource(); };
+  EbmlBase.prototype.updateBySource = function () {};
+
+  function EbmlUint() {}
+  EbmlUint.prototype = Object.create(EbmlBase.prototype);
+  function padHex(hex) { return hex.length % 2 === 1 ? "0" + hex : hex; }
+  EbmlUint.prototype.setValue = function (value) {
+    const hex = padHex(value.toString(16));
+    const len = hex.length / 2;
+    this.source = new Uint8Array(len);
+    for (let i = 0; i < len; i++) this.source[i] = parseInt(hex.substr(i * 2, 2), 16);
+  };
+
+  function EbmlFloat() {}
+  EbmlFloat.prototype = Object.create(EbmlBase.prototype);
+  EbmlFloat.prototype.getValue = function () {
+    const bytes = this.source.slice().reverse();
+    const FloatType = bytes.length === 4 ? Float32Array : Float64Array;
+    return new FloatType(bytes.buffer)[0];
+  };
+  EbmlFloat.prototype.setValue = function (value) {
+    const FloatType = this.source && this.source.length === 4 ? Float32Array : Float64Array;
+    this.source = new Uint8Array(new FloatType([value]).buffer).reverse();
+  };
+
+  function EbmlContainer() {}
+  EbmlContainer.prototype = Object.create(EbmlBase.prototype);
+  EbmlContainer.prototype.readUint = function () {
+    const first = this.source[this.offset++];
+    const bytes = 8 - first.toString(2).length;
+    let value = first - (1 << (7 - bytes));
+    for (let i = 0; i < bytes; i++) { value = value * 256 + this.source[this.offset++]; }
+    return value;
+  };
+  EbmlContainer.prototype.updateBySource = function () {
+    this.data = [];
+    this.offset = 0;
+    while (this.offset < this.source.length) {
+      const id = this.readUint();
+      const len = this.readUint();
+      const end = Math.min(this.offset + len, this.source.length);
+      const chunk = this.source.slice(this.offset, end);
+      this.offset = end;
+      const info = EBML_SECTIONS[id];
+      const El = info && info.type === "Container" ? EbmlContainer : info && info.type === "Uint" ? EbmlUint : info && info.type === "Float" ? EbmlFloat : EbmlBase;
+      const section = new El();
+      section.setSource(chunk);
+      this.data.push({ id, el: section });
+    }
+  };
+  EbmlContainer.prototype.writeUint = function (x) {
+    let bytes = 1, flag = 0x80;
+    while (x >= flag && bytes < 8) { bytes++; flag *= 0x80; }
+    let value = flag + x;
+    for (let i = bytes - 1; i >= 0; i--) {
+      const c = value % 256;
+      this.source[this.offset + i] = c;
+      value = (value - c) / 256;
+    }
+    this.offset += bytes;
+  };
+  EbmlContainer.prototype.updateByData = function () {
+    let length = 0;
+    for (const item of this.data) length += byteLenOfUint(item.id) + byteLenOfUint(item.el.source.length) + item.el.source.length;
+    this.source = new Uint8Array(length);
+    this.offset = 0;
+    for (const item of this.data) {
+      this.writeUint(item.id);
+      this.writeUint(item.el.source.length);
+      this.source.set(item.el.source, this.offset);
+      this.offset += item.el.source.length;
+    }
+  };
+  EbmlContainer.prototype.getSectionById = function (id) {
+    for (const item of this.data) if (item.id === id) return item.el;
+    return null;
+  };
+  function byteLenOfUint(x) {
+    let bytes = 1, flag = 0x80;
+    while (x >= flag && bytes < 8) { bytes++; flag *= 0x80; }
+    return bytes;
+  }
+
+  // Patch (or insert) a correct Duration into a WebM blob's header. Returns
+  // the original blob unchanged if the header shape isn't what's expected,
+  // or if a real (positive) duration is already present — never throws.
+  async function fixWebmDuration(blob, durationMs) {
+    try {
+      const file = new EbmlContainer();
+      file.setSource(new Uint8Array(await blob.arrayBuffer()));
+      const segment = file.getSectionById(0x8538067);
+      const info = segment && segment.getSectionById(0x549a966);
+      const timeScale = info && info.getSectionById(0xad7b1);
+      if (!info || !timeScale) return blob;
+      let duration = info.getSectionById(0x489);
+      if (duration && duration.getValue() > 0) return blob; // already correct
+      if (!duration) {
+        duration = new EbmlFloat();
+        duration.setValue(durationMs);
+        info.data.push({ id: 0x489, el: duration });
+      } else {
+        duration.setValue(durationMs);
+      }
+      timeScale.setValue(1000000); // 1ms precision, matching the ms duration above
+      info.updateByData();
+      segment.updateByData();
+      file.updateByData();
+      return new Blob([file.source], { type: blob.type });
+    } catch (e) {
+      return blob; // never let a header patch attempt break the actual recording
+    }
+  }
+
   // The heavy pieces load lazily, exactly once, and only when the mic is
   // first used.
   let _asr = null; // Promise<pipeline>, shared across recordings
@@ -68,15 +208,6 @@
     try { if (navigator.gpu && (await navigator.gpu.requestAdapter())) _device = "webgpu"; } catch {}
     return _device;
   }
-
-  // Quantization to request per device: 8-bit on CPU/WASM shrinks the
-  // download to a fraction of full precision and runs far faster per pass
-  // — this model may run once every 2.5s while streaming, with no GPU to
-  // lean on, so that matters a lot more than it would for a one-shot call.
-  // WebGPU has real memory bandwidth to spare, so fp16 keeps quality high
-  // while still halving fp32's footprint. Either way this is strictly
-  // lighter than the library's own default, never heavier.
-  function dtypeFor(dev) { return dev === "webgpu" ? "fp16" : "q8"; }
 
   // Roughly: is this a phone/low-power device, or a real desktop/laptop?
   // hardwareConcurrency is universally available; deviceMemory is Chromium-
@@ -97,18 +228,13 @@
       _asr = (async () => {
         const dev = await device();
         const { pipeline } = await import(/* webpackIgnore: true */ TRANSFORMERS);
-        const progress_callback = (p) => {
-          if (typeof onProgress === "function" && p && p.status === "progress" && p.progress != null)
-            onProgress(Math.max(0, Math.min(1, p.progress / 100)));
-        };
-        try {
-          return await pipeline("automatic-speech-recognition", MODEL, { device: dev, dtype: dtypeFor(dev), progress_callback });
-        } catch (e) {
-          // Not every model repo publishes every quantization variant —
-          // fall back to the library's own default rather than permanently
-          // breaking voice input over a size optimization.
-          return await pipeline("automatic-speech-recognition", MODEL, { device: dev, progress_callback });
-        }
+        return pipeline("automatic-speech-recognition", MODEL, {
+          device: dev,
+          progress_callback: (p) => {
+            if (typeof onProgress === "function" && p && p.status === "progress" && p.progress != null)
+              onProgress(Math.max(0, Math.min(1, p.progress / 100)));
+          },
+        });
       })().catch((e) => { _asr = null; throw e; }); // a failed load must not poison the cache
     }
     return _asr;
@@ -162,6 +288,7 @@
     let stream = null, rec = null, chunks = [];
     let state = "idle"; // idle | recording | transcribing
     let streamTimer = null;
+    let startedAt = 0; // Date.now() at start() — how the WebM duration fix knows the true elapsed time
     // Guards against a slow partial pass still running when the next tick
     // (or the final stop()) fires — transcribe calls must never overlap,
     // since two concurrent asr() calls would fight over the one pipeline.
@@ -177,6 +304,17 @@
 
     function stopStreamTimer() { if (streamTimer) { clearInterval(streamTimer); streamTimer = null; } }
 
+    // A snapshot of the chunks recorded so far, with a real Duration patched
+    // into the WebM header (see fixWebmDuration above) — without this,
+    // decodeAudioData on a mid-recording (unfinalized) or even a stopped
+    // MediaRecorder blob can decode to bogus near-zero audio, silently
+    // starving the model of anything to actually hear.
+    async function snapshotBlob() {
+      const raw = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      const elapsedMs = Math.max(1, Date.now() - startedAt);
+      return /webm/.test(raw.type) ? fixWebmDuration(raw, elapsedMs) : raw;
+    }
+
     // Re-transcribes everything heard so far. A snapshot of the chunks
     // MediaRecorder has flushed to date is, for the codecs browsers actually
     // use here (webm/opus), itself a valid decodable clip — that's what
@@ -186,7 +324,7 @@
       if (streamBusy || state !== "recording" || !chunks.length) return;
       streamBusy = true;
       try {
-        const snapshot = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        const snapshot = await snapshotBlob();
         const mono = await decodeMono(snapshot);
         const windowSamples = PARTIAL_WINDOW_S * SR;
         const heard = mono.length > windowSamples ? mono.subarray(mono.length - windowSamples) : mono;
@@ -206,6 +344,7 @@
       if (state !== "idle") return;
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       chunks = [];
+      startedAt = Date.now();
       rec = new MediaRecorder(stream);
       rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       if (streamingEnabled) {
@@ -233,7 +372,7 @@
         if (state !== "recording" || !rec) return resolve({ text: "", blob: null });
         rec.onstop = async () => {
           releaseMic();
-          const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+          const blob = await snapshotBlob();
           chunks = [];
           // A partial pass can still be mid-flight here — it shares the one
           // cached ASR pipeline instance, and two concurrent calls into it
