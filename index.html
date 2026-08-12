@@ -329,6 +329,8 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .voice-note.hidden{display:none}
 .compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
 @keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
+.compose .voice-wave{flex:1;height:34px;width:100%;display:block}
+.compose .voice-wave.hidden{display:none}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
@@ -866,6 +868,7 @@ nav .setup .rail-toggle{display:inline-flex}
         <div class="compose">
           <div class="input-wrap">
             <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
+            <canvas id="voiceWave" class="voice-wave hidden" height="34" aria-hidden="true"></canvas>
             <div class="input-actions">
               <button id="micBtn" title="Speak your answer" type="button" hidden><i class="ph ph-microphone"></i></button>
               <button id="attachBtn" title="Attach a file" type="button"><i class="ph ph-paperclip"></i></button>
@@ -1209,101 +1212,11 @@ const SCHEMA = {
       help: "Only used to follow up about this complaint.",
       helpEs: "Solo se usará para dar seguimiento a esta queja.",
     },
-    {
-      path: "child_initials",
-      section: "about",
-      label: "Child's initials",
-      type: "text",
-      required: true,
-      prompt: "Now let's talk about your child. To help protect their privacy, please give just their initials, not their full name.",
-      promptEs: "Ahora hablemos de tu hijo o hija. Para proteger su privacidad, por favor da solo sus iniciales, no su nombre completo.",
-      help: "For example, if their name is Maria Lopez, you'd enter M.L.",
-      helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
-    },
-    {
-      path: "child_dob",
-      section: "about",
-      label: "Child's date of birth",
-      // A birthdate instead of an age in years — it doesn't go stale, and it
-      // doubles as a way to double-check everyone's talking about the same
-      // child. date_flex (not a bare "date") for the same reason
-      // custody_start_date uses it: an exact day isn't always remembered.
-      type: "date_flex",
-      required: true,
-      prompt: "What is your child's date of birth?",
-      promptEs: "¿Cuál es la fecha de nacimiento de tu hijo o hija?",
-      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
-      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
-    },
-    {
-      path: "child_race_ethnicity",
-      section: "about",
-      label: "Child's race or ethnicity",
-      // Standardized categories (the same federal race/ethnicity set used
-      // across HHS OCR intake, derived from the OMB 1997 standard) instead
-      // of open text — picked with checkboxes since a child can be more
-      // than one of these. Multiselect stores the picks as one
-      // comma-joined string, same shape as every other text answer.
-      // "Other" (with its own free-text follow-up below) covers whoever
-      // this fixed list doesn't fit, same pattern as home_language.
-      type: "multiselect",
-      enum: [
-        "American Indian or Alaska Native",
-        "Asian",
-        "Black or African American",
-        "Hispanic or Latino",
-        "Native Hawaiian or Other Pacific Islander",
-        "White",
-        "Other",
-      ],
-      required: true,
-      prompt: "How would you describe your child's race or ethnicity? Choose all that apply.",
-      promptEs: "¿Cómo describirías la raza o etnicidad de tu hijo o hija? Elige todas las que apliquen.",
-      help: "This matters because the complaint may involve unequal treatment.",
-      helpEs: "Esto importa porque la queja puede tratar sobre un trato desigual.",
-    },
-    {
-      path: "child_race_ethnicity_other",
-      section: "about",
-      label: "Child's race or ethnicity (other)",
-      type: "text",
-      required: false,
-      // Only asked when "Other" is among the picks above — see
-      // Steer.isFieldSkipped, which checks multiselect membership, not just
-      // exact equality, so this works no matter what else was also picked.
-      skipUnless: { field: "child_race_ethnicity", oneOf: ["Other"] },
-      prompt: "You picked \"Other\" — how would you describe it?",
-      promptEs: "Elegiste \"Otro\" — ¿cómo lo describirías?",
-      help: "A word or short phrase is fine.",
-      helpEs: "Una palabra o frase corta está bien.",
-    },
-    {
-      path: "child_disability_has",
-      section: "about",
-      label: "Disability, diagnosis, or medical/learning condition",
-      type: "boolean",
-      required: false,
-      prompt: "Does your child have a disability, diagnosis, or medical or learning condition that's part of this?",
-      promptEs: "¿Tu hijo o hija tiene alguna discapacidad, diagnóstico, o condición médica o de aprendizaje relacionada con esto?",
-      help: "This could be a seizure disorder, autism, ADHD, a learning disability, or anything else medical or developmental.",
-      helpEs: "Podría ser un trastorno convulsivo, autismo, TDAH, una discapacidad de aprendizaje, o cualquier otra cosa médica o del desarrollo.",
-    },
-    {
-      path: "child_disability_explain",
-      section: "about",
-      label: "Child's disability or diagnosis",
-      type: "text",
-      required: false,
-      // Only asked when the Yes/No question right above it was answered
-      // Yes — an empty or "No" answer skips straight past this one. Plain
-      // data (not a function) so it survives the admin panel's save round
-      // trip — see Steer.isFieldSkipped.
-      skipUnless: { field: "child_disability_has", oneOf: ["Yes", "Sí"] },
-      prompt: "Tell us about it — for example, a seizure disorder, autism, ADHD, or a learning disability. Include a diagnosis if you have one.",
-      promptEs: "Cuéntanos — por ejemplo, un trastorno convulsivo, autismo, TDAH, o una discapacidad de aprendizaje. Incluye un diagnóstico si lo tienes.",
-      help: "One box is fine — you don't need to list every diagnosis and date separately.",
-      helpEs: "Una sola respuesta está bien — no necesitas enumerar cada diagnóstico y fecha por separado.",
-    },
+    // The child block is a repeating group, same pattern as placement
+    // history below (see childRoundFields/Intake._maybeInjectNextChildRound):
+    // most complaints are about one child, but siblings in the same DCS
+    // case are common enough that the form can't assume there's only one.
+    ...childRoundFields(1),
     {
       path: "custody_start_date",
       section: "about",
@@ -1604,6 +1517,139 @@ const SCHEMA = {
     },
   ],
 };
+
+// One round of the child repeating group: initials, DOB, race/ethnicity
+// (+ its "Other" follow-up), and disability info, followed by a Yes/No on
+// whether there's another child to include. `n` is 1 for the always-asked
+// first round; Intake._maybeInjectNextChildRound splices in round n+1 at
+// runtime only when round n's "another child?" question is answered yes —
+// same mechanism as placementRoundFields/_maybeInjectNextPlacementRound
+// below, and a function declaration for the same hoisting reason (it's
+// called from inside the SCHEMA object literal above, defined after it).
+// Custody start date, DCS county/case number, home language, and everything
+// in the story/wrapup sections stay singular — they describe the family's
+// one DCS case, not any one child in it.
+function childRoundFields(n) {
+  const CHILD_RACE_ETHNICITY = [
+    "American Indian or Alaska Native",
+    "Asian",
+    "Black or African American",
+    "Hispanic or Latino",
+    "Native Hawaiian or Other Pacific Islander",
+    "White",
+    "Other",
+  ];
+  const ordinal = n === 1 ? "first" : n === 2 ? "second" : n === 3 ? "third" : `${n}th`;
+  const ordinalEs = n === 1 ? "primer" : n === 2 ? "segundo" : n === 3 ? "tercer" : `${n}.º`;
+  return [
+    {
+      path: `child_${n}_initials`,
+      section: "about",
+      label: `Child ${n} — initials`,
+      type: "text",
+      required: n === 1,
+      prompt: n === 1
+        ? "Now let's talk about your child. To help protect their privacy, please give just their initials, not their full name."
+        : `What are the ${ordinal} child's initials?`,
+      promptEs: n === 1
+        ? "Ahora hablemos de tu hijo o hija. Para proteger su privacidad, por favor da solo sus iniciales, no su nombre completo."
+        : `¿Cuáles son las iniciales del ${ordinalEs} niño o niña?`,
+      help: "For example, if their name is Maria Lopez, you'd enter M.L.",
+      helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
+    },
+    {
+      path: `child_${n}_dob`,
+      section: "about",
+      label: `Child ${n} — date of birth`,
+      // A birthdate instead of an age in years — it doesn't go stale, and it
+      // doubles as a way to double-check everyone's talking about the same
+      // child. date_flex (not a bare "date") for the same reason
+      // custody_start_date uses it: an exact day isn't always remembered.
+      type: "date_flex",
+      required: n === 1,
+      prompt: "What is this child's date of birth?",
+      promptEs: "¿Cuál es la fecha de nacimiento de este niño o niña?",
+      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
+      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
+    },
+    {
+      path: `child_${n}_race_ethnicity`,
+      section: "about",
+      label: `Child ${n} — race or ethnicity`,
+      // Standardized categories (the same federal race/ethnicity set used
+      // across HHS OCR intake, derived from the OMB 1997 standard) instead
+      // of open text — picked with checkboxes since a child can be more
+      // than one of these. Multiselect stores the picks as one
+      // comma-joined string, same shape as every other text answer.
+      // "Other" (with its own free-text follow-up below) covers whoever
+      // this fixed list doesn't fit, same pattern as home_language.
+      type: "multiselect",
+      enum: CHILD_RACE_ETHNICITY,
+      required: n === 1,
+      prompt: "How would you describe this child's race or ethnicity? Choose all that apply.",
+      promptEs: "¿Cómo describirías la raza o etnicidad de este niño o niña? Elige todas las que apliquen.",
+      help: "This matters because the complaint may involve unequal treatment.",
+      helpEs: "Esto importa porque la queja puede tratar sobre un trato desigual.",
+    },
+    {
+      path: `child_${n}_race_ethnicity_other`,
+      section: "about",
+      label: `Child ${n} — race or ethnicity (other)`,
+      type: "text",
+      required: false,
+      // Only asked when "Other" is among the picks above — see
+      // Steer.isFieldSkipped, which checks multiselect membership, not just
+      // exact equality, so this works no matter what else was also picked.
+      skipUnless: { field: `child_${n}_race_ethnicity`, oneOf: ["Other"] },
+      prompt: "You picked \"Other\" — how would you describe it?",
+      promptEs: "Elegiste \"Otro\" — ¿cómo lo describirías?",
+      help: "A word or short phrase is fine.",
+      helpEs: "Una palabra o frase corta está bien.",
+    },
+    {
+      path: `child_${n}_disability_has`,
+      section: "about",
+      label: `Child ${n} — disability, diagnosis, or medical/learning condition`,
+      type: "boolean",
+      required: false,
+      prompt: "Does this child have a disability, diagnosis, or medical or learning condition that's part of this?",
+      promptEs: "¿Este niño o niña tiene alguna discapacidad, diagnóstico, o condición médica o de aprendizaje relacionada con esto?",
+      help: "This could be a seizure disorder, autism, ADHD, a learning disability, or anything else medical or developmental.",
+      helpEs: "Podría ser un trastorno convulsivo, autismo, TDAH, una discapacidad de aprendizaje, o cualquier otra cosa médica o del desarrollo.",
+    },
+    {
+      path: `child_${n}_disability_explain`,
+      section: "about",
+      label: `Child ${n} — disability or diagnosis`,
+      type: "text",
+      required: false,
+      // Only asked when the Yes/No question right above it was answered
+      // Yes — an empty or "No" answer skips straight past this one. Plain
+      // data (not a function) so it survives the admin panel's save round
+      // trip — see Steer.isFieldSkipped.
+      skipUnless: { field: `child_${n}_disability_has`, oneOf: ["Yes", "Sí"] },
+      prompt: "Tell us about it — for example, a seizure disorder, autism, ADHD, or a learning disability. Include a diagnosis if you have one.",
+      promptEs: "Cuéntanos — por ejemplo, un trastorno convulsivo, autismo, TDAH, o una discapacidad de aprendizaje. Incluye un diagnóstico si lo tienes.",
+      help: "One box is fine — you don't need to list every diagnosis and date separately.",
+      helpEs: "Una sola respuesta está bien — no necesitas enumerar cada diagnóstico y fecha por separado.",
+    },
+    {
+      path: `child_more_${n}`,
+      section: "about",
+      label: "Another child in this complaint?",
+      type: "boolean",
+      required: false,
+      prompt: n === 1
+        ? "Is there another child you want to include in this complaint?"
+        : "Is there another child after that one?",
+      promptEs: n === 1
+        ? "¿Hay otro niño o niña que quieras incluir en esta queja?"
+        : "¿Hay otro niño o niña después de ese?",
+      help: "Most complaints are about one child — say no if that's the case.",
+      helpEs: "La mayoría de las quejas son sobre un solo niño o niña — di que no si es tu caso.",
+    },
+  ];
+}
 
 // One round of the placement repeating group: when it started, what kind of
 // placement it was, and optional notes, followed by a Yes/No on whether
@@ -1937,9 +1983,11 @@ const LETTER_REQUIRED_FIELDS = [
   { path: "complainant_relationship", label: "relationship to the child" },
   { path: "complainant_address", label: "mailing address" },
   { path: "complainant_phone", label: "phone number" },
-  { path: "child_initials", label: "child's initials" },
-  { path: "child_dob", label: "child's date of birth" },
-  { path: "child_race_ethnicity", label: "child's race or ethnicity" },
+  // Only the first child (see childRoundFields/_maybeInjectNextChildRound)
+  // is ever required — same reasoning as placement round 1 below.
+  { path: "child_1_initials", label: "child's initials" },
+  { path: "child_1_dob", label: "child's date of birth" },
+  { path: "child_1_race_ethnicity", label: "child's race or ethnicity" },
   { path: "custody_start_date", label: "date DCS custody began" },
   { path: "dcs_county", label: "county handling the case" },
   { path: "home_language", label: "home language" },
@@ -1968,7 +2016,9 @@ const LETTER_REQUIRED_FIELDS = [
 // top-to-bottom in exactly the same order as the sections of the letter.
 const LETTER_PATHS = [
   "complainant_name", "complainant_relationship", "complainant_address", "complainant_phone", "complainant_email",
-  "child_initials", "child_dob", "child_race_ethnicity", "child_race_ethnicity_other", "child_disability_has", "child_disability_explain",
+  // Child rounds beyond the first are numbered dynamically at runtime, same
+  // as placement rounds below — buildComplaintLetter derives however many
+  // actually got answered (see childRoundNumbers) and splices them in here.
   "home_language", "home_language_other", "custody_start_date", "dcs_county", "dcs_case_number",
   "family_background",
   // Placement rounds beyond the first are numbered dynamically at runtime
@@ -2018,6 +2068,17 @@ function placementRoundNumbers(obj) {
   return Array.from(nums).sort((a, b) => a - b);
 }
 
+// Same derivation as placementRoundNumbers, for the child repeating group
+// (see childRoundFields/Intake._maybeInjectNextChildRound).
+function childRoundNumbers(obj) {
+  const nums = new Set();
+  for (const key of Object.keys(obj)) {
+    const m = /^child_(\d+)_(?:initials|dob|race_ethnicity)$/.exec(key);
+    if (m) nums.add(Number(m[1]));
+  }
+  return Array.from(nums).sort((a, b) => a - b);
+}
+
 // Whole years between a (possibly month-only) date_flex birthdate and today
 // — displayed alongside the DOB itself, not in place of it, since the DOB is
 // what's actually collected and age just changes every year.
@@ -2047,12 +2108,23 @@ function buildComplaintLetter(answers, provenance = {}) {
   const v = (p) => { const s = answers[p]; return s == null ? "" : String(s).trim(); };
   const sec = (title, body) => `\n${title}\n${"-".repeat(title.length)}\n${body || "(not provided)"}`;
   const missing = LETTER_REQUIRED_FIELDS.filter((f) => !v(f.path));
+  const childRounds = childRoundNumbers(answers);
+  const childPaths = childRounds.flatMap((n) => [
+    `child_${n}_initials`, `child_${n}_dob`, `child_${n}_race_ethnicity`, `child_${n}_race_ethnicity_other`,
+    `child_${n}_disability_has`, `child_${n}_disability_explain`,
+  ]);
+  // Spliced in right before "home_language" — the same spot the child block
+  // occupies in the letter body (section 2, right after section 1).
+  const homeLangIdx = LETTER_PATHS.indexOf("home_language");
   const placementRounds = placementRoundNumbers(answers);
   const placementPaths = placementRounds.flatMap((n) => [`placement_${n}_when`, `placement_${n}_type`, `placement_${n}_location`, `placement_${n}_notes`]);
   // Spliced in right before "alternatives_asked" — the same spot placement
   // history occupies in the letter body (section 5, right after section 4).
   const altIdx = LETTER_PATHS.indexOf("alternatives_asked");
-  const orderedPaths = [...LETTER_PATHS.slice(0, altIdx), ...placementPaths, ...LETTER_PATHS.slice(altIdx)];
+  const orderedPaths = [
+    ...LETTER_PATHS.slice(0, homeLangIdx), ...childPaths, ...LETTER_PATHS.slice(homeLangIdx, altIdx),
+    ...placementPaths, ...LETTER_PATHS.slice(altIdx),
+  ];
 
   const sources = [];
   for (const p of orderedPaths) {
@@ -2090,11 +2162,21 @@ function buildComplaintLetter(answers, provenance = {}) {
       `Mailing address: ${v("complainant_address") || "(not provided)"}\n` +
       `Phone: ${v("complainant_phone") || "(not provided)"}\n` +
       `Email: ${v("complainant_email") || "(not provided)"}`),
-    sec("2. Child concerned",
-      `Initials: ${v("child_initials") || "(not provided)"}\n` +
-      `Date of birth: ${v("child_dob") ? v("child_dob") + (ageFromDob(v("child_dob")) != null ? ` (age ${ageFromDob(v("child_dob"))})` : "") : "(not provided)"}\n` +
-      `Race/ethnicity: ${expandOtherPicks(v("child_race_ethnicity"), v("child_race_ethnicity_other")) || "(not provided)"}\n` +
-      `Disability/diagnosis: ${(v("child_disability_has") === "Yes" || v("child_disability_has") === "Sí") ? (v("child_disability_explain") || "(described, not detailed)") : "(none reported)"}`),
+    sec("2. Child(ren) concerned", childRounds.length
+      ? childRounds.map((n, i) => {
+          const dob = v(`child_${n}_dob`);
+          const dobLine = dob ? dob + (ageFromDob(dob) != null ? ` (age ${ageFromDob(dob)})` : "") : "(not provided)";
+          const disabHas = v(`child_${n}_disability_has`);
+          const disability = (disabHas === "Yes" || disabHas === "Sí")
+            ? (v(`child_${n}_disability_explain`) || "(described, not detailed)")
+            : "(none reported)";
+          return `Child ${i + 1}\n` +
+            `  Initials: ${v(`child_${n}_initials`) || "(not provided)"}\n` +
+            `  Date of birth: ${dobLine}\n` +
+            `  Race/ethnicity: ${expandOtherPicks(v(`child_${n}_race_ethnicity`), v(`child_${n}_race_ethnicity_other`)) || "(not provided)"}\n` +
+            `  Disability/diagnosis: ${disability}`;
+        }).join("\n\n")
+      : ""),
     sec("3. Background",
       `Home language: ${expandOtherPicks(v("home_language"), v("home_language_other")) || "(not provided)"}\n` +
       `Date DCS custody began: ${v("custody_start_date") || "(not provided)"}\n` +
@@ -2219,9 +2301,16 @@ class MatrixStore extends BaseStore {
     if (!sdk) throw new Error("matrix-js-sdk not loaded");
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
+    // useAuthorizationHeader: the SDK defaults to putting the access token
+    // in the URL as ?access_token=..., including on /upload — a homeserver
+    // that requires modern Bearer auth (the same reason MatrixMedia.get()
+    // already sends an explicit Authorization header for downloads) rejects
+    // that silently, which reads as "uploads/documents don't work" with no
+    // obvious cause. Every client built from a real access token sends the
+    // header instead, everywhere in this file.
     const client = sdk.createClient({
       baseUrl: homeserver, accessToken: res.access_token,
-      userId: res.user_id, deviceId: res.device_id,
+      userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     await client.startClient({ initialSyncLimit: 100 });
@@ -2510,22 +2599,29 @@ const DEMO_KNOWLEDGE = new KnowledgeStore([
 
 
 
-// This is the ENTIRE instruction the model ever gets, and note what it is
-// NOT asked to do: write anything. A fixed, hand-written script (see
-// vendor/steer.js — Steer.pickReply) is the only source of text the
-// person ever reads. The model's one job is to classify the latest
-// message about the current field, in whichever of the two supported
-// languages (or mix — code-switching is common) the person is using, and
-// however typo-ridden it is.
+// This is nearly the ENTIRE instruction the model ever gets, and note what
+// it is NOT asked to do: write the person's answer for them. A fixed,
+// hand-written script (see vendor/steer.js — Steer.pickReply) is still the
+// only source of the mechanical confirm/error/safety text the person reads
+// — what's below adds exactly one narrow exception, `followup`, and only
+// for CURRENT FIELDs that are open-ended narrative questions with no fixed
+// answer shape (no enum, no date, no digits — see the field's `type` in
+// CURRENT FIELD). The model's job is still to classify the latest message,
+// in whichever of the two supported languages (or mix — code-switching is
+// common) the person is using, and however typo-ridden it is; `followup` is
+// a targeted question about what's missing, never a rewrite, summary, or
+// invented detail, and the stored answer always comes from the person's own
+// later words, confirmed the same way as any other field.
 const MINIMAL_SYSTEM =
-`You are the classification step behind a trauma-informed intake conversation. You never write a reply — a separate fixed script shows the person text, never you. Your only job is to read their latest message about CURRENT FIELD and classify it.
+`You are the classification step behind a trauma-informed intake conversation. A separate fixed script shows the person almost all of their text — you never write their stored answer for them. Your job is to read their latest message about CURRENT FIELD and classify it.
 The person may write in English or Spanish, sometimes both, often with typos or informal grammar — read past all of that for meaning.
 - support: true only if this message is a question, confusion, or a request for help rather than an attempt to answer.
 - distress: true only if the message itself signals the person may be in crisis or in immediate danger right now — not merely for describing past hardship, abuse, or trauma, which is expected and should NOT set this true.
-- ready: true once the message contains a usable answer for CURRENT FIELD.
+- ready: true once the message contains a genuine, on-topic attempt at CURRENT FIELD. For an open-ended narrative question (no enum, no fixed format), a single vague word, a placeholder like "idk" or a stray keystroke, or text that doesn't actually address the question must NOT be marked ready — that's thin, not usable, even if it's non-empty.
 - extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
-Never invent facts about the person. When uncertain, leave ready false rather than guessing.
-Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean}`;
+- followup: OPTIONAL, and only for an open-ended narrative CURRENT FIELD (never for an enum/date/digits field, which already gets an exact, fixed error message). When ready is false and support is false — they tried to answer but it's too thin, vague, or unclear to use — write ONE short, warm, specific question in their own language that names what's missing and invites them to say more, grounded only in what they already wrote. Never invent facts about their situation, never write or imply an answer on their behalf. Leave this null whenever ready is true, whenever support is true, or for any field with a fixed answer shape.
+Never invent facts about the person. When uncertain whether an answer is usable, leave ready false rather than guessing.
+Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean,"followup":string|null}`;
 
 // A second, equally narrow classify-only prompt, for a different question:
 // given text the person has already written, and a short list of topics a
@@ -3678,7 +3774,13 @@ class Intake {
       return;
     }
 
-    thinking.text = this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    // For an open-ended narrative field, a real model backend can offer a
+    // targeted "here's what's still missing" question instead of the
+    // generic canned nudge below — see MINIMAL_SYSTEM's `followup` and
+    // _parseClassification, which only ever populates it for exactly this
+    // kind of field. Still never the stored answer itself: this only ever
+    // reaches the "not ready yet" branch, never the confirm/store path above.
+    thinking.text = parsed.followup || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
     thinking.streaming = false; thinking.support = true;
     this._emit("message", thinking);
   }
@@ -3739,8 +3841,23 @@ class Intake {
     this._checkFilingDeadline(field, value);
     await this._maybeInjectFollowups(field, value);
     await this._maybeInjectCoverageFollowup(field, value);
+    this._maybeInjectNextChildRound(field, value);
     this._maybeInjectNextPlacementRound(field, value);
     return this._askNext();
+  }
+
+  // The child block is a repeating group (see childRoundFields): answering
+  // "another child?" (child_more_N) yes splices round N+1's seven questions
+  // in right after it — same mechanism, same idempotency, as
+  // _maybeInjectNextPlacementRound just below.
+  _maybeInjectNextChildRound(field, value) {
+    const m = /^child_more_(\d+)$/.exec(field.path);
+    if (!m) return;
+    if (value !== "Yes" && value !== "Sí") return;
+    const next = Number(m[1]) + 1;
+    if (this.schema.fields.some((f) => f.path === `child_${next}_initials`)) return;
+    const insertAt = this.schema.fields.findIndex((f) => f.path === field.path) + 1;
+    this.schema.fields.splice(insertAt, 0, ...childRoundFields(next));
   }
 
   // Placement history is a repeating group (see placementRoundFields):
@@ -4006,14 +4123,20 @@ class Intake {
     const m = (raw || "").match(/\{[\s\S]*\}/);
     if (m) { try {
       const j = JSON.parse(m[0]);
-      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress };
+      // `followup` only ever applies to open-ended narrative fields (no
+      // fixed answer shape) — an enum/date/digits field already gets an
+      // exact, reviewed error message from Steer.validate, so a model-
+      // authored `followup` there is ignored even if one came back.
+      const isNarrative = field.type === "text" && !field.enum && !field.digits;
+      const followup = (isNarrative && typeof j.followup === "string" && j.followup.trim()) ? j.followup.trim() : null;
+      return { support: !!j.support, ready: !!j.ready, extracted: j.extracted ?? null, distress: !!j.distress, followup };
     } catch {} }
     // No parseable envelope: rather than dead-ending the conversation on a
     // fallible small model, fall back to the person's own raw text if it
     // already satisfies the field on its own.
     const err = validate(field, userText, this.lang);
-    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false };
-    return { support: true, ready: false, extracted: null, distress: false };
+    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false, followup: null };
+    return { support: true, ready: false, extracted: null, distress: false, followup: null };
   }
 }
 
@@ -6316,9 +6439,65 @@ function autoDownloadVoiceModel() {
   }, { timeout: 4000 });
 }
 
+// Live waveform while recording — reads the exact same MediaStream
+// MediaRecorder is writing (see voice.js's exposed `stream` getter), never a
+// second getUserMedia call. Transcription is a separate, much slower path
+// (see voice.js's onPartial/stop); this is purely visual feedback that
+// something is actually being heard, drawn every animation frame off a
+// Web Audio AnalyserNode's live time-domain samples.
+let waveRAF = null, waveAudioCtx = null, waveAnalyser = null, waveSource = null;
+
+function startWaveform(stream) {
+  const canvas = document.getElementById("voiceWave");
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!canvas || !stream || !AC) return;
+  stopWaveform();
+  waveAudioCtx = new AC();
+  waveSource = waveAudioCtx.createMediaStreamSource(stream);
+  waveAnalyser = waveAudioCtx.createAnalyser();
+  waveAnalyser.fftSize = 1024;
+  waveSource.connect(waveAnalyser);
+  const data = new Uint8Array(waveAnalyser.fftSize);
+  const ctx2d = canvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  const seal = getComputedStyle(document.documentElement).getPropertyValue("--seal").trim() || "#2E6F5E";
+  const draw = () => {
+    waveRAF = requestAnimationFrame(draw);
+    waveAnalyser.getByteTimeDomainData(data);
+    const w = canvas.width, h = canvas.height;
+    ctx2d.clearRect(0, 0, w, h);
+    ctx2d.beginPath();
+    const slice = w / data.length;
+    let x = 0;
+    for (let i = 0; i < data.length; i++) {
+      const y = h / 2 + (data[i] / 128 - 1) * (h / 2) * 0.9;
+      if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+      x += slice;
+    }
+    ctx2d.strokeStyle = seal;
+    ctx2d.lineWidth = 2 * dpr;
+    ctx2d.stroke();
+  };
+  draw();
+}
+
+function stopWaveform() {
+  if (waveRAF) cancelAnimationFrame(waveRAF);
+  waveRAF = null;
+  try { waveSource && waveSource.disconnect(); } catch {}
+  try { waveAnalyser && waveAnalyser.disconnect(); } catch {}
+  try { waveAudioCtx && waveAudioCtx.close(); } catch {}
+  waveSource = null; waveAnalyser = null; waveAudioCtx = null;
+  const canvas = document.getElementById("voiceWave");
+  if (canvas) { const c = canvas.getContext("2d"); if (c) c.clearRect(0, 0, canvas.width, canvas.height); }
+}
+
 function wireVoice() {
   const btn = document.getElementById("micBtn");
   const input = document.getElementById("input");
+  const wave = document.getElementById("voiceWave");
   if (!btn) return;
   if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
   btn.hidden = false;
@@ -6342,9 +6521,18 @@ function wireVoice() {
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
           input.classList.toggle("streaming", s === "recording");
-          if (s === "recording") setVoiceNote(voiceCopy("recording"));
-          else if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
-          else setVoiceNote(voiceCopy("consent"));
+          // While recording, the waveform replaces the textarea in the same
+          // flex slot — the live partial transcript (onPartial below) still
+          // lands in the textarea's value underneath, so nothing is lost
+          // the moment recording stops and the textarea reappears.
+          if (wave) wave.classList.toggle("hidden", s !== "recording");
+          input.classList.toggle("hidden", s === "recording");
+          if (s === "recording") { setVoiceNote(voiceCopy("recording")); startWaveform(voiceInstance && voiceInstance.stream); }
+          else {
+            stopWaveform();
+            if (s === "transcribing") setVoiceNote(voiceModelDownloaded ? voiceCopy("transcribing") : voiceCopy("downloading"));
+            else setVoiceNote(voiceCopy("consent"));
+          }
         },
         onProgress: (frac) => {
           voiceModelDownloaded = frac >= 1;
@@ -6579,9 +6767,11 @@ async function registerSilentAccount(homeserver) {
 // homeserver, since this runs before any wizard state exists.
 async function setupSilentClient(homeserver, registered) {
   const sdk = window.matrixcs;
+  // useAuthorizationHeader — see MatrixStore.login's comment on why every
+  // real client built here sends it.
   const client = sdk.createClient({
     baseUrl: homeserver, accessToken: registered.access_token,
-    userId: registered.user_id, deviceId: registered.device_id,
+    userId: registered.user_id, deviceId: registered.device_id, useAuthorizationHeader: true,
   });
   await initClientCrypto(client);
   client.startClient({ initialSyncLimit: 50 });
@@ -6632,7 +6822,8 @@ async function tryResumeSilentAccount(saved) {
   const sdk = window.matrixcs;
   if (!sdk || !saved?.accessToken) return null;
   try {
-    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId });
+    // useAuthorizationHeader — see MatrixStore.login's comment.
+    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId, useAuthorizationHeader: true });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
     await new Promise((resolve, reject) => {
@@ -7267,9 +7458,10 @@ async function suCreateAccount() {
 async function suSetupClientFromRegistration(data) {
   try {
     const sdk = window.matrixcs;
+    // useAuthorizationHeader — see MatrixStore.login's comment.
     const client = sdk.createClient({
       baseUrl: MATRIX_ORG_HS, accessToken: data.access_token,
-      userId: data.user_id, deviceId: data.device_id
+      userId: data.user_id, deviceId: data.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
@@ -7501,9 +7693,10 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
     if (!sdk) throw new Error("Matrix SDK not loaded");
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
+    // useAuthorizationHeader — see MatrixStore.login's comment.
     const client = sdk.createClient({
       baseUrl: homeserver, accessToken: res.access_token,
-      userId: res.user_id, deviceId: res.device_id
+      userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });

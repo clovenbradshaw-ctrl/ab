@@ -130,6 +130,23 @@ class BrokenCoverageModel {
   }
 }
 
+// Always claims the answer isn't ready yet and offers a fixed `followup`
+// question — used to check that MINIMAL_SYSTEM's `followup` reaches the
+// person for an open-ended text field, and is ignored (per
+// Intake._parseClassification's isNarrative gate) for anything with a
+// fixed answer shape (enum, boolean, date, digits, ...).
+class FollowupModel {
+  constructor(engine, followupText) {
+    this._echo = new engine.EchoModel();
+    this._followupText = followupText;
+  }
+  async chat(messages) {
+    const sys = messages.find((m) => m.role === "system")?.content || "";
+    if (sys.includes("TOPICS:")) return this._echo.chat(messages);
+    return JSON.stringify({ support: false, ready: false, extracted: null, distress: false, followup: this._followupText });
+  }
+}
+
 test("name field: all-lowercase input is title-cased per word, not just the sentence start", async () => {
   const engine = loadEngine();
   const { intake } = await converse(engine, "en", ["frank smith", "yes"]);
@@ -207,37 +224,66 @@ test("enum field: exact and case-insensitive matches still confirm and store nor
 test("multiselect field: multiple race/ethnicity picks are stored as one comma-joined value", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_race_ethnicity");
+  const idx = fields.findIndex((f) => f.path === "child_1_race_ethnicity");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("Black or African American, Hispanic or Latino", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_race_ethnicity, "Black or African American, Hispanic or Latino");
+  assert.equal(intake.answers().child_1_race_ethnicity, "Black or African American, Hispanic or Latino");
 });
 
 test("conditional field: the disability follow-up is skipped (never asked) when the Yes/No question is answered No", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_disability_has");
+  const idx = fields.findIndex((f) => f.path === "child_1_disability_has");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("No", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_disability_has, "No");
-  assert.equal(intake.answers().child_disability_explain, undefined);
-  assert.equal(intake.nextField().path, "custody_start_date");
+  assert.equal(intake.answers().child_1_disability_has, "No");
+  assert.equal(intake.answers().child_1_disability_explain, undefined);
+  assert.equal(intake.nextField().path, "child_more_1");
 });
 
 test("conditional field: the disability follow-up is asked and stored when the Yes/No question is answered Yes", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_disability_has");
+  const idx = fields.findIndex((f) => f.path === "child_1_disability_has");
   const lines = [];
   lines.push(...linesUpTo(fields, idx, "yes"));
   lines.push("Yes", "yes");
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_disability_has, "Yes");
-  assert.equal(intake.nextField().path, "child_disability_explain");
+  assert.equal(intake.answers().child_1_disability_has, "Yes");
+  assert.equal(intake.nextField().path, "child_1_disability_explain");
+});
+
+test("repeating group: 'another child?' answered yes adds a second child round, answered no moves on", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "child_1_initials");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push(
+    "A.B.", "yes",
+    "2015-04-10", "yes",
+    "White", "yes",
+    "No", "yes",
+    "Yes", "yes",
+  );
+  const { intake } = await converse(engine, "en", lines);
+  assert.equal(intake.answers().child_1_initials, "A.B.");
+  assert.equal(intake.answers().child_more_1, "Yes");
+  assert.equal(intake.nextField().path, "child_2_initials");
+
+  await intake.submit("C.D."); await intake.submit("yes");
+  await intake.submit("2017-09-01"); await intake.submit("yes");
+  await intake.submit("Black or African American"); await intake.submit("yes");
+  await intake.submit("No"); await intake.submit("yes");
+  await intake.submit("No"); await intake.submit("yes");
+  assert.equal(intake.answers().child_2_initials, "C.D.");
+  assert.equal(intake.answers().child_more_2, "No");
+  assert.equal(intake.answers().child_3_initials, undefined);
+  assert.equal(intake.nextField().path, "custody_start_date");
 });
 
 test("conditional field: the home-language 'other' follow-up is skipped unless Other is picked", async () => {
@@ -371,6 +417,32 @@ test("semantic coverage: (for contrast) the same paraphrase does NOT trigger the
   lines.push("He's been on pills for his seizures and I'm not sure DCS is giving them on schedule.", "yes");
   const { intake } = await converse(engine, "en", lines); // default EchoModel
   assert.notEqual(intake.nextField().path, "narrative_followup_medical");
+});
+
+test("narrative field: a model-authored followup replaces the generic nudge for an open-ended text field", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "family_background");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("stuff happened");
+  const model = new FollowupModel(engine, "Can you say more about when this started?");
+  const { turns } = await converse(engine, "en", lines, { model });
+  const last = turns[turns.length - 1];
+  assert.equal(last.reply, "Can you say more about when this started?");
+  assert.equal(last.support, true);
+});
+
+test("structured field: a model-authored followup is ignored for a field with a fixed answer shape", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "child_1_disability_has");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx, "yes"));
+  lines.push("not sure how to answer that");
+  const model = new FollowupModel(engine, "This should never reach a structured field.");
+  const { turns } = await converse(engine, "en", lines, { model });
+  assert.notEqual(turns[turns.length - 1].reply, "This should never reach a structured field.");
 });
 
 test("semantic coverage: a real model recognizes an approximate timeframe the date regex would miss, and only asks for 'who'", async () => {
