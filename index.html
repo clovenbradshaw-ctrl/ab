@@ -321,6 +321,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
 #micBtn.recording{color:var(--red);background:var(--red-soft);animation:mic-pulse 1.4s ease-in-out infinite}
 #micBtn.busy{opacity:.6;cursor:default}
+#micBtn{position:relative}
+#micBtn::after{content:"";position:absolute;top:1px;right:1px;width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 0 1.5px var(--surface)}
+#micBtn.ready::after{background:var(--seal)}
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,64,47,.25)}50%{box-shadow:0 0 0 5px rgba(176,64,47,.08)}}
 .voice-note{padding:0 14px 6px;font-size:11px;color:var(--muted);line-height:1.4}
 .voice-note.hidden{display:none}
@@ -6195,6 +6198,15 @@ function setVoiceNote(text) {
   note.classList.remove("hidden");
 }
 
+// A red/green dot on the mic button itself — whether the speech model is
+// ready to transcribe right now, no download percentage to read.
+function setVoiceReady(ready) {
+  const btn = document.getElementById("micBtn");
+  if (!btn) return;
+  btn.classList.toggle("ready", !!ready);
+  btn.title = ready ? "Speak your answer" : "Speak your answer (still preparing the speech model)";
+}
+
 // Kick the (large, one-time) speech-model download off automatically —
 // during idle time early in the page's life, not lazily on the first mic
 // tap — see vendor/voice.js's autoDownload(). Progress only ever touches
@@ -6212,8 +6224,9 @@ function autoDownloadVoiceModel() {
   schedule(() => {
     Voice.autoDownload((frac) => {
       voiceModelDownloaded = frac >= 1;
+      setVoiceReady(voiceModelDownloaded);
       if (voiceInstance && voiceInstance.state !== "idle") return;
-      setVoiceNote(frac >= 1 ? voiceCopy("consent") : `${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+      setVoiceNote(frac >= 1 ? voiceCopy("consent") : voiceCopy("downloading"));
     });
   }, { timeout: 4000 });
 }
@@ -6224,6 +6237,7 @@ function wireVoice() {
   if (!btn) return;
   if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
   btn.hidden = false;
+  setVoiceReady(voiceModelDownloaded);
   setVoiceNote(voiceCopy("consent"));
   autoDownloadVoiceModel();
 
@@ -6249,7 +6263,8 @@ function wireVoice() {
         },
         onProgress: (frac) => {
           voiceModelDownloaded = frac >= 1;
-          if (frac < 1) setVoiceNote(`${voiceCopy("downloading")} ${Math.round(frac * 100)}%`);
+          setVoiceReady(voiceModelDownloaded);
+          if (frac < 1) setVoiceNote(voiceCopy("downloading"));
         },
         // Live preview while still recording — a lower-quality pass than
         // the final stop() transcript, replaced by it the moment recording
