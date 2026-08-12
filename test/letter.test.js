@@ -79,11 +79,12 @@ test("missing lists only unanswered REQUIRED fields", () => {
   const engine = loadEngine();
   const required = engine.LETTER_REQUIRED_FIELDS.map((f) => f.path);
   const answers = fullAnswers(engine);
-  // Empty the optional prior-remedy and document fields entirely; they must
-  // NOT count as missing — they render as "(none reported)".
+  // Empty the optional document fields entirely; they must NOT count as
+  // missing — they render as "(none reported)". The prior-remedy questions
+  // are no longer in this group: they're required now (see
+  // LETTER_REQUIRED_FIELDS), covered by the next test instead.
   for (const p of [
-    "harms", "prior_remedy_dcs_grievance", "prior_remedy_state_office", "prior_remedy_federal",
-    "prior_remedy_court", "prior_remedy_legal_help", "doc_court_orders", "doc_dcs_records",
+    "harms", "doc_court_orders", "doc_dcs_records",
     "doc_medical_records", "doc_school_records", "doc_other_evidence",
   ]) delete answers[p];
   const { missing } = engine.buildComplaintLetter(answers);
@@ -96,6 +97,14 @@ test("missing lists only unanswered REQUIRED fields", () => {
   assert.deepEqual(host(missing2).map((m) => m.path), ["complainant_name"]);
 });
 
+test("missing flags an unanswered prior-remedy question — those are required, not optional", () => {
+  const engine = loadEngine();
+  const answers = fullAnswers(engine);
+  delete answers.prior_remedy_legal_help;
+  const { missing } = engine.buildComplaintLetter(answers);
+  assert.deepEqual(host(missing).map((m) => m.path), ["prior_remedy_legal_help"]);
+});
+
 test("missing is empty when every required field has a value", () => {
   const engine = loadEngine();
   const { missing } = engine.buildComplaintLetter(fullAnswers(engine));
@@ -106,12 +115,12 @@ test("placement history: dynamically-numbered rounds render as a numbered list i
   const engine = loadEngine();
   const answers = {
     ...fullAnswers(engine),
-    placement_1_when: "2024-03-01", placement_1_type: "A relative's home (kinship placement)", placement_1_notes: "Grandmother's house",
-    placement_2_when: "2024-06-01", placement_2_type: "A foster home", placement_2_notes: "",
-    placement_3_when: "2024-11-01", placement_3_type: "A residential or treatment facility", placement_3_notes: "Current placement",
+    placement_1_when: "2024-03-01", placement_1_type: "A relative's home (kinship placement)", placement_1_location: "Nashville", placement_1_notes: "Grandmother's house",
+    placement_2_when: "2024-06-01", placement_2_type: "A foster home", placement_2_location: "", placement_2_notes: "",
+    placement_3_when: "2024-11-01", placement_3_type: "A residential or treatment facility", placement_3_location: "", placement_3_notes: "Current placement",
   };
   const { letter } = engine.buildComplaintLetter(answers);
-  assert.match(letter, /1\. 2024-03-01 — A relative's home \(kinship placement\) — Grandmother's house/);
+  assert.match(letter, /1\. 2024-03-01 — A relative's home \(kinship placement\) — Nashville — Grandmother's house/);
   assert.match(letter, /2\. 2024-06-01 — A foster home\n/);
   assert.match(letter, /3\. 2024-11-01 — A residential or treatment facility — Current placement/);
 });

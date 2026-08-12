@@ -706,6 +706,19 @@ nav .setup .rail-toggle{display:inline-flex}
 
     <p class="sso-hint">Your password is sent straight to your account provider and is never stored here.</p>
 
+    <!-- Reviewing-office sign-in: the admin account itself is fixed
+         (ADMIN_USER_ID in config.js), so there's no username to type or
+         show — only the password ever needs to be entered here. Reuses the
+         hs-toggle/hs-fields collapse pattern above rather than new CSS. -->
+    <button type="button" class="hs-toggle" id="loginShowAdmin">Reviewing office? Sign in →</button>
+    <div class="hs-fields" id="adminFields">
+      <div class="form-group">
+        <label>Password</label>
+        <input id="adminPassword" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="login-btn primary" id="loginAdminMatrix">Sign in</button>
+    </div>
+
     <div class="divider">just looking?</div>
     <button class="login-btn quiet" id="loginDemo">Try a demo — nothing you write is saved</button>
   </div>
@@ -1008,6 +1021,7 @@ nav .setup .rail-toggle{display:inline-flex}
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
     <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="pipeline">Pipeline</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
+    <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
   </header>
   <div class="abody" id="adminBody"></div>
@@ -1207,15 +1221,19 @@ const SCHEMA = {
       helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
     },
     {
-      path: "child_age",
+      path: "child_dob",
       section: "about",
-      label: "Child's age",
-      type: "number",
+      label: "Child's date of birth",
+      // A birthdate instead of an age in years — it doesn't go stale, and it
+      // doubles as a way to double-check everyone's talking about the same
+      // child. date_flex (not a bare "date") for the same reason
+      // custody_start_date uses it: an exact day isn't always remembered.
+      type: "date_flex",
       required: true,
-      prompt: "How old is your child?",
-      promptEs: "¿Cuántos años tiene tu hijo o hija?",
-      help: "Their age right now is fine.",
-      helpEs: "Su edad actual está bien.",
+      prompt: "What is your child's date of birth?",
+      promptEs: "¿Cuál es la fecha de nacimiento de tu hijo o hija?",
+      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
+      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
     },
     {
       path: "child_race_ethnicity",
@@ -1226,6 +1244,8 @@ const SCHEMA = {
       // of open text — picked with checkboxes since a child can be more
       // than one of these. Multiselect stores the picks as one
       // comma-joined string, same shape as every other text answer.
+      // "Other" (with its own free-text follow-up below) covers whoever
+      // this fixed list doesn't fit, same pattern as home_language.
       type: "multiselect",
       enum: [
         "American Indian or Alaska Native",
@@ -1234,12 +1254,28 @@ const SCHEMA = {
         "Hispanic or Latino",
         "Native Hawaiian or Other Pacific Islander",
         "White",
+        "Other",
       ],
       required: true,
       prompt: "How would you describe your child's race or ethnicity? Choose all that apply.",
       promptEs: "¿Cómo describirías la raza o etnicidad de tu hijo o hija? Elige todas las que apliquen.",
       help: "This matters because the complaint may involve unequal treatment.",
       helpEs: "Esto importa porque la queja puede tratar sobre un trato desigual.",
+    },
+    {
+      path: "child_race_ethnicity_other",
+      section: "about",
+      label: "Child's race or ethnicity (other)",
+      type: "text",
+      required: false,
+      // Only asked when "Other" is among the picks above — see
+      // Steer.isFieldSkipped, which checks multiselect membership, not just
+      // exact equality, so this works no matter what else was also picked.
+      skipUnless: { field: "child_race_ethnicity", oneOf: ["Other"] },
+      prompt: "You picked \"Other\" — how would you describe it?",
+      promptEs: "Elegiste \"Otro\" — ¿cómo lo describirías?",
+      help: "A word or short phrase is fine.",
+      helpEs: "Una palabra o frase corta está bien.",
     },
     {
       path: "child_disability_has",
@@ -1338,11 +1374,14 @@ const SCHEMA = {
       path: "home_language",
       section: "about",
       label: "Language spoken at home",
-      type: "select",
+      // Multiselect, not a single pick — plenty of families are bilingual,
+      // and which languages DCS did or didn't accommodate can matter to the
+      // complaint. Stored the same comma-joined way as child_race_ethnicity.
+      type: "multiselect",
       enum: ["English", "Spanish", "Arabic", "Chinese", "French", "Kurdish", "Somali", "Swahili", "Vietnamese", "Other"],
       required: true,
-      prompt: "What language does your family mainly speak at home?",
-      promptEs: "¿Qué idioma habla tu familia principalmente en casa?",
+      prompt: "What language does your family mainly speak at home? Choose all that apply.",
+      promptEs: "¿Qué idioma habla tu familia principalmente en casa? Elige todas las que apliquen.",
       help: "This matters if language ever got in the way of understanding DCS or being understood by them.",
       helpEs: "Esto importa si el idioma alguna vez fue un obstáculo para entender a DCS o para que DCS te entendiera a ti.",
     },
@@ -1447,7 +1486,7 @@ const SCHEMA = {
       section: "wrapup",
       label: "Grievance filed with DCS",
       type: "text",
-      required: false,
+      required: true,
       prompt: "Before this, did you ever file a grievance, complaint, or formal appeal directly with DCS about what happened? What was the outcome?",
       promptEs: "Antes de esto, ¿alguna vez presentaste una queja, reclamación o apelación formal directamente ante DCS sobre lo que sucedió? ¿Cuál fue el resultado?",
       help: "If you never filed one with DCS, that's okay — you can say so.",
@@ -1458,7 +1497,7 @@ const SCHEMA = {
       section: "wrapup",
       label: "Contact with another state office",
       type: "text",
-      required: false,
+      required: true,
       prompt: "Did you contact any other state office about this — like the Tennessee Commission on Children and Youth, an ombudsman, or a state hotline? What did they tell you?",
       promptEs: "¿Contactaste a alguna otra oficina estatal sobre esto — como la Comisión de Tennessee sobre Niños y Jóvenes, un defensor del pueblo (ombudsman), o una línea estatal? ¿Qué te dijeron?",
       help: "If this didn't come up, you can say so.",
@@ -1469,7 +1508,7 @@ const SCHEMA = {
       section: "wrapup",
       label: "Earlier federal complaint",
       type: "text",
-      required: false,
+      required: true,
       prompt: "Have you already filed anything about this with a federal office — such as the federal Office for Civil Rights (OCR) — before? If so, about when, and what happened?",
       promptEs: "¿Ya habías presentado algo sobre esto ante una oficina federal — como la Oficina de Derechos Civiles (OCR) federal — antes? Si es así, ¿aproximadamente cuándo, y qué pasó?",
       help: "It's still okay to do this interview if you already filed something — just let us know, so nothing gets filed twice.",
@@ -1480,7 +1519,7 @@ const SCHEMA = {
       section: "wrapup",
       label: "Court or legal proceedings",
       type: "text",
-      required: false,
+      required: true,
       prompt: "Has any part of this gone before a court, a judge, or a dependency/neglect proceeding? What happened there?",
       promptEs: "¿Alguna parte de esto ha ido ante un tribunal, un juez, o un procedimiento de dependencia o negligencia? ¿Qué pasó allí?",
       help: "For example, a juvenile court hearing about your child's custody or placement.",
@@ -1491,7 +1530,7 @@ const SCHEMA = {
       section: "wrapup",
       label: "Legal help sought",
       type: "text",
-      required: false,
+      required: true,
       prompt: "Have you spoken with a lawyer or a legal-aid organization about your family's situation? What did they advise, if anything?",
       promptEs: "¿Has hablado con un abogado o con una organización de asistencia legal sobre la situación de tu familia? ¿Qué te aconsejaron, si algo?",
       help: "If you haven't, that's fine — you can say so.",
@@ -1583,6 +1622,7 @@ function placementRoundFields(n) {
     "A foster home",
     "A group home",
     "A residential or treatment facility",
+    "A mental health facility",
     "Other",
   ];
   const PLACEMENT_TYPES_ES = [
@@ -1590,6 +1630,7 @@ function placementRoundFields(n) {
     "Un hogar de crianza",
     "Un hogar grupal",
     "Una instalación residencial o de tratamiento",
+    "Una instalación de salud mental",
     "Otro",
   ];
   const ordinal = n === 1 ? "first" : n === 2 ? "second" : n === 3 ? "third" : `${n}th`;
@@ -1624,13 +1665,24 @@ function placementRoundFields(n) {
       helpEs: "Elige la que mejor se ajuste.",
     },
     {
+      path: `placement_${n}_location`,
+      label: `Placement ${n} — location`,
+      type: "text",
+      section: "story",
+      required: false,
+      prompt: "Where was this placement — the city or town, and the facility or foster family's name if you know it?",
+      promptEs: "¿Dónde fue esta colocación — la ciudad o el pueblo, y el nombre de la instalación o la familia de crianza si lo sabes?",
+      help: "Whatever you remember is fine — a city alone is still useful.",
+      helpEs: "Lo que recuerdes está bien — solo la ciudad ya es útil.",
+    },
+    {
       path: `placement_${n}_notes`,
       label: `Placement ${n} — notes`,
       type: "text",
       section: "story",
       required: false,
-      prompt: "Anything else about this placement — where it was, who was involved, or how it went? You can skip this if there's nothing to add.",
-      promptEs: "¿Algo más sobre esta colocación — dónde fue, quién estuvo involucrado, o cómo resultó? Puedes saltarte esto si no hay nada que agregar.",
+      prompt: "Anything else about this placement — who was involved, or how it went? You can skip this if there's nothing to add.",
+      promptEs: "¿Algo más sobre esta colocación — quién estuvo involucrado, o cómo resultó? Puedes saltarte esto si no hay nada que agregar.",
       help: "A short note is enough — you don't need to write a lot here.",
       helpEs: "Una nota breve es suficiente — no necesitas escribir mucho aquí.",
     },
@@ -1886,7 +1938,7 @@ const LETTER_REQUIRED_FIELDS = [
   { path: "complainant_address", label: "mailing address" },
   { path: "complainant_phone", label: "phone number" },
   { path: "child_initials", label: "child's initials" },
-  { path: "child_age", label: "child's age" },
+  { path: "child_dob", label: "child's date of birth" },
   { path: "child_race_ethnicity", label: "child's race or ethnicity" },
   { path: "custody_start_date", label: "date DCS custody began" },
   { path: "dcs_county", label: "county handling the case" },
@@ -1901,6 +1953,14 @@ const LETTER_REQUIRED_FIELDS = [
   { path: "placement_1_type", label: "first placement — type" },
   { path: "dcs_actions_failures", label: "what DCS did or failed to do" },
   { path: "last_incident_date", label: "date of the most recent incident" },
+  // Prior-remedy questions became required fields (no longer skippable as
+  // "optional") — the letter's "missing" report has to agree with the
+  // schema, or a truly unanswered required question wouldn't ever surface.
+  { path: "prior_remedy_dcs_grievance", label: "grievance filed with DCS" },
+  { path: "prior_remedy_state_office", label: "contact with another state office" },
+  { path: "prior_remedy_federal", label: "earlier federal complaint" },
+  { path: "prior_remedy_court", label: "court or legal proceedings" },
+  { path: "prior_remedy_legal_help", label: "legal help sought" },
 ];
 
 // Every path the draft can contain, in the order it appears in the letter.
@@ -1908,7 +1968,7 @@ const LETTER_REQUIRED_FIELDS = [
 // top-to-bottom in exactly the same order as the sections of the letter.
 const LETTER_PATHS = [
   "complainant_name", "complainant_relationship", "complainant_address", "complainant_phone", "complainant_email",
-  "child_initials", "child_age", "child_race_ethnicity", "child_disability_has", "child_disability_explain",
+  "child_initials", "child_dob", "child_race_ethnicity", "child_race_ethnicity_other", "child_disability_has", "child_disability_explain",
   "home_language", "home_language_other", "custody_start_date", "dcs_county", "dcs_case_number",
   "family_background",
   // Placement rounds beyond the first are numbered dynamically at runtime
@@ -1952,10 +2012,34 @@ const LETTER_PATHS = [
 function placementRoundNumbers(obj) {
   const nums = new Set();
   for (const key of Object.keys(obj)) {
-    const m = /^placement_(\d+)_(?:when|type|notes)$/.exec(key);
+    const m = /^placement_(\d+)_(?:when|type|location|notes)$/.exec(key);
     if (m) nums.add(Number(m[1]));
   }
   return Array.from(nums).sort((a, b) => a - b);
+}
+
+// Whole years between a (possibly month-only) date_flex birthdate and today
+// — displayed alongside the DOB itself, not in place of it, since the DOB is
+// what's actually collected and age just changes every year.
+function ageFromDob(dobStr) {
+  const dob = new Date(dobStr);
+  if (isNaN(dob)) return null;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+  return age;
+}
+
+// A multiselect's raw value is its picks comma-joined (see the checkbox
+// control in index.html's renderQuickAnswer) — swaps a bare "Other" for
+// whatever free text was given in its companion field, leaving every other
+// pick untouched.
+function expandOtherPicks(raw, otherValue) {
+  if (!raw) return raw;
+  return raw.split(",").map((s) => s.trim())
+    .map((s) => (s === "Other" && otherValue) ? otherValue : s)
+    .join(", ");
 }
 
 function buildComplaintLetter(answers, provenance = {}) {
@@ -1964,7 +2048,7 @@ function buildComplaintLetter(answers, provenance = {}) {
   const sec = (title, body) => `\n${title}\n${"-".repeat(title.length)}\n${body || "(not provided)"}`;
   const missing = LETTER_REQUIRED_FIELDS.filter((f) => !v(f.path));
   const placementRounds = placementRoundNumbers(answers);
-  const placementPaths = placementRounds.flatMap((n) => [`placement_${n}_when`, `placement_${n}_type`, `placement_${n}_notes`]);
+  const placementPaths = placementRounds.flatMap((n) => [`placement_${n}_when`, `placement_${n}_type`, `placement_${n}_location`, `placement_${n}_notes`]);
   // Spliced in right before "alternatives_asked" — the same spot placement
   // history occupies in the letter body (section 5, right after section 4).
   const altIdx = LETTER_PATHS.indexOf("alternatives_asked");
@@ -2008,11 +2092,11 @@ function buildComplaintLetter(answers, provenance = {}) {
       `Email: ${v("complainant_email") || "(not provided)"}`),
     sec("2. Child concerned",
       `Initials: ${v("child_initials") || "(not provided)"}\n` +
-      `Age: ${v("child_age") || "(not provided)"}\n` +
-      `Race/ethnicity: ${v("child_race_ethnicity") || "(not provided)"}\n` +
+      `Date of birth: ${v("child_dob") ? v("child_dob") + (ageFromDob(v("child_dob")) != null ? ` (age ${ageFromDob(v("child_dob"))})` : "") : "(not provided)"}\n` +
+      `Race/ethnicity: ${expandOtherPicks(v("child_race_ethnicity"), v("child_race_ethnicity_other")) || "(not provided)"}\n` +
       `Disability/diagnosis: ${(v("child_disability_has") === "Yes" || v("child_disability_has") === "Sí") ? (v("child_disability_explain") || "(described, not detailed)") : "(none reported)"}`),
     sec("3. Background",
-      `Home language: ${v("home_language") === "Other" && v("home_language_other") ? v("home_language_other") : (v("home_language") || "(not provided)")}\n` +
+      `Home language: ${expandOtherPicks(v("home_language"), v("home_language_other")) || "(not provided)"}\n` +
       `Date DCS custody began: ${v("custody_start_date") || "(not provided)"}\n` +
       `DCS county: ${v("dcs_county") || "(not provided)"}\n` +
       `DCS case number: ${v("dcs_case_number") || "(not provided)"}`),
@@ -2021,8 +2105,9 @@ function buildComplaintLetter(answers, provenance = {}) {
       ? placementRounds.map((n, i) => {
           const when = v(`placement_${n}_when`) || "(not provided)";
           const type = v(`placement_${n}_type`) || "(not provided)";
+          const location = v(`placement_${n}_location`);
           const notes = v(`placement_${n}_notes`);
-          return `${i + 1}. ${when} — ${type}${notes ? ` — ${notes}` : ""}`;
+          return `${i + 1}. ${when} — ${type}${location ? ` — ${location}` : ""}${notes ? ` — ${notes}` : ""}`;
         }).join("\n")
       : ""),
     sec("6. Family-based options asked for", v("alternatives_asked")),
@@ -6571,6 +6656,15 @@ function showEntryLoader(text) { document.getElementById("entryLoaderText").text
 function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
 
 async function initEntry() {
+  // Form preview: opened from the admin dashboard's "Preview the form" link
+  // (see wireNewNav) in a fresh tab, so it never touches the admin's real
+  // account — a plain, non-persisted demo session, same as clicking "Try a
+  // demo" by hand, just one click instead of two.
+  if (new URLSearchParams(location.search).get("demo") === "1") {
+    hideLangGate();
+    doDemoLogin();
+    return;
+  }
   // Admin demo: seeded data, skip login, go straight to admin dashboard
   if (localStorage.getItem("ab_admin_demo") === "1") {
     localStorage.removeItem("ab_admin_demo");
@@ -7399,7 +7493,8 @@ function showLoginError(text, { offerSignup = false, offerReset = false } = {}) 
   err.classList.add("show");
 }
 
-async function doMatrixLogin(homeserver, userId, password) {
+async function doMatrixLogin(homeserver, userId, password, submitBtn) {
+  const btn = submitBtn || document.getElementById("loginMatrix");
   const err = document.getElementById("loginError");
   try {
     const sdk = window.matrixcs;
@@ -7423,7 +7518,7 @@ async function doMatrixLogin(homeserver, userId, password) {
     const { text, offerSignup, offerReset } = loginErrorMessage(e, homeserver);
     err.textContent = "";
     showLoginError(text, { offerSignup, offerReset });
-    document.getElementById("loginMatrix").disabled = false;
+    btn.disabled = false;
   }
 }
 
@@ -7472,6 +7567,26 @@ function wireLogin() {
     if (e.key === "Enter") document.getElementById("loginPassword").focus();
   };
   document.getElementById("loginForgotPw").onclick = openMatrixPasswordReset;
+  // Reviewing-office sign-in: same doMatrixLogin() as the regular form, but
+  // the username is never shown or typed — it's ADMIN_USER_ID, fixed by
+  // config.js. Only the password is ever asked for here.
+  document.getElementById("loginShowAdmin").onclick = () => {
+    const open = document.getElementById("adminFields").classList.toggle("open");
+    if (open) document.getElementById("adminPassword").focus();
+  };
+  document.getElementById("adminPassword").onkeydown = (e) => {
+    if (e.key === "Enter") document.getElementById("loginAdminMatrix").click();
+  };
+  document.getElementById("loginAdminMatrix").onclick = () => {
+    const password = document.getElementById("adminPassword").value;
+    document.getElementById("loginError").classList.remove("show");
+    if (!password) { showLoginError("Enter the password.", {}); return; }
+    const btn = document.getElementById("loginAdminMatrix");
+    btn.disabled = true;
+    const domain = homeserverDomain(ADMIN_USER_ID);
+    const homeserver = domain === MATRIX_ORG_DOMAIN ? MATRIX_ORG_HS : "https://" + domain;
+    doMatrixLogin(homeserver, ADMIN_USER_ID, password, btn);
+  };
   // In-app nudge for demo sessions.
   document.getElementById("demoBarSignup").onclick = openSignupWizard;
   document.getElementById("demoBarSignin").onclick = () => {
@@ -7661,6 +7776,13 @@ function wireNewNav() {
 
   document.getElementById("adminBtn").onclick = openAdmin;
   document.getElementById("adminToQuestions").onclick = () => showQuestionsPanel();
+  // Opens a fresh demo session (own tab, own local storage — never the
+  // admin's real account) so the reviewing office can actually see and try
+  // the applicant-facing form instead of only ever reviewing what's already
+  // been submitted. See initEntry()'s ?demo=1 handling.
+  document.getElementById("adminPreviewForm").onclick = () => {
+    window.open(location.origin + location.pathname + "?demo=1", "_blank", "noopener");
+  };
 
   document.getElementById("adminClose").onclick = () => {
     document.getElementById("adminView").classList.add("hidden");
