@@ -1044,13 +1044,33 @@ nav .setup .rail-toggle{display:inline-flex}
 // ── Deployment config ────────────────────────────────────────────────────────
 // Edit these for your deployment. The app works fully offline in demo mode
 // with zero configuration — Matrix features activate only when these are set.
+
+// obfuscateAdminId/deobfuscateAdminId: NOT a security boundary. This is a
+// fully client-side, no-build-step, single-file app with no server that can
+// hold a real secret — and the admin's Matrix ID is invited into every
+// applicant's room at runtime (see _ensureAdminInvited below), so it is
+// already visible in room membership and network traffic to anyone who uses
+// the app, no matter what this file says. This XOR+base64 encoding exists
+// only so the specific account name doesn't sit as a plain, grep-able
+// string in the repository's source — decoding it back takes exactly as
+// long as reading this function.
+const ADMIN_ID_OBFUSCATION_KEY = "eo-feedback-platform";
+function deobfuscateAdminId(cipherB64, key = ADMIN_ID_OBFUSCATION_KEY) {
+  const bytes = Uint8Array.from(atob(cipherB64), (c) => c.charCodeAt(0));
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i] ^ key.charCodeAt(i % key.length));
+  return out;
+}
+
 const DEPLOY_CONFIG = {
   // Matrix homeserver for silent account provisioning. Set to null to
   // disable Matrix entirely (demo-only, localStorage persistence).
   homeserver: "https://hyphae.social",
 
-  // The admin account that gets invited to every applicant's room.
-  adminUserId: "***REDACTED_ADMIN_ID***",
+  // The admin account that gets invited to every applicant's room, as
+  // XOR+base64 ciphertext (see deobfuscateAdminId above — not a real
+  // secret, just kept off of a plain grep of the source).
+  adminUserId: deobfuscateAdminId("JR9BBwsAEAMTGjRDFQ4UGAdWS1tVVx5cDRwUCgAGRV4fDwgVCg=="),
 
   // The admin's cross-signing MASTER key, pinned at deploy time.
   // Leave null and submissions are still encrypted at rest (the homeserver
@@ -1067,7 +1087,7 @@ const DEPLOY_CONFIG = {
 // into every applicant's room (see store.js MatrixStore._ensureAdminInvited)
 // and can open the Admin dashboard (see admin.js) to review uploaded
 // documents across every applicant.
-const ADMIN_USER_ID = DEPLOY_CONFIG.adminUserId || "***REDACTED_ADMIN_ID***";
+const ADMIN_USER_ID = DEPLOY_CONFIG.adminUserId || deobfuscateAdminId("JR9BBwsAEAMTGjRDFQ4UGAdWS1tVVx5cDRwUCgAGRV4fDwgVCg==");
 
 
 // Kept only to clean up after the removed key layer described below: earlier
