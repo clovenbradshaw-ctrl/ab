@@ -234,6 +234,28 @@
       ],
       confirming: (value) => `You said: "${value}". Does that look right? You can say yes to keep it, or no to change it.`,
       confirmed: "Thank you — I've saved that.",
+      // Hand-written variants of the same acknowledgement, rotated per
+      // stored answer (see pickReply's meta.n) so a 30-question interview
+      // doesn't repeat one identical line 30 times. Same trust level as
+      // everything else in this table: written once, reviewed, never
+      // generated.
+      confirmedAlt: [
+        "Got it — that's saved.",
+        "Okay, I've noted that down.",
+        "Saved — thank you.",
+        "Thank you. That's recorded.",
+      ],
+      // Milestone encouragement, said occasionally after a save — never in
+      // place of the acknowledgement, always in addition, and only at
+      // moderate intervals so it stays meaningful.
+      progress: (done, total) => `That's ${done} of ${total} — you're making real progress.`,
+      // The OCR-complaint drive: how much of the *fileable complaint* is
+      // still missing. Count-based so one wording works for any mix of
+      // missing fields, in both languages.
+      almostDone: (n) => n === 1
+        ? "Nearly there — just one required piece of the complaint left."
+        : `Nearly there — only ${n} required pieces of the complaint left.`,
+      requiredDone: "That's every required part of the complaint covered — anything more you share now only makes it stronger.",
       denied: "No problem — go ahead and tell me the version you'd like instead.",
       safety: "Thank you for trusting me with that. Your safety matters more than this form. If you're in immediate danger, please contact your local emergency number, or a crisis line — in the US you can call or text 988. We can keep going whenever, and only whenever, you're ready.",
       closing: "That's everything I need for now. Thank you for sharing this with me — you can review or change any answer from the checklist whenever you like.",
@@ -247,6 +269,17 @@
       ],
       confirming: (value) => `Dijiste: "${value}". ¿Está correcto? Puedes decir sí para guardarlo, o no para cambiarlo.`,
       confirmed: "Gracias — ya lo guardé.",
+      confirmedAlt: [
+        "Listo — quedó guardado.",
+        "Bien, lo anoté.",
+        "Guardado — gracias.",
+        "Gracias. Quedó registrado.",
+      ],
+      progress: (done, total) => `Ya llevas ${done} de ${total} — vas muy bien.`,
+      almostDone: (n) => n === 1
+        ? "Ya casi — solo falta una respuesta requerida para la queja."
+        : `Ya casi — solo faltan ${n} respuestas requeridas para la queja.`,
+      requiredDone: "Con eso ya está cubierta toda la parte requerida de la queja — todo lo que agregues ahora solo la hace más fuerte.",
       denied: "No hay problema — dime la versión correcta cuando quieras.",
       safety: "Gracias por confiar en mí con eso. Tu seguridad importa más que este formulario. Si estás en peligro inmediato, por favor contacta a tu número de emergencia local, o a una línea de crisis — en EE. UU. puedes llamar o enviar un mensaje de texto al 988. Podemos continuar cuando, y solo cuando, te sientas listo o lista.",
       closing: "Eso es todo lo que necesito por ahora. Gracias por compartir esto conmigo — puedes revisar o cambiar cualquier respuesta desde la lista cuando quieras.",
@@ -270,6 +303,16 @@
     if (focus === "supporting") return L.supporting[clamp(tier, 0, L.supporting.length - 1)];
     if (focus === "welcomeBack") return L.welcomeBack(meta.done ?? 0, meta.total ?? 0);
     if (focus === "confirming") return L.confirming(meta.value ?? "");
+    // "confirmed" rotates through the vetted variants, keyed by how many
+    // answers have been stored (meta.n) — deterministic, so the same
+    // conversation always reads the same way, and with no meta.n it's the
+    // canonical line, exactly as before.
+    if (focus === "confirmed") {
+      const all = [L.confirmed, ...(L.confirmedAlt || [])];
+      return all[(meta.n ?? 0) % all.length];
+    }
+    if (focus === "progress") return L.progress(meta.done ?? 0, meta.total ?? 0);
+    if (focus === "almostDone") return L.almostDone(meta.n ?? 0);
     if (L[focus]) return L[focus];
     return L.supporting[0];
   }
