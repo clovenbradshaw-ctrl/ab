@@ -84,6 +84,11 @@ function loadEngine() {
     exports.COVERAGE_FRAMEWORKS = COVERAGE_FRAMEWORKS;
     exports.placementRoundFields = placementRoundFields;
     exports.SECTIONS = SECTIONS;
+    exports.SECTION_INTROS = SECTION_INTROS;
+    exports.renderTemplate = renderTemplate;
+    exports.templatePaths = templatePaths;
+    exports.buildOutgoingDoc = buildOutgoingDoc;
+    exports.BUILTIN_TEMPLATE_ID = BUILTIN_TEMPLATE_ID;
   `;
   vm.runInContext(exposer, sandbox, { filename: "index.html (extracted engine slice)" });
   return sandbox.exports;

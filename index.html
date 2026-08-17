@@ -944,11 +944,13 @@ nav .setup .rail-toggle{display:inline-flex}
   </div>
 </div></div>
 
-<!-- Admin: generated complaint draft (read-only, copyable) -->
+<!-- Admin: generated outgoing draft — editable in place. Saving an edit
+     emits a DEF event on the letter's anchor, so the original generated
+     text stays in the room timeline untouched. -->
 <div class="inline-editor" id="letterModal"><div class="modal">
   <h3 id="letterTitle">Complaint draft</h3><p class="field-path" id="letterPath"></p>
   <textarea id="letterBody" spellcheck="false" style="width:100%;min-height:320px;max-height:50vh;resize:vertical;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)"></textarea>
-  <div class="btns"><button class="cancel" id="letterRegen">Regenerate letter</button><button class="cancel" id="letterCopy">Copy</button><button class="primary" id="letterClose">Close</button></div>
+  <div class="btns"><button class="cancel" id="letterRegen">Regenerate letter</button><button class="cancel" id="letterCopy">Copy</button><button class="cancel" id="letterSave">Save edits</button><button class="primary" id="letterClose">Close</button></div>
 </div></div>
 
 <!-- Admin: per-answer audit trail behind a drafted letter -->
@@ -1764,6 +1766,26 @@ const SECTIONS = [
   { key: "wrapup", label: "Wrapping up", labelEs: "Para terminar" },
 ];
 
+// One hand-written, bilingual transition line per section, said the moment
+// the interview crosses into it (see Intake._askNext). Same mechanical-
+// script trust level as Steer's REPLIES table — the model never writes
+// these, they just make the walk feel guided ("here's where we are now")
+// instead of an unbroken list of questions.
+const SECTION_INTROS = {
+  about: {
+    en: "Let's start with the basics — a few short questions about you and your child.",
+    es: "Empecemos con lo básico — unas preguntas cortas sobre ti y tu hijo o hija.",
+  },
+  story: {
+    en: "Now the part that matters most: your story. Take whatever time and space you need — your own words, in whatever order they come, are exactly right.",
+    es: "Ahora la parte más importante: tu historia. Tómate el tiempo y el espacio que necesites — tus propias palabras, en el orden que salgan, son exactamente lo correcto.",
+  },
+  wrapup: {
+    en: "Last stretch — some quick questions about steps you've already taken and any papers you have.",
+    es: "Última parte — unas preguntas rápidas sobre los pasos que ya has dado y los documentos que tengas.",
+  },
+};
+
 // The field whose confirmed value drives the 180-day filing-window check —
 // kept as one named constant rather than a magic string scattered through
 // Intake, since this is domain-specific business logic layered on top of an
@@ -2237,6 +2259,68 @@ function buildComplaintLetter(answers, provenance = {}) {
   return { letter: lines.join("\n"), missing, sources };
 }
 
+// ── Custom outgoing-document templates ──
+// Admin-authored letter bodies with {{path}} placeholders, stored in the
+// shared config room (see ENTITY.TEMPLATE / putTemplate). Rendering keeps
+// the exact same {letter, missing, sources} contract as the built-in OCR
+// assembler above, so the Letters tab, the trace modal, and the review
+// ladder don't care which kind of template produced a draft.
+//
+// Placeholders: {{some_field_path}} → that answer (or "(not provided)");
+// {{_date}} → today. Unknown paths render "(not provided)" and are reported
+// in `missing` so the admin sees a typo'd placeholder instead of silently
+// shipping a blank.
+const TEMPLATE_PLACEHOLDER_RE = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+
+// The built-in OCR complaint assembler, presented as template id
+// "ocr_default" everywhere a template can be picked — it can't be edited or
+// deleted, only supplemented by custom ones.
+const BUILTIN_TEMPLATE_ID = "ocr_default";
+const BUILTIN_TEMPLATE_NAME = "OCR complaint letter (built-in)";
+
+function templatePaths(body) {
+  const out = [];
+  for (const m of String(body || "").matchAll(TEMPLATE_PLACEHOLDER_RE)) {
+    if (!out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+function renderTemplate(tpl, answers, provenance = {}) {
+  const today = new Date().toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
+  const missing = [];
+  const sources = [];
+  for (const p of templatePaths(tpl.body)) {
+    if (p === "_date") continue;
+    const val = answers[p];
+    if (val == null || String(val).trim() === "") {
+      missing.push({ path: p, label: p.replace(/_/g, " ") });
+    }
+    const cell = provenance[p];
+    if (cell && cell.value != null) {
+      sources.push({
+        path: p, value: cell.value,
+        source: cell.source ?? null, inputKind: cell.inputKind ?? "typed",
+        voiceClipId: cell.voiceClipId ?? null, at: cell.at ?? null,
+        by: cell.by ?? null, eventId: cell.eventId ?? null,
+      });
+    }
+  }
+  const letter = String(tpl.body || "").replace(TEMPLATE_PLACEHOLDER_RE, (_, p) => {
+    if (p === "_date") return today;
+    const val = answers[p];
+    return (val == null || String(val).trim() === "") ? "(not provided)" : String(val).trim();
+  });
+  return { letter, missing, sources };
+}
+
+// One entry point for "build the outgoing document": the built-in OCR
+// assembler when no/that template is picked, a placeholder render otherwise.
+function buildOutgoingDoc(template, answers, provenance = {}) {
+  if (!template || template.id === BUILTIN_TEMPLATE_ID) return buildComplaintLetter(answers, provenance);
+  return renderTemplate(template, answers, provenance);
+}
+
 function decodeMxEvent(mxEvent) {
   const c = mxEvent.getContent();
   return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
@@ -2619,7 +2703,7 @@ The person may write in English or Spanish, sometimes both, often with typos or 
 - distress: true only if the message itself signals the person may be in crisis or in immediate danger right now — not merely for describing past hardship, abuse, or trauma, which is expected and should NOT set this true.
 - ready: true once the message contains a genuine, on-topic attempt at CURRENT FIELD. For an open-ended narrative question (no enum, no fixed format), a single vague word, a placeholder like "idk" or a stray keystroke, or text that doesn't actually address the question must NOT be marked ready — that's thin, not usable, even if it's non-empty.
 - extracted: the normalized answer value, in the person's own language and words, when ready is true; otherwise null.
-- followup: OPTIONAL, and only for an open-ended narrative CURRENT FIELD (never for an enum/date/digits field, which already gets an exact, fixed error message). When ready is false and support is false — they tried to answer but it's too thin, vague, or unclear to use — write ONE short, warm, specific question in their own language that names what's missing and invites them to say more, grounded only in what they already wrote. Never invent facts about their situation, never write or imply an answer on their behalf. Leave this null whenever ready is true, whenever support is true, or for any field with a fixed answer shape.
+- followup: OPTIONAL, and only for an open-ended narrative CURRENT FIELD (never for an enum/date/digits field, which already gets an exact, fixed error message). When ready is false and support is false — they tried to answer but it's too thin, vague, or unclear to use — write ONE short, warm, specific question in their own language that names what's missing and invites them to say more, grounded only in what they already wrote. This intake feeds a federal civil-rights complaint, so prefer asking for the concrete facts such a complaint can actually use: roughly when it happened, who was involved (a name or just a role, like "the caseworker"), what exactly was said or done, and how it affected the child. Ask for ONE of those at a time — the one most clearly missing — never a checklist. Never invent facts about their situation, never write or imply an answer on their behalf. Leave this null whenever ready is true, whenever support is true, or for any field with a fixed answer shape.
 Never invent facts about the person. When uncertain whether an answer is usable, leave ready false rather than guessing.
 Reply with ONLY a JSON object: {"support":boolean,"ready":boolean,"extracted":string|null,"distress":boolean,"followup":string|null}`;
 
@@ -3197,7 +3281,7 @@ async function playVoiceClip(clip, media) {
 
 
 const CONFIG_ANCHOR = "qconfig";
-const ENTITY = Object.freeze({ FIELD: "field", KNOWLEDGE: "knowledge" });
+const ENTITY = Object.freeze({ FIELD: "field", KNOWLEDGE: "knowledge", TEMPLATE: "template" });
 
 // Demo mode only: pure localStorage keys, no real Matrix room behind them.
 // For real accounts see ensureConfigRoom()/ensureAnswerRoom() below — a
@@ -3299,8 +3383,10 @@ function foldConfig(events) {
   const meta = {};
   const fields = new Map();
   const know = new Map();
+  const tpls = new Map();
   const fieldSeen = [];
   const knowSeen = [];
+  const tplSeen = [];
   let systemPrompt = null;
   let order = null;
 
@@ -3320,6 +3406,11 @@ function foldConfig(events) {
       if (attrs.deleted) { know.delete(id); continue; }
       if (!know.has(id)) knowSeen.push(id);
       know.set(id, { ...(know.get(id) || {}), ...attrs, id });
+    } else if (e.op === OP.INS && e.payload.entity === ENTITY.TEMPLATE) {
+      const { id, attrs = {} } = e.payload;
+      if (attrs.deleted) { tpls.delete(id); continue; }
+      if (!tpls.has(id)) tplSeen.push(id);
+      tpls.set(id, { ...(tpls.get(id) || {}), ...attrs, id });
     }
   }
 
@@ -3341,6 +3432,7 @@ function foldConfig(events) {
     },
     systemPrompt,
     knowledge,
+    templates: tplSeen.filter((id) => tpls.has(id)).map((id) => tpls.get(id)),
   };
 }
 
@@ -3370,6 +3462,15 @@ function putKnowledge(store, item) {
 }
 function deleteKnowledge(store, id) {
   return store.emit(OP.INS, { entity: ENTITY.KNOWLEDGE, id, attrs: { deleted: true } });
+}
+// Outgoing-document templates ride the config room the same way questions
+// and memory do: one INS per save, tombstone to delete, latest attrs win.
+function putTemplate(store, tpl) {
+  const { id, ...attrs } = tpl;
+  return store.emit(OP.INS, { entity: ENTITY.TEMPLATE, id, attrs });
+}
+function deleteTemplate(store, id) {
+  return store.emit(OP.INS, { entity: ENTITY.TEMPLATE, id, attrs: { deleted: true } });
 }
 
 // ---- defaults + seeding ----------------------------------------------------
@@ -3576,6 +3677,18 @@ class Intake {
     }
     this._emit("field", f);
     this._emitContext();  // the fold changed with the field — refresh any open inspector
+    // Crossing into a new section gets its one hand-written transition line
+    // before the question itself — the walk reads as guided chapters, not a
+    // flat list. The FIRST section of a session is seated silently: the
+    // opening blurb/overview already covers "here's how this starts", and a
+    // resumed session shouldn't re-announce the part it's already in.
+    const sec = f.section || null;
+    if (this._lastSection === undefined) this._lastSection = sec;
+    else if (sec && sec !== this._lastSection) {
+      const intro = SECTION_INTROS[sec];
+      if (intro) this._say("assistant", this.lang === "es" ? intro.es : intro.en, { support: true });
+      this._lastSection = sec;
+    }
     this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
   }
 
@@ -3836,7 +3949,11 @@ class Intake {
     });
     this.pending = null;
     this.epoch++;
-    this._say("assistant", this._reply("confirmed"));
+    // Rotate through the vetted acknowledgement variants (keyed by how many
+    // answers this session has stored) so thirty saves don't read as the
+    // same sentence thirty times — still only ever lines from the table.
+    this._say("assistant", this._reply("confirmed", { meta: { n: this.epoch - 1 } }));
+    this._sayMilestone();
     this._emit("stored", { field, value, event: ev });
     this._checkFilingDeadline(field, value);
     await this._maybeInjectFollowups(field, value);
@@ -3844,6 +3961,40 @@ class Intake {
     this._maybeInjectNextChildRound(field, value);
     this._maybeInjectNextPlacementRound(field, value);
     return this._askNext();
+  }
+
+  // The "how far along are we, really" voice, said right after a save when
+  // there's something genuinely worth saying. Two signals, both mechanical:
+  //   — every sixth stored answer, the plain progress count;
+  //   — for the OCR intake specifically, the number of REQUIRED complaint
+  //     fields still empty, once it's small (≤3) — this is the drive toward
+  //     a *fileable* complaint, not just a finished questionnaire, and it
+  //     fires only when the number changes so it never nags.
+  _sayMilestone() {
+    const visible = this.progress();
+    const done = visible.filter((p) => p.done).length;
+    if (this.schema.id === "ocr-complaint-tn-dcs") {
+      const answers = this.answers();
+      const missing = LETTER_REQUIRED_FIELDS.filter((fd) => {
+        const v = answers[fd.path];
+        return v == null || String(v).trim() === "";
+      }).length;
+      if (missing !== this._lastMissingSaid) {
+        if (missing === 0 && this._lastMissingSaid != null) {
+          this._lastMissingSaid = missing;
+          this._say("assistant", this._reply("requiredDone"), { support: true });
+          return;
+        }
+        if (missing > 0 && missing <= 3) {
+          this._lastMissingSaid = missing;
+          this._say("assistant", this._reply("almostDone", { meta: { n: missing } }), { support: true });
+          return;
+        }
+      }
+    }
+    if (done > 0 && done % 6 === 0 && done < visible.length) {
+      this._say("assistant", this._reply("progress", { meta: { done, total: visible.length } }), { support: true });
+    }
   }
 
   // The child block is a repeating group (see childRoundFields): answering
@@ -4152,6 +4303,16 @@ const STATUSES = [
   { key: "flagged", label: "Flagged" },
 ];
 
+// Where a whole SUBMISSION (one applicant's case) sits in the office's
+// processing queue — the ladder the submissions kanban drags cards through.
+// Distinct from per-document verification and the letter review ladder.
+const CASE_STATUSES = [
+  { key: "new", label: "New" },
+  { key: "in_review", label: "In review" },
+  { key: "needs_info", label: "Needs info" },
+  { key: "complete", label: "Complete" },
+];
+
 // Letter lifecycle is a separate ladder from document status — a draft moves
 // through the office's review queue before anything is ever filed.
 const LETTER_STATUSES = [
@@ -4188,7 +4349,11 @@ function collectAllAnswers({ storeKind, client }) {
   for (const roomId of roomIds) {
     const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
     if (!events.length) continue;
-    const defs = events.filter((e) => e.op === OP.DEF && e.payload.anchor !== "qconfig");
+    // Only the person's own answers belong in this table: DEF events also
+    // carry admin bookkeeping (letter status/text on record-id anchors, case
+    // status on the "case" anchor) which would otherwise show up as fake
+    // "answers" — including entire drafted letters as a value.
+    const defs = events.filter((e) => e.op === OP.DEF && (e.payload.anchor === "applicant" || e.payload.anchor === "_root" || !e.payload.anchor));
     if (!defs.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
@@ -4233,6 +4398,24 @@ function collectAllDocuments({ storeKind, client }) {
   return docs.sort((a, b) => (b.uploadedAt || "").localeCompare(a.uploadedAt || ""));
 }
 
+// One letter record folded to its CURRENT truth. A letter is an INS record
+// plus any later DEF events on its id-anchor (status moves, admin edits of
+// the text) — the same overlay collectSubmissions already does for document
+// status. Reading r.attrs alone here silently discarded every status change
+// and would discard every edit, so all letter collectors go through this.
+function foldLetterRecord(id, r, folded, extra) {
+  const overlay = folded.anchors?.[id] || {};
+  const text = overlay.text?.value ?? r.attrs.text;
+  return {
+    id, ...extra, ...r.attrs,
+    text,
+    status: overlay.status?.value || r.attrs.status || "draft",
+    generatedAt: r.at,
+    editedAt: overlay.text?.at || null,
+    editedBy: overlay.text?.by || null,
+  };
+}
+
 // Generated letters live as encrypted records in the applicant's own room,
 // same event shape as documents — so the review queue is derived from the
 // same folded truth the admin sees everywhere else, not a parallel table.
@@ -4246,11 +4429,7 @@ function collectAllLetters({ storeKind, client }) {
     const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
     const roomLetters = Object.entries(folded.records)
       .filter(([, r]) => r.entity === "letter")
-      .map(([id, r]) => ({
-        id, roomId, applicantName, ...r.attrs,
-        status: r.attrs.status || "draft",
-        generatedAt: r.at,
-      }));
+      .map(([id, r]) => foldLetterRecord(id, r, folded, { roomId, applicantName }));
     letters.push(...roomLetters);
   }
   return letters.sort((a, b) => (b.generatedAt || "").localeCompare(a.generatedAt || ""));
@@ -4308,7 +4487,10 @@ function collectPipelineData({ storeKind, client }) {
       .filter(([, r]) => r.entity === "voice_clip")
       .map(([id, r]) => ({ id, roomId, ...r.attrs }));
 
-    const defs = events.filter((e) => e.op === OP.DEF && e.payload.anchor !== "qconfig");
+    // Same anchor rule as collectAllAnswers: applicant answers only, so
+    // admin bookkeeping DEFs (letter text/status, case status) never render
+    // as parsed answers in the provenance grid.
+    const defs = events.filter((e) => e.op === OP.DEF && (e.payload.anchor === "applicant" || e.payload.anchor === "_root" || !e.payload.anchor));
     const answers = [];
     // Collect per-field provenance: for each path that has an answer,
     // grab the latest cell value AND find all events for that path
@@ -4335,11 +4517,13 @@ function collectPipelineData({ storeKind, client }) {
 
     const letters = Object.entries(folded.records)
       .filter(([, r]) => r.entity === "letter")
-      .map(([id, r]) => ({ id, roomId, applicantName, ...r.attrs, status: r.attrs.status || "draft", generatedAt: r.at }));
+      .map(([id, r]) => foldLetterRecord(id, r, folded, { roomId, applicantName }));
 
     const lastActivity = defs.length ? defs.reduce((max, e) => (e.at || "") > (max || "") ? e.at : max, "") : null;
 
-    pipelines.push({ roomId, applicantName, answers, letters, voiceClips, lastActivity });
+    const caseStatus = folded.anchors?.case?.status?.value || "new";
+
+    pipelines.push({ roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus });
   }
   return pipelines.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 }
@@ -4366,11 +4550,17 @@ function sendGuardedOrWarn(ctx, roomId, op, payload) {
   });
 }
 
-function saveLetter(ctx, roomId, text) {
+function saveLetter(ctx, roomId, text, template = null) {
   const payload = {
     entity: "letter",
     id: newId("letter"),
-    attrs: { text, generatedAt: nowIso(), generatedBy: ctx.currentUserId, status: "draft" },
+    attrs: {
+      text, generatedAt: nowIso(), generatedBy: ctx.currentUserId, status: "draft",
+      // Which template produced this draft — "Regenerate" and the audit
+      // trail rebuild from the same one instead of assuming the built-in.
+      templateId: template?.id || BUILTIN_TEMPLATE_ID,
+      templateName: template?.name || BUILTIN_TEMPLATE_NAME,
+    },
   };
   if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.INS, payload);
   else DemoStore.appendEvent(roomId, OP.INS, payload, ctx.currentUserId);
@@ -4391,6 +4581,25 @@ function setDocStatus(ctx, doc, status) {
 // the letter record's id — one status channel per record type, same truth.
 function setLetterStatus(ctx, roomId, letterId, status) {
   const payload = { anchor: letterId, path: "status", value: status };
+  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
+  else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+}
+
+// An admin edit (or regeneration) of a drafted letter is one DEF event on
+// the letter's anchor — the originally generated text stays in the INS
+// record forever, so every revision is recoverable from the room timeline.
+function setLetterText(ctx, roomId, letterId, text) {
+  const payload = { anchor: letterId, path: "text", value: text };
+  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
+  else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+}
+
+// Per-applicant case status: where this SUBMISSION (not any one document or
+// letter) sits in the office's processing queue. Rides its own "case" anchor
+// — NOT "applicant" — so it never shows up among the person's answers or in
+// a generated letter's field set. Folded back out by collectPipelineData.
+function setCaseStatus(ctx, roomId, status) {
+  const payload = { anchor: "case", path: "status", value: status };
   if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
   else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
 }
@@ -4423,6 +4632,10 @@ function initAdminView({ onClose }) {
   // so state stored on it never survives the re-render its own click
   // handlers trigger.
   let pipelineViewing = null;
+  // Which of the three kanban boards (submissions / documents / letters)
+  // the Kanban tab is showing. Submissions is the default: it's the queue
+  // of whole cases, which is what "processing" mostly means here.
+  let kanbanBoard = "submissions";
 
   tabs.forEach((btn) => {
     btn.onclick = () => {
@@ -4469,8 +4682,17 @@ function initAdminView({ onClose }) {
       const filtered = allAnswers.filter((a) => matchesQuery(`${a.applicantName} ${a.path} ${a.value}`, q));
       body.appendChild(renderAnswersTable(filtered));
     } else if (active === "kanban") {
-      const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
-      body.appendChild(renderKanban(filtered));
+      body.appendChild(kanbanSwitcher());
+      if (kanbanBoard === "documents") {
+        const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
+        body.appendChild(renderKanban(filtered));
+      } else if (kanbanBoard === "letters") {
+        const ls = collectAllLetters(ctx).filter((l) => matchesQuery(`${l.applicantName} ${l.status} ${l.templateName || ""} ${l.text}`, q));
+        body.appendChild(renderLetterKanban(ls));
+      } else {
+        const pls = collectPipelineData(ctx).filter((p) => matchesQuery(`${p.applicantName} ${p.caseStatus}`, q));
+        body.appendChild(renderSubmissionKanban(pls));
+      }
     } else if (active === "letters") {
       const letters = collectAllLetters(ctx);
       const filtered = letters.filter((l) => matchesQuery(`${l.applicantName} ${l.status} ${l.text}`, q));
@@ -4673,6 +4895,109 @@ function initAdminView({ onClose }) {
     return card;
   }
 
+  // ── Kanban board switcher ──
+  // One tab, three process queues: whole submissions (cases), uploaded
+  // documents (the original board), and outgoing letters. Same drag-to-move
+  // mechanics on all three; each drop emits the matching status event.
+  function kanbanSwitcher() {
+    const bar = $e("div");
+    bar.style.cssText = "display:flex;gap:6px;margin-bottom:12px";
+    const boards = [
+      ["submissions", "Submissions"],
+      ["documents", "Documents"],
+      ["letters", "Letters"],
+    ];
+    for (const [key, label] of boards) {
+      const b = $e("button", "atab" + (kanbanBoard === key ? " on" : ""), label);
+      b.onclick = () => { kanbanBoard = key; renderActive(); };
+      bar.appendChild(b);
+    }
+    return bar;
+  }
+
+  // Generic board builder: columns from a status ladder, drag-and-drop
+  // wired to an onDrop(item, statusKey) that emits the status event.
+  function boardOf(columns, items, statusOf, keyOf, cardOf, onDrop, emptyMsg) {
+    if (!items.length) return $e("div", "aempty", emptyMsg);
+    const board = $e("div", "kanban");
+    for (const s of columns) {
+      const col = $e("div", "kcol");
+      const head = $e("div", "khead");
+      head.appendChild($e("span", null, s.label));
+      head.appendChild($e("span", "kcount", String(items.filter((x) => statusOf(x) === s.key).length)));
+      col.appendChild(head);
+      const list = $e("div", "klist");
+      list.addEventListener("dragover", (e) => { e.preventDefault(); list.classList.add("over"); });
+      list.addEventListener("dragleave", () => list.classList.remove("over"));
+      list.addEventListener("drop", (e) => {
+        e.preventDefault(); list.classList.remove("over");
+        const it = items.find((x) => keyOf(x) === (e.dataTransfer.getData("text/plain") || ""));
+        if (it && statusOf(it) !== s.key) { onDrop(it, s.key); renderActive(); }
+      });
+      for (const it of items.filter((x) => statusOf(x) === s.key)) {
+        const card = cardOf(it);
+        card.draggable = true;
+        card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", keyOf(it)));
+        list.appendChild(card);
+      }
+      col.appendChild(list);
+      board.appendChild(col);
+    }
+    return board;
+  }
+
+  function renderSubmissionKanban(pipelines) {
+    return boardOf(
+      CASE_STATUSES, pipelines,
+      (p) => CASE_STATUSES.some((s) => s.key === p.caseStatus) ? p.caseStatus : "new",
+      (p) => p.roomId,
+      (p) => {
+        const card = $e("div", "kcard");
+        card.appendChild($e("div", "kname", p.applicantName));
+        const meta = $e("div", "kmeta");
+        meta.textContent = `${p.answers.length} answers · ${p.letters.length} letter(s)`;
+        card.appendChild(meta);
+        if (p.lastActivity) {
+          const when = $e("div", "kmeta", "last activity " + fmtDate(p.lastActivity));
+          card.appendChild(when);
+        }
+        const open = $e("button", "aview", "Review →");
+        open.onclick = () => {
+          pipelineViewing = p;
+          active = "pipeline";
+          tabs.forEach((b) => b.classList.toggle("on", b.dataset.view === "pipeline"));
+          renderActive();
+        };
+        card.appendChild(open);
+        return card;
+      },
+      (p, status) => { setCaseStatus(ctx, p.roomId, status); toast(`${p.applicantName} moved to ${CASE_STATUSES.find((s) => s.key === status)?.label}`, "success"); },
+      "No submissions yet — cases appear here as constituents answer questions.",
+    );
+  }
+
+  function renderLetterKanban(letters) {
+    return boardOf(
+      LETTER_STATUSES, letters,
+      (l) => LETTER_STATUSES.some((s) => s.key === l.status) ? l.status : "draft",
+      (l) => `${l.roomId}::${l.id}`,
+      (l) => {
+        const card = $e("div", "kcard");
+        card.appendChild($e("div", "kname", l.templateName || BUILTIN_TEMPLATE_NAME));
+        card.appendChild($e("div", "kapp", l.applicantName));
+        const meta = $e("div", "kmeta");
+        meta.textContent = `generated ${fmtDate(l.generatedAt)}` + (l.editedAt ? " · edited" : "");
+        card.appendChild(meta);
+        const open = $e("button", "aview", "Open");
+        open.onclick = () => showLetterModal(l);
+        card.appendChild(open);
+        return card;
+      },
+      (l, status) => { setLetterStatus(ctx, l.roomId, l.id, status); toast(`Letter moved to ${LETTER_STATUSES.find((s) => s.key === status)?.label}`, "success"); },
+      "No letters yet — generate drafts from the Letters tab.",
+    );
+  }
+
   // ── Pipeline view ──
   // Main table showing all applicants, then a detail panel for
   // reviewing a single applicant with non-destructive inline editing
@@ -4698,6 +5023,7 @@ function initAdminView({ onClose }) {
       backBtn.onclick = () => { pipelineViewing = null; renderActive(); };
       viewBar.appendChild(backBtn);
       viewBar.appendChild($e("div", "acell-name", `Reviewing: ${viewing.applicantName}`));
+      viewBar.appendChild(caseStatusSelect(viewing));
       viewBar.appendChild($e("span", "mono", `${viewing.answers.length} answers · ${viewing.letters.length} letters · ${viewing.roomId}`));
       viewBar.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-left:auto";
     } else {
@@ -4717,7 +5043,7 @@ function initAdminView({ onClose }) {
       const t = document.createElement("table");
       t.className = "atable";
       const thead = document.createElement("thead");
-      thead.innerHTML = `<tr><th>Applicant</th><th>Typed ⌨</th><th>Voice 🎙</th><th>Total</th><th>Letters</th><th>Last activity</th><th></th></tr>`;
+      thead.innerHTML = `<tr><th>Applicant</th><th>Status</th><th>Typed ⌨</th><th>Voice 🎙</th><th>Total</th><th>Letters</th><th>Last activity</th><th></th></tr>`;
       t.appendChild(thead);
       const tbody = document.createElement("tbody");
       for (const pl of pipelines) {
@@ -4729,7 +5055,12 @@ function initAdminView({ onClose }) {
         name.style.cssText = "max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
         name.textContent = pl.applicantName;
         tr.appendChild(name);
-        
+
+        const statusTd = $e("td");
+        statusTd.onclick = (e) => e.stopPropagation();
+        statusTd.appendChild(caseStatusSelect(pl));
+        tr.appendChild(statusTd);
+
         const typedN = pl.answers.filter((a) => a.inputKind === "typed").length;
         const voiceN = pl.answers.filter((a) => a.inputKind === "voice").length;
         tr.appendChild($e("td", "acell-val", String(typedN)));
@@ -5005,6 +5336,19 @@ function initAdminView({ onClose }) {
     return item;
   }
 
+  function caseStatusSelect(pl) {
+    const sel = document.createElement("select");
+    const cur = CASE_STATUSES.some((s) => s.key === pl.caseStatus) ? pl.caseStatus : "new";
+    sel.className = "astatus-sel status-" + cur;
+    for (const s of CASE_STATUSES) sel.appendChild(new Option(s.label, s.key, false, s.key === cur));
+    sel.onchange = () => {
+      setCaseStatus(ctx, pl.roomId, sel.value);
+      toast(`${pl.applicantName} moved to ${sel.options[sel.selectedIndex].text}`, "success");
+      setTimeout(() => renderActive(), 400);
+    };
+    return sel;
+  }
+
   function letterStatusSelect(l) {
     const sel = document.createElement("select");
     sel.className = "astatus-sel status-" + l.status;
@@ -5022,21 +5366,31 @@ function initAdminView({ onClose }) {
   // assembler so its `sources` list is the trace. Each entry carries which
   // raw input produced it — typed text, voice transcript + encrypted clip id,
   // or an in-place edit — plus who and when.
-  function traceFor(roomId) {
+  function traceFor(roomId, templateId = null) {
     const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, roomId) : DemoStore.loadEvents(roomId);
     const folded = fold(events);
     const anchor = folded.anchors?.applicant ? "applicant" : "_root";
     const answers = answersOf(folded, anchor);
     const provenance = provenanceOf(folded, anchor);
-    const { letter, missing, sources } = buildComplaintLetter(answers, provenance);
+    const tpl = templateId ? adminTemplates().find((t) => t.id === templateId) || null : null;
+    const { letter, missing, sources } = buildOutgoingDoc(tpl, answers, provenance);
     return { letter, missing, sources, folded, answers };
   }
 
+  // Custom templates as currently folded from the shared config room —
+  // fresh on every call, so an edit saved in the manager below shows up in
+  // the pickers and regenerated drafts without a reload.
+  function adminTemplates() {
+    if (!configStore) return [];
+    return foldConfig(configStore.timeline()).templates || [];
+  }
+
   function showLetterModal(l) {
-    const tr = traceFor(l.roomId);
+    const tr = traceFor(l.roomId, l.templateId);
     const m = $("letterModal");
-    $("letterTitle").textContent = "Complaint draft — " + l.applicantName;
-    $("letterPath").textContent = `Generated ${fmtDate(l.generatedAt)} · ${tr.missing.length} required field(s) still empty`;
+    $("letterTitle").textContent = (l.templateName || "Complaint draft") + " — " + l.applicantName;
+    const editedNote = l.editedAt ? ` · edited ${fmtDate(l.editedAt)} by ${l.editedBy || "?"}` : "";
+    $("letterPath").textContent = `Generated ${fmtDate(l.generatedAt)}${editedNote} · ${tr.missing.length} required field(s) still empty`;
     const body = $("letterBody");
     body.value = l.text || tr.letter;
     const btn = $("letterCopy");
@@ -5044,22 +5398,36 @@ function initAdminView({ onClose }) {
       navigator.clipboard?.writeText(body.value);
       toast("Draft copied to clipboard", "success");
     };
+    // Save edits: the textarea IS the editor. One DEF on the letter's anchor
+    // per save — the generated original stays in the INS record untouched.
+    const save = $("letterSave");
+    save.onclick = () => {
+      if (body.value === (l.text || tr.letter)) { toast("No edits to save", "warn"); return; }
+      setLetterText(ctx, l.roomId, l.id, body.value);
+      toast("Edits saved — the original generated text stays in the timeline", "success");
+      m.classList.remove("on");
+      setTimeout(() => renderActive(), 400);
+    };
+    // Regenerate updates THIS letter's text from current answers (one DEF
+    // event) instead of minting a brand-new letter record each click, which
+    // used to pile duplicate drafts into the review queue.
     const regen = $("letterRegen");
     regen.style.display = "";
     regen.onclick = () => {
       const rebuilt = tr.letter;
       if (rebuilt === body.value) { toast("No changes — draft is already current", "warn"); return; }
-      saveLetter(ctx, l.roomId, rebuilt);
+      if (!confirm("Rebuild this draft from the current answers? Manual edits in the text will be replaced (they stay recoverable in the room timeline).")) return;
+      setLetterText(ctx, l.roomId, l.id, rebuilt);
       toast("Draft regenerated from current answers", "success");
       m.classList.remove("on");
-      renderActive();
+      setTimeout(() => renderActive(), 400);
     };
     $("letterClose").onclick = () => m.classList.remove("on");
     m.classList.add("on");
   }
 
   function showTraceModal(l) {
-    const tr = traceFor(l.roomId);
+    const tr = traceFor(l.roomId, l.templateId);
     const clips = collectVoiceClipsForRoom(ctx, l.roomId);
     const m = $("traceModal");
     $("traceTitle").textContent = "Answer sources — " + l.applicantName;
@@ -5113,12 +5481,16 @@ function initAdminView({ onClose }) {
     top.appendChild($e("div", "acell-name", l.applicantName));
     const pill = $e("span", "pill pill-" + l.status, LETTER_STATUSES.find((s) => s.key === l.status)?.label || l.status);
     top.appendChild(pill);
-    const meta = $e("span", null, `generated ${fmtDate(l.generatedAt)} · by ${l.generatedBy || "?"}`);
+    const tplTag = $e("span", "mono", l.templateName || BUILTIN_TEMPLATE_NAME);
+    tplTag.style.cssText = "font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 7px";
+    top.appendChild(tplTag);
+    const editedNote = l.editedAt ? ` · edited ${fmtDate(l.editedAt)}` : "";
+    const meta = $e("span", null, `generated ${fmtDate(l.generatedAt)} · by ${l.generatedBy || "?"}${editedNote}`);
     meta.style.cssText = "font-size:11px;color:var(--muted)";
     top.appendChild(meta);
     card.appendChild(top);
 
-    const tr = traceFor(l.roomId);
+    const tr = traceFor(l.roomId, l.templateId);
     const preview = $e("pre", "letter-preview", (l.text || tr.letter).slice(0, 260));
     preview.style.cssText = "white-space:pre-wrap;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin:0 0 10px;max-height:110px;overflow:hidden";
     card.appendChild(preview);
@@ -5142,12 +5514,155 @@ function initAdminView({ onClose }) {
   }
 
   function renderLetters(letters) {
-    if (!letters.length && !collectApplicantRooms(ctx).length) return $e("div", "aempty", "No complaint drafts generated yet, and no applicant answers to draft from. Generate one from an applicant's answers to begin the review queue.");
     const wrap = $e("div");
     wrap.style.cssText = "display:flex;flex-direction:column;gap:12px";
+    wrap.appendChild(templateManager());
+    if (!letters.length && !collectApplicantRooms(ctx).length) {
+      wrap.appendChild($e("div", "aempty", "No complaint drafts generated yet, and no applicant answers to draft from. Generate one from an applicant's answers to begin the review queue."));
+      return wrap;
+    }
     wrap.appendChild(letterGenerator());
     for (const l of letters) wrap.appendChild(letterCard(l));
     return wrap;
+  }
+
+  // ── Template manager ──
+  // Author the outgoing documents themselves, right where drafts are spun
+  // up. Templates are config-room records (shared, admin-writable), bodies
+  // use {{field_path}} placeholders filled from each applicant's answers.
+  let tplEditing = null;   // template id being edited, "" for a new one, null = closed
+  let tplListOpen = false;
+
+  function templateManager() {
+    const card = $e("div", "atable-wrap");
+    card.style.cssText = "padding:12px 16px;display:flex;flex-direction:column;gap:10px";
+    const head = $e("div");
+    head.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap";
+    const title = $e("span", null, "Outgoing document templates");
+    title.style.cssText = "font:600 13px Inter";
+    head.appendChild(title);
+    const tpls = adminTemplates();
+    head.appendChild($e("span", "mono", `${tpls.length + 1} template(s)`));
+    head.lastChild.style.cssText = "font-size:10.5px;color:var(--muted)";
+    const toggle = $e("button", "aview", tplListOpen ? "Hide ▴" : "Manage ▾");
+    toggle.onclick = () => { tplListOpen = !tplListOpen; if (!tplListOpen) tplEditing = null; renderActive(); };
+    head.style.cursor = "default";
+    const spacer = $e("span"); spacer.style.cssText = "margin-left:auto";
+    head.appendChild(spacer);
+    head.appendChild(toggle);
+    card.appendChild(head);
+    if (!tplListOpen) return card;
+
+    const list = $e("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:8px";
+
+    // Built-in first: pickable everywhere, editable nowhere.
+    const builtinRow = $e("div", "mem");
+    builtinRow.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)";
+    builtinRow.appendChild($e("span", null, BUILTIN_TEMPLATE_NAME));
+    builtinRow.lastChild.style.cssText = "font:600 12px Inter";
+    builtinRow.appendChild($e("span", "mono", "assembled in code — sections, child/placement rounds, required-field report"));
+    builtinRow.lastChild.style.cssText = "font-size:10px;color:var(--muted);margin-left:auto";
+    list.appendChild(builtinRow);
+
+    for (const t of tpls) {
+      if (tplEditing === t.id) { list.appendChild(templateEditor(t)); continue; }
+      const row = $e("div", "mem");
+      row.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface)";
+      row.appendChild($e("span", null, t.name || "(untitled)"));
+      row.lastChild.style.cssText = "font:600 12px Inter";
+      const fields = templatePaths(t.body).filter((p) => p !== "_date");
+      row.appendChild($e("span", "mono", `${fields.length} placeholder(s)`));
+      row.lastChild.style.cssText = "font-size:10px;color:var(--muted)";
+      const btns = $e("div");
+      btns.style.cssText = "display:flex;gap:5px;margin-left:auto";
+      const edit = $e("button", "aview", "Edit");
+      edit.onclick = () => { tplEditing = t.id; renderActive(); };
+      btns.appendChild(edit);
+      const del = $e("button", "aview", "Delete");
+      del.onclick = () => {
+        if (!confirm(`Delete the template "${t.name}"?\n\nDrafts already generated from it keep their text.`)) return;
+        deleteTemplate(configStore, t.id);
+        toast("Template deleted", "success");
+        renderActive();
+      };
+      btns.appendChild(del);
+      row.appendChild(btns);
+      list.appendChild(row);
+    }
+
+    if (tplEditing === "") list.appendChild(templateEditor(null));
+    else {
+      const add = $e("button", "aview", "+ New template");
+      add.style.cssText += ";align-self:flex-start";
+      add.onclick = () => { tplEditing = ""; renderActive(); };
+      list.appendChild(add);
+    }
+    card.appendChild(list);
+    return card;
+  }
+
+  function templateEditor(tpl) {
+    const box = $e("div");
+    box.style.cssText = "border:1px solid var(--seal);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--surface)";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.placeholder = "Template name — e.g. Acknowledgement letter";
+    nameInput.value = tpl?.name || "";
+    nameInput.style.cssText = "border:1px solid var(--line);border-radius:7px;padding:7px 10px;font:600 13px Inter;background:var(--surface);color:var(--ink)";
+    box.appendChild(nameInput);
+
+    const bodyInput = document.createElement("textarea");
+    bodyInput.spellcheck = false;
+    bodyInput.placeholder = "Dear {{complainant_name}},\n\nWe received your submission on {{_date}} regarding your child ({{child_1_initials}})…";
+    bodyInput.value = tpl?.body || "";
+    bodyInput.style.cssText = "width:100%;min-height:220px;resize:vertical;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)";
+    box.appendChild(bodyInput);
+
+    // Placeholder palette: every schema field path, click to insert at the
+    // caret — no need to remember or retype exact paths.
+    const paletteLabel = $e("div", null, "Insert a placeholder (fills from the applicant's answer):");
+    paletteLabel.style.cssText = "font-size:10.5px;color:var(--muted)";
+    box.appendChild(paletteLabel);
+    const palette = $e("div");
+    palette.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;max-height:88px;overflow:auto";
+    const cfgFields = configStore ? foldConfig(configStore.timeline()).schema.fields : [];
+    const options = [{ path: "_date", label: "today's date" }, ...cfgFields.map((f) => ({ path: f.path, label: f.label }))];
+    for (const o of options) {
+      const chip = $e("button", "mono", `{{${o.path}}}`);
+      chip.title = o.label;
+      chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:#F2F5F7;font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
+      chip.onclick = () => {
+        const at = bodyInput.selectionStart ?? bodyInput.value.length;
+        const token = `{{${o.path}}}`;
+        bodyInput.value = bodyInput.value.slice(0, at) + token + bodyInput.value.slice(bodyInput.selectionEnd ?? at);
+        bodyInput.focus();
+        bodyInput.selectionStart = bodyInput.selectionEnd = at + token.length;
+      };
+      palette.appendChild(chip);
+    }
+    box.appendChild(palette);
+
+    const btns = $e("div");
+    btns.style.cssText = "display:flex;gap:6px";
+    const save = $e("button", "aview", "Save template");
+    save.style.cssText += ";border-color:var(--seal);color:var(--seal);font-weight:600";
+    save.onclick = () => {
+      const name = nameInput.value.trim();
+      const body = bodyInput.value;
+      if (!name) { toast("Give the template a name", "warn"); return; }
+      if (!body.trim()) { toast("The template body is empty", "warn"); return; }
+      putTemplate(configStore, { id: tpl?.id || newId("tpl"), name, body });
+      tplEditing = null;
+      toast(`Template "${name}" saved`, "success");
+      renderActive();
+    };
+    btns.appendChild(save);
+    const cancel = $e("button", "aview", "Cancel");
+    cancel.onclick = () => { tplEditing = null; renderActive(); };
+    btns.appendChild(cancel);
+    box.appendChild(btns);
+    return box;
   }
 
   // Toolbar: generate a fresh draft for any applicant room that has answers.
@@ -5158,7 +5673,7 @@ function initAdminView({ onClose }) {
     const rooms = collectApplicantRooms(ctx);
     const bar = $e("div", "atable-wrap");
     bar.style.cssText = "padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
-    bar.appendChild($e("span", null, "Generate draft from answers:"));
+    bar.appendChild($e("span", null, "Generate draft for"));
     const sel = document.createElement("select");
     sel.className = "astatus-sel";
     sel.style.cssText = "font:inherit;font-size:13px;padding:6px 10px";
@@ -5166,15 +5681,23 @@ function initAdminView({ onClose }) {
       const o = new Option(r.applicantName, r.roomId);
       sel.appendChild(o);
     }
-    sel.value = letters[0]?.roomId || rooms[0]?.roomId || "";
+    sel.value = rooms[0]?.roomId || "";
     bar.appendChild(sel);
+    bar.appendChild($e("span", null, "using"));
+    const tplSel = document.createElement("select");
+    tplSel.className = "astatus-sel";
+    tplSel.style.cssText = "font:inherit;font-size:13px;padding:6px 10px";
+    tplSel.appendChild(new Option(BUILTIN_TEMPLATE_NAME, BUILTIN_TEMPLATE_ID));
+    for (const t of adminTemplates()) tplSel.appendChild(new Option(t.name || "(untitled)", t.id));
+    bar.appendChild(tplSel);
     const gen = $e("button", "aview", "Generate draft");
     gen.onclick = () => {
       const room = rooms.find((r) => r.roomId === sel.value);
       if (!room) { toast("No applicant room selected", "warn"); return; }
-      const { letter, missing } = buildComplaintLetter(room.answers, room.provenance);
-      saveLetter(ctx, room.roomId, letter);
-      const count = missing.length ? ` with ${missing.length} required field${missing.length === 1 ? "" : "s"} still empty` : "";
+      const tpl = adminTemplates().find((t) => t.id === tplSel.value) || null;
+      const { letter, missing } = buildOutgoingDoc(tpl, room.answers, room.provenance);
+      saveLetter(ctx, room.roomId, letter, tpl);
+      const count = missing.length ? ` with ${missing.length} field${missing.length === 1 ? "" : "s"} still empty` : "";
       toast(`Draft generated for ${room.applicantName}${count}`, count ? "warn" : "success");
       renderActive();
     };
