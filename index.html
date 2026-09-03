@@ -2435,6 +2435,14 @@ class BaseStore {
   fold() { return fold(this._events); }
   subscribe(fn) { this._subs.add(fn); return () => this._subs.delete(fn); }
   _notify(ev) { for (const fn of this._subs) fn(ev, this._events); }
+  // No-op by default; MatrixStore overrides this to unhook the client-level
+  // listener it registers in open(). Every boot() call must call this on
+  // whatever store it's about to replace, or a language switch (which
+  // re-opens a fresh store on the same long-lived client) leaves the old
+  // store's listener attached: every event from then on fires the old
+  // store's _notify too, redundantly re-running whatever it was subscribed
+  // to (renderSide, etc.) once per boot() this session has ever done.
+  destroy() {}
 }
 
 class DemoStore extends BaseStore {
@@ -2533,14 +2541,25 @@ class MatrixStore extends BaseStore {
         .map((e) => this._decode(e));
       this._ensureAdminInvited(room);
     }
-    this.client.on("Room.timeline", (event, room) => {
+    // Bound and kept so destroy() can remove this exact listener — an
+    // inline arrow passed straight to .on() can never be .off()'d again.
+    this._onTimeline = (event, room) => {
       if (room.roomId !== this.roomId) return;
       if (event.getType() !== EVENT_TYPE) return;
       const ev = this._decode(event);
       this._events.push(ev);
       this._notify(ev);
-    });
+    };
+    this.client.on("Room.timeline", this._onTimeline);
     return this;
+  }
+
+  // See BaseStore.destroy(): boot() calls this on the store it's replacing
+  // before opening a new one, so re-entering (a language switch, a resumed
+  // session) doesn't accumulate one live listener per call on a client that
+  // outlives every individual MatrixStore built from it.
+  destroy() {
+    if (this._onTimeline) this.client.off("Room.timeline", this._onTimeline);
   }
 
   async _ensureAdminInvited(room) {
@@ -5349,7 +5368,7 @@ function initAdminView({ onClose }) {
     const bulkCount = pl.answers.filter((a) => a.inputKind === "bulk").length;
     const parts = [
       `<span>⌨ <b style="color:var(--ink)">${typedCount} typed</b> — constituent wrote these directly</span>`,
-      `<span>🎙 <b style="color:var(--ink)">${voiceCount} voice-to-text</b> — spoken, transcribed by Whisper VTT</span>`,
+      `<span>🎙 <b style="color:var(--ink)">${voiceCount} voice-to-text</b> — spoken, transcribed on-device</span>`,
     ];
     if (editedCount) parts.push(`<span>✎ <b style="color:var(--ink)">${editedCount} edited</b> — admin-corrected, original preserved in room</span>`);
     if (bulkCount) parts.push(`<span>📋 <b style="color:var(--ink)">${bulkCount} bulk</b> — extracted from pasted block</span>`);
@@ -5403,7 +5422,7 @@ function initAdminView({ onClose }) {
     heardHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
     heardHead.innerHTML = `<span class="mono" style="font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 5px;font-weight:600">heard</span><span style="font-size:11.5px;font-weight:600">Transcribed (VTT)</span>`;
     colHeard.appendChild(heardHead);
-    colHeard.appendChild($e("div", null, "What the speech model heard — raw Whisper transcription, independent of the answer parser. Play the audio to verify accuracy."));
+    colHeard.appendChild($e("div", null, "What the speech model heard — raw on-device transcription, independent of the answer parser. Play the audio to verify accuracy."));
     colHeard.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
     let hc = 0;
     for (const a of pl.answers) {
@@ -5411,7 +5430,7 @@ function initAdminView({ onClose }) {
       hc++;
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px;display:flex;flex-direction:column;gap:4px";
-      item.appendChild($e("span", "mono", "whisper VTT"));
+      item.appendChild($e("span", "mono", "on-device VTT"));
       item.lastChild.style.cssText = "align-self:flex-start;font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px";
       item.appendChild($e("div", null, a.voiceClip.transcript));
       item.lastChild.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
@@ -7248,7 +7267,8 @@ function wireBulk() {
 
 // ── Voice input (speak your answer) ──
 //
-// Whisper transcribes locally; the transcript lands in the compose box for
+// A local, on-device model transcribes (which one depends on language — see
+// vendor/voice.js's MODELS); the transcript lands in the compose box for
 // the person to read and edit before they send it, same as if they'd typed
 // it — voice never bypasses review. The raw recording is kept (encrypted)
 // so staff can later confirm the transcript matched what was actually said;
@@ -7320,6 +7340,14 @@ function setVoiceReady(ready) {
 // tap — see vendor/voice.js's autoDownload(). Progress only ever touches
 // the voice note when the mic isn't actively in use, so a background
 // download tick can never clobber a live "Recording…"/"Transcribing…" note.
+//
+// Warms whichever language is selected right now (#langSel — read directly
+// since this runs before `intake` exists, at page load rather than inside
+// boot()). If someone switches languages mid-session, the other model just
+// downloads lazily on their first mic tap in that language instead of
+// being pre-warmed — the same one-time cost every model paid before this
+// function existed, not a regression, and not worth a second idle-time
+// download racing the one still in flight for their first language.
 function autoDownloadVoiceModel() {
   if (!window.Voice || !Voice.isSupported()) return;
   // Deferred to idle time, not fired the instant the page loads: this can
@@ -7330,7 +7358,8 @@ function autoDownloadVoiceModel() {
   // requestIdleCallback is unavailable in Safari, hence the timeout fallback.
   const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
   schedule(() => {
-    Voice.autoDownload((frac) => {
+    const lang = document.getElementById("langSel").value === "es" ? "es" : "en";
+    Voice.autoDownload(lang, (frac) => {
       voiceModelDownloaded = frac >= 1;
       setVoiceReady(voiceModelDownloaded);
       if (voiceInstance && voiceInstance.state !== "idle") return;
@@ -8948,6 +8977,14 @@ function wireLogin() {
 // ── Boot ──
 async function boot() {
   if (!loginState) { showLogin(); return; }
+
+  // Re-entering boot() (a language switch via #langSel.onchange, most
+  // often) is about to replace `store`/`configStore` with fresh instances
+  // opened on the same underlying client — destroy the ones being replaced
+  // first so a MatrixStore doesn't leave its Room.timeline listener behind
+  // (see BaseStore.destroy()).
+  store?.destroy?.();
+  configStore?.destroy?.();
 
   document.getElementById("submissionBtn").style.display = "none";
   currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";

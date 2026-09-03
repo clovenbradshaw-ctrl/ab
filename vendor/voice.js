@@ -1,11 +1,28 @@
 // voice.js — speak your answer. A microphone -> in-browser speech-to-text,
 // so a person can say an answer instead of typing it. Nothing leaves the
-// browser: the waveform is captured, decoded, and heard by a Whisper model
-// that runs entirely on this device. Ported from the earlier
+// browser: the waveform is captured, decoded, and heard by a model that
+// runs entirely on this device. Ported from the earlier
 // claude/audio-transcription-yqn5l4 branch's js/voice.js (an ES module, in
 // the app's older multi-file layout) into this file's classic-script /
 // window-global shape to match how vendor/steer.js loads in the current
 // single-file index.html — logic unchanged, only the module wrapper.
+//
+// Which model, per language (see MODELS below): English uses Moonshine
+// (onnx-community/moonshine-tiny-ONNX) — a model family built specifically
+// for fast, small, on-device ASR rather than adapted to it, published
+// benchmarks put its tiny (27M-parameter) checkpoints ahead of Whisper
+// models several times its size, and it needs no 30-second padding the way
+// Whisper does. Spanish stays on Whisper for now: Moonshine AI's only
+// published Spanish checkpoint (moonshine-ai/moonshine-es) ships ONNX
+// weights in a different runtime's layout — a proprietary tokenizer.bin,
+// not the tokenizer.json/config.json set transformers.js expects — and
+// re-targeting that without a way to verify the result against real speech
+// in a real browser (unavailable in the sandbox this was written in) risks
+// silently corrupting Spanish transcripts on a form that becomes an actual
+// legal complaint. Move it to Moonshine once a transformers.js-compatible
+// Spanish checkpoint exists (from onnx-community or a verified conversion),
+// by adding its entry to MODELS/ARCH below — everything else here is
+// already written to be architecture-agnostic per language.
 //
 // The contract to the app is small: create a recorder, start() it, stop()
 // resolves { text, blob } — the transcript AND the raw recording, so the
@@ -43,9 +60,10 @@
 //
 // One deterministic cleanup runs on every transcript, partial and final
 // alike: spoken email addresses. Nobody dictates "@" or "." — they say
-// "john dot smith at gmail dot com" — so Whisper hears and prints exactly
-// those words, and a legal complaint form is a bad place to leave "at" and
-// "dot" sitting where an address was meant. See normalizeSpokenEmails below.
+// "john dot smith at gmail dot com" (or, in Spanish, "arroba"/"punto") — so
+// the model hears and prints exactly those words, and a legal complaint
+// form is a bad place to leave "at"/"arroba" and "dot"/"punto" sitting
+// where an address was meant. See normalizeSpokenEmails below.
 
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -53,8 +71,19 @@
 })(typeof self !== "undefined" ? self : globalThis, function () {
   "use strict";
 
-  const SR = 16000; // whisper's native rate
-  const MODEL = "onnx-community/whisper-base";
+  const SR = 16000; // native rate for both Moonshine and Whisper
+  // One model id + architecture per supported language; MODELS[lang] falls
+  // back to English for anything not listed. "arch" picks which options
+  // shape asrOptions() below builds — Moonshine and Whisper take different
+  // generation options (see there for why) despite both running through
+  // the exact same pipeline("automatic-speech-recognition", ...) call.
+  const MODELS = {
+    en: { id: "onnx-community/moonshine-tiny-ONNX", arch: "moonshine" },
+    es: { id: "onnx-community/whisper-base", arch: "whisper" },
+  };
+  function resolveModel(lang) {
+    return MODELS[lang] || MODELS.en;
+  }
   const TRANSFORMERS = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm";
   // How much trailing audio a partial pass actually hears. Re-transcribing
   // the whole clip-to-date every tick is O(n) in recording length, so on a
@@ -203,9 +232,11 @@
     }
   }
 
-  // The heavy pieces load lazily, exactly once, and only when the mic is
-  // first used.
-  let _asr = null; // Promise<pipeline>, shared across recordings
+  // The heavy pieces load lazily, exactly once per model, and only when the
+  // mic is first used for that language. Keyed by model id (not by "en"/
+  // "es") so autoDownload() and createVoice() never disagree about which
+  // pipeline instance a given model resolves to.
+  const _asrCache = new Map(); // model id -> Promise<pipeline>
   let _device = null; // 'webgpu' | 'wasm'
 
   async function device() {
@@ -227,23 +258,40 @@
     return true;
   }
 
-  // Load (and cache) the speech model. onProgress(fraction) fires during
+  // Load (and cache) a speech model by id. onProgress(fraction) fires during
   // the one-time download so the UI can show it filling in.
-  function loadASR(onProgress) {
-    if (!_asr) {
-      _asr = (async () => {
+  function loadASR(modelId, onProgress) {
+    if (!_asrCache.has(modelId)) {
+      const promise = (async () => {
         const dev = await device();
         const { pipeline } = await import(/* webpackIgnore: true */ TRANSFORMERS);
-        return pipeline("automatic-speech-recognition", MODEL, {
+        return pipeline("automatic-speech-recognition", modelId, {
           device: dev,
           progress_callback: (p) => {
             if (typeof onProgress === "function" && p && p.status === "progress" && p.progress != null)
               onProgress(Math.max(0, Math.min(1, p.progress / 100)));
           },
         });
-      })().catch((e) => { _asr = null; throw e; }); // a failed load must not poison the cache
+      })().catch((e) => { _asrCache.delete(modelId); throw e; }); // a failed load must not poison the cache
+      _asrCache.set(modelId, promise);
     }
-    return _asr;
+    return _asrCache.get(modelId);
+  }
+
+  // Moonshine and Whisper take different generation options through the
+  // exact same pipeline() call. Whisper needs chunk_length_s/stride_length_s
+  // to handle audio past its fixed 30s window and a language hint to avoid
+  // guessing wrong on a short clip; Moonshine has no such window (it scales
+  // to the audio it's given) and has no multilingual weights to hint at all
+  // — the language choice already happened by picking which checkpoint to
+  // load. Passing Whisper's options to Moonshine wouldn't necessarily
+  // error, but they'd be silently meaningless, so build the right shape per
+  // architecture instead of hoping the unused ones are ignored.
+  function asrOptions(arch, lang) {
+    if (arch === "whisper") {
+      return { chunk_length_s: 30, stride_length_s: 5, return_timestamps: false, language: lang === "es" ? "spanish" : "english" };
+    }
+    return undefined;
   }
 
   // Decode a recorded blob to mono 16 kHz Float32 — the shape the model eats.
@@ -269,61 +317,67 @@
       && !!(window.AudioContext || window.webkitAudioContext);
   }
 
-  // "john dot smith at gmail dot com" -> "john.smith@gmail.com". Scoped
-  // tightly on purpose: it only fires on a run that has BOTH "at" and a
-  // "dot" after it, which is how people actually dictate an address and
-  // not how "at" turns up in ordinary sentences ("I was at the store" has
-  // no following "dot" and is left untouched). Local and domain parts may
-  // themselves be dot/underscore/dash-joined ("maria underscore lopez at
-  // hotmail dot com"), and a domain may carry more than one label ("co dot
-  // state dot tn dot us"). The match is lowercased, since addresses are
-  // conventionally lowercase and Whisper capitalizes whatever word opens a
-  // sentence, dictated address or not.
+  // "john dot smith at gmail dot com" -> "john.smith@gmail.com", in either
+  // language this app speaks: "arroba"/"punto" work the same as "at"/"dot"
+  // for a constituent dictating in Spanish. Scoped tightly on purpose: it
+  // only fires on a run that has BOTH an "at" word and a "dot" word after
+  // it, which is how people actually dictate an address and not how "at"
+  // (or "en"/ordinary "punto") turns up in ordinary sentences ("I was at
+  // the store" / "estaba en la tienda" have no following dot-word and are
+  // left untouched). Local and domain parts may themselves be joined by any
+  // of these connector words ("maria underscore lopez at hotmail dot com",
+  // "maria guion bajo lopez arroba gmail punto com"), and a domain may
+  // carry more than one label ("co dot state dot tn dot us"). The match is
+  // lowercased, since addresses are conventionally lowercase and the model
+  // capitalizes whatever word opens a sentence, dictated address or not.
   const EMAIL_WORD = "[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?";
-  const EMAIL_SEP = "(?:dot|underscore|dash|hyphen|period)";
+  const EMAIL_DOT = "(?:dot|period|punto)";
+  const EMAIL_AT = "(?:at|arroba)";
+  const EMAIL_SEP = `(?:${EMAIL_DOT}|underscore|guion\\s+bajo|dash|hyphen|guion)`;
   const EMAIL_PART = `${EMAIL_WORD}(?:\\s+${EMAIL_SEP}\\s+${EMAIL_WORD})*`;
   const EMAIL_RE = new RegExp(
-    `\\b(${EMAIL_PART})\\s+at\\s+(${EMAIL_PART}\\s+(?:dot|period)\\s+${EMAIL_WORD}(?:\\s+(?:dot|period)\\s+${EMAIL_WORD})*)\\b`,
+    `\\b(${EMAIL_PART})\\s+${EMAIL_AT}\\s+(${EMAIL_PART}\\s+${EMAIL_DOT}\\s+${EMAIL_WORD}(?:\\s+${EMAIL_DOT}\\s+${EMAIL_WORD})*)\\b`,
     "gi"
   );
   function normalizeSpokenEmails(text) {
     if (!text) return text;
     return text.replace(EMAIL_RE, (whole, local, domain) => {
       const email = (local + "@" + domain)
-        .replace(/\s+dot\s+/gi, ".")
-        .replace(/\s+period\s+/gi, ".")
+        .replace(/\s+(?:dot|period|punto)\s+/gi, ".")
+        .replace(/\s+guion\s+bajo\s+/gi, "_") // must run before the bare "guion" (dash) pass below
         .replace(/\s+underscore\s+/gi, "_")
-        .replace(/\s+(?:dash|hyphen)\s+/gi, "-")
+        .replace(/\s+(?:dash|hyphen|guion)\s+/gi, "-")
         .replace(/\s+/g, "");
       return email.toLowerCase();
     });
   }
 
-  // Start the model download as soon as the page can, not lazily on first
-  // mic tap — loadASR() caches on the same shared promise either way, so
-  // calling this early just means the download is already finished (or
-  // well underway) by the time someone actually wants to speak.
-  // onProgress(fraction) reports the same 0..1 download progress createVoice
-  // would. Never rejects: a failed pre-warm just means the first real
-  // recording retries the load and surfaces the failure there, same as
-  // before this existed. A no-op where voice input isn't usable at all —
-  // no sense pulling down a ~100MB model nobody can use.
-  function autoDownload(onProgress) {
+  // Start the model download for `lang` as soon as the page can, not lazily
+  // on first mic tap — loadASR() caches per model id either way, so calling
+  // this early just means the download is already finished (or well
+  // underway) by the time someone actually wants to speak. onProgress
+  // (fraction) reports the same 0..1 download progress createVoice would.
+  // Never rejects: a failed pre-warm just means the first real recording
+  // retries the load and surfaces the failure there, same as before this
+  // existed. A no-op where voice input isn't usable at all — no sense
+  // pulling down a model nobody can use.
+  function autoDownload(lang, onProgress) {
     if (!isSupported()) return Promise.resolve();
-    return loadASR(onProgress).catch(() => {});
+    return loadASR(resolveModel(lang).id, onProgress).catch(() => {});
   }
 
   // A single recorder instance. onState(state) drives the button;
   // onProgress(fraction) reports the first-load model download; onPartial
   // (text) reports a growing live-preview transcript while recording is
   // still in progress (see the file header note on how that works).
-  // `lang`: "en" | "es" — passed through to Whisper as a language hint,
-  // since guessing the wrong language on a short clip costs more accuracy
-  // than a bilingual UI should have to pay for.
+  // `lang`: "en" | "es" — picks which model (and, for Whisper, which
+  // language hint) transcribes this take. See MODELS above for why English
+  // and Spanish currently run different architectures.
   // onSilence (opt) fires once, while still recording, after the take has
   // heard speech and then gone quiet for `silenceMs`. The caller decides
   // what that means — this module never stops a recording on its own.
   function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = null, onSilence = null, lang = "en", partialIntervalMs = 2500, silenceMs = 2600 } = {}) {
+    const model = resolveModel(lang);
     let stream = null, rec = null, chunks = [];
     let state = "idle"; // idle | recording | transcribing
     let streamTimer = null;
@@ -368,11 +422,8 @@
         const windowSamples = PARTIAL_WINDOW_S * SR;
         const heard = mono.length > windowSamples ? mono.subarray(mono.length - windowSamples) : mono;
         if (heard.length && state === "recording") {
-          const asr = await loadASR(onProgress);
-          const out = await asr(heard, {
-            chunk_length_s: 30, stride_length_s: 5, return_timestamps: false,
-            language: lang === "es" ? "spanish" : "english",
-          });
+          const asr = await loadASR(model.id, onProgress);
+          const out = await asr(heard, asrOptions(model.arch, lang));
           if (state === "recording") onPartial(normalizeSpokenEmails(String((out && out.text) || "").trim()));
         }
       } catch (e) { /* a partial pass failing is never fatal — stop()'s final pass is authoritative */ }
@@ -478,13 +529,11 @@
             set("transcribing");
             const mono = await decodeMono(blob);
             if (!mono.length) { set("idle"); return resolve({ text: "", blob }); }
-            const asr = await loadASR(onProgress);
-            // chunk_length_s lets whisper handle a clip longer than its 30s
-            // context; a short answer is a single pass.
-            const out = await asr(mono, {
-              chunk_length_s: 30, stride_length_s: 5, return_timestamps: false,
-              language: lang === "es" ? "spanish" : "english",
-            });
+            const asr = await loadASR(model.id, onProgress);
+            // For Whisper, chunk_length_s lets it handle a clip longer than
+            // its 30s context (a short answer is still a single pass);
+            // Moonshine needs no such option (see asrOptions above).
+            const out = await asr(mono, asrOptions(model.arch, lang));
             set("idle");
             resolve({ text: normalizeSpokenEmails(String((out && out.text) || "").trim()), blob });
           } catch (e) { set("idle"); reject(e); }
