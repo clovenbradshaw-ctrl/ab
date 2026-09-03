@@ -414,6 +414,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
 .toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
 .toast .toast-icon{font-size:14px;flex:none}
+.toast .toast-count{font-variant-numeric:tabular-nums;opacity:.75;flex:none}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
 @keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
 
@@ -422,6 +423,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
 .toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
 .toast .toast-icon{font-size:14px;flex:none}
+.toast .toast-count{font-variant-numeric:tabular-nums;opacity:.75;flex:none}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
 @keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
 
@@ -2409,7 +2411,10 @@ class DemoStore extends BaseStore {
 }
 
 class MatrixStore extends BaseStore {
-  constructor(client) { super(); this.client = client; this.user = client.getUserId(); }
+  // requireEncryption defaults on here as well as in open(), so a store that
+  // somehow emits before it is opened fails closed rather than sending in
+  // the clear on an undefined flag.
+  constructor(client) { super(); this.client = client; this.user = client.getUserId(); this.requireEncryption = true; }
 
   // Note the initClientCrypto() call: without it this built a client with no
   // crypto backend at all, so every send would have gone to Synapse in the
@@ -2440,7 +2445,21 @@ class MatrixStore extends BaseStore {
     return new MatrixStore(client);
   }
 
-  async open(roomId) {
+  // `encrypted: false` is for the shared question set and nothing else (see
+  // ensureConfigRoom, which creates that room deliberately unencrypted so any
+  // applicant can resolve its alias and read the questions they're about to
+  // be asked). Every room holding something a person told us keeps the
+  // default, and _assertEncrypted stays the last gate before plaintext could
+  // reach the operator's disk — so this is opt-in per call site and never
+  // inferred from the room's own state, where an answers room quietly losing
+  // its encryption would start reading as permission to send in the clear.
+  //
+  // Until this existed the gate was unconditional, so every write to the
+  // config room failed: seeding it writes one event per question, which gave
+  // the admin a wall of identical "couldn't securely save that" warnings on
+  // every page load, and meant no question edit ever reached the server.
+  async open(roomId, { encrypted = true } = {}) {
+    this.requireEncryption = encrypted;
     this.roomId = roomId;
     const room = this.client.getRoom(roomId);
     if (room) {
@@ -2499,7 +2518,7 @@ class MatrixStore extends BaseStore {
 
   async _send(ev, op, payload) {
     try {
-      await this._assertEncrypted();
+      if (this.requireEncryption) await this._assertEncrypted();
       await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
       ev._pending = false;
     } catch (e) {
@@ -5829,14 +5848,48 @@ let flowMode = false; // true = no-model step wizard, false = chat with a model
 let firstBoot = !localStorage.getItem("intake:welcomeDismissed");
 
 // ── Toast notifications ──
+const TOAST_MS = 2500;
+const TOAST_ICONS = { success: "✓", error: "✗", warn: "!" };
+
+// Identical messages coalesce into one line with a count instead of
+// stacking. One failure that happens forty times in a burst is one thing
+// the person needs to know, not forty copies of it overflowing the screen:
+// seeding the config room writes one event per question (see seedConfig),
+// so a homeserver that can't take those writes used to produce a wall of
+// the same "couldn't securely save that" warning on every single page load.
+//
+// The message goes in as text, never as markup — some callers pass an
+// exception's own message through (a model loader, a homeserver's error),
+// and none of that has any business being parsed as HTML.
 function toast(msg, kind = "success") {
   const c = $("toastContainer");
-  const t = document.createElement("div");
-  t.className = "toast " + kind;
-  const icon = { success: "✓", error: "✗", warn: "!" };
-  t.innerHTML = `<span class="toast-icon">${icon[kind] || "i"}</span>${msg}`;
+  const text = (msg ?? "").toString();
+  const key = kind + " " + text;
+  const dismiss = (node) => {
+    node.style.animation = "toastOut .25s ease forwards";
+    setTimeout(() => node.remove(), 300);
+  };
+
+  for (const open of c.children) {
+    if (open._toastKey !== key) continue;
+    open._toastCount++;
+    const count = open.querySelector(".toast-count");
+    count.textContent = " ×" + open._toastCount;
+    // The burst is still going, so keep the one line up while it lasts
+    // rather than letting it expire mid-storm and reappear.
+    clearTimeout(open._toastTimer);
+    open._toastTimer = setTimeout(() => dismiss(open), TOAST_MS);
+    return;
+  }
+
+  const t = el("div", "toast " + kind);
+  t.appendChild(el("span", "toast-icon", TOAST_ICONS[kind] || "i"));
+  t.appendChild(document.createTextNode(text));
+  t.appendChild(el("span", "toast-count", ""));
+  t._toastKey = key;
+  t._toastCount = 1;
   c.appendChild(t);
-  setTimeout(() => { t.style.animation = "toastOut .25s ease forwards"; setTimeout(() => t.remove(), 300); }, 2500);
+  t._toastTimer = setTimeout(() => dismiss(t), TOAST_MS);
 }
 
 // ── Welcome overlay ──
@@ -8443,7 +8496,7 @@ async function boot() {
       if (userId === ADMIN_USER_ID) autoJoinInvitesForAdmin(client);
       const configRoomId = await ensureConfigRoom(client);
       const answersRoom = await ensureAnswerRoom(client);
-      configStore = await new MatrixStore(client).open(configRoomId);
+      configStore = await new MatrixStore(client).open(configRoomId, { encrypted: false });
       store = await new MatrixStore(client).open(answersRoom);
     } catch (e) { console.error(e); doDemoLogin(); return; }
   } else {
