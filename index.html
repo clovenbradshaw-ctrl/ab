@@ -29,7 +29,7 @@
   media-src 'self' blob:;
   frame-src 'self' blob: https://www.google.com;
   worker-src 'self' blob:;
-  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com;
+  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com https://ipwho.is;
 ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1121,7 +1121,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Access log</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -5339,6 +5339,8 @@ function initAdminView({ onClose }) {
       body.appendChild(renderLetters(filtered));
     } else if (active === "eval") {
       body.appendChild(renderEval());
+    } else if (active === "access") {
+      body.appendChild(renderAccessLog());
     } else if (active === "pipeline") {
       const pipelineData = collectPipelineData(ctx);
       body.appendChild(renderPipeline(pipelineData));
@@ -5362,6 +5364,120 @@ function initAdminView({ onClose }) {
       row.appendChild(tags);
     }
     return row;
+  }
+
+  // ── Access log ────────────────────────────────────────────────────────────
+  // Who has opened this dashboard, from where, and on what. The homeserver
+  // already keeps the authoritative record — every sign-in is a device, and
+  // it stamps each one with the last IP and time it was seen — so this reads
+  // that rather than keeping a second log of its own that could disagree
+  // with it.
+  //
+  // Location is an estimate from the IP, looked up only when this tab is
+  // opened, cached for the session, and clearly labelled as approximate. It
+  // is a city-level guess from an address block, not where anybody was: a
+  // phone on mobile data can place its owner in the wrong state entirely.
+  // Note the trade being made — the lookup sends office IP addresses to a
+  // third party (ipwho.is). No answer, name, or room id ever goes with them.
+  // Keyed by IP and holding the PROMISE, not the result: several devices
+  // usually share one office IP, and caching the in-flight lookup means they
+  // all get the answer instead of the first one getting it and the rest
+  // getting the placeholder it left behind.
+  const ipLocations = new Map();
+  const IP_LOOKUP_TIMEOUT_MS = 5000;
+
+  async function lookupIp(ip) {
+    // A lookup that never answers must not leave a row reading "looking up…"
+    // for the rest of the session — the device list is the point, the
+    // estimate beside it is a courtesy.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), IP_LOOKUP_TIMEOUT_MS);
+    try {
+      const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: abort.signal });
+      const d = await r.json();
+      if (!d || d.success === false) return null;
+      return [d.city, d.region, d.country].filter(Boolean).join(", ") || null;
+    } catch (e) {
+      console.warn("[access] IP lookup failed for", ip, e);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function locateIp(ip) {
+    if (!ip) return Promise.resolve(null);
+    if (!ipLocations.has(ip)) ipLocations.set(ip, lookupIp(ip));
+    return ipLocations.get(ip);
+  }
+
+  function renderAccessLog() {
+    const wrap = $e("div");
+    if (ctx.storeKind !== "matrix" || !ctx.client) {
+      wrap.appendChild($e("div", "aempty", "Sign in with the office account to see its access log."));
+      return wrap;
+    }
+
+    const note = $e("div");
+    note.style.cssText = "margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.55";
+    note.textContent = "Every sign-in to this account is a device below. Times and IP addresses come from the homeserver; the location is an approximate lookup of the IP and can be well off, especially on mobile networks. Signing out a device elsewhere makes anything only that device could read unreadable, so treat this as a record, not a control panel.";
+    wrap.appendChild(note);
+
+    const table = $e("div", "atable-wrap");
+    const t = document.createElement("table");
+    t.className = "atable";
+    t.innerHTML = "<thead><tr><th>Device</th><th>Name</th><th>Last seen</th><th>IP address</th><th>Approx. location</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    tbody.appendChild((() => {
+      const tr = document.createElement("tr");
+      const td = $e("td", "acell-val", "Reading the account's devices…");
+      td.colSpan = 5;
+      tr.appendChild(td);
+      return tr;
+    })());
+    t.appendChild(tbody);
+    table.appendChild(t);
+    wrap.appendChild(table);
+
+    ctx.client.getDevices().then(async (res) => {
+      const devices = (res?.devices || []).slice().sort((a, b) => (b.last_seen_ts || 0) - (a.last_seen_ts || 0));
+      const thisDevice = ctx.client.getDeviceId();
+      tbody.innerHTML = "";
+      if (!devices.length) {
+        const tr = document.createElement("tr");
+        const td = $e("td", "acell-val", "The homeserver reported no devices for this account.");
+        td.colSpan = 5; tr.appendChild(td); tbody.appendChild(tr);
+        return;
+      }
+      const cells = [];
+      for (const d of devices) {
+        const tr = document.createElement("tr");
+        const id = $e("td", "acell-mime mono", d.device_id + (d.device_id === thisDevice ? " (this one)" : ""));
+        if (d.device_id === thisDevice) id.style.fontWeight = "600";
+        tr.appendChild(id);
+        tr.appendChild($e("td", "acell-val", d.display_name || "—"));
+        tr.appendChild($e("td", "acell-date mono", d.last_seen_ts ? fmtDate(new Date(d.last_seen_ts).toISOString()) : "never"));
+        tr.appendChild($e("td", "acell-mime mono", d.last_seen_ip || "—"));
+        const place = $e("td", "acell-val", d.last_seen_ip ? "looking up…" : "—");
+        tr.appendChild(place);
+        tbody.appendChild(tr);
+        if (d.last_seen_ip) cells.push([d.last_seen_ip, place]);
+      }
+      // Filled in after the table is already readable, and all at once —
+      // repeated IPs share one lookup, so this is usually one request.
+      await Promise.all(cells.map(async ([ip, cell]) => {
+        const place = await locateIp(ip);
+        cell.textContent = place || "unknown";
+      }));
+    }).catch((e) => {
+      console.error("[access] couldn't read the account's devices:", e);
+      tbody.innerHTML = "";
+      const tr = document.createElement("tr");
+      const td = $e("td", "acell-val", "Couldn't read the account's devices from the homeserver.");
+      td.colSpan = 5; tr.appendChild(td); tbody.appendChild(tr);
+    });
+
+    return wrap;
   }
 
   function renderEval() {
@@ -8431,6 +8547,40 @@ async function tryResumeSilentAccount(saved) {
   }
 }
 
+// A device id tells an office nothing about which laptop that was. The
+// homeserver keeps whatever display name a client sets, so every sign-in
+// stamps one: the browser and platform, and the date it started. That is
+// what makes the access log legible — "Chrome on macOS, since 3 Sep" rather
+// than eleven rows of BTJNWMFZDD. Best-effort: a homeserver that refuses it
+// costs nothing but a nameless row.
+function describeThisDevice() {
+  const ua = navigator.userAgent || "";
+  const browser = /Edg\//.test(ua) ? "Edge"
+    : /OPR\//.test(ua) ? "Opera"
+    : /Chrome\//.test(ua) ? "Chrome"
+    : /Safari\//.test(ua) ? "Safari"
+    : /Firefox\//.test(ua) ? "Firefox"
+    : "browser";
+  const os = /Windows/.test(ua) ? "Windows"
+    : /Mac OS X|Macintosh/.test(ua) ? "macOS"
+    : /Android/.test(ua) ? "Android"
+    : /iPhone|iPad|iOS/.test(ua) ? "iOS"
+    : /Linux/.test(ua) ? "Linux"
+    : "unknown OS";
+  const when = new Date().toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  return `${browser} on ${os}, since ${when}`;
+}
+
+async function nameThisDevice(client) {
+  try {
+    const deviceId = client.getDeviceId?.();
+    if (!deviceId) return;
+    await client.setDeviceDetails(deviceId, { display_name: describeThisDevice() });
+  } catch (e) {
+    console.warn("[access] couldn't name this device:", e);
+  }
+}
+
 // ── Entry: language gate → straight into the conversation ──
 //
 // Replaces showLogin() as the cold-boot default. Staff still reach the
@@ -9510,6 +9660,7 @@ async function resumeInsteadOfNewDevice(userId) {
   const client = await tryResumeSilentAccount(saved).catch(() => null);
   if (!client) return false;
   loginState = { kind: "matrix", client, userId: saved.userId };
+  nameThisDevice(client);
   hideLogin();
   boot();
   return true;
@@ -9536,6 +9687,7 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
       client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
     });
     loginState = { kind: "matrix", client, userId };
+    nameThisDevice(client);
     hideLogin();
     boot();
   } catch (e) {
@@ -9688,7 +9840,18 @@ async function boot() {
       const answersRoom = await ensureAnswerRoom(client);
       configStore = await new MatrixStore(client).open(configRoomId, { encrypted: false });
       store = await new MatrixStore(client).open(answersRoom);
-    } catch (e) { console.error(e); doDemoLogin(); return; }
+    } catch (e) {
+      // Falling back to demo storage here is right — better a working
+      // interview held on the device than a dead end — but it used to happen
+      // in total silence, which is indistinguishable from working. A
+      // homeserver rate limit during boot could drop the office into a demo
+      // session and nothing said so; the office would sit in front of an
+      // empty dashboard concluding that nobody had submitted anything.
+      console.error("[boot] couldn't open this account's rooms — falling back to this device only:", e);
+      toast("Couldn't reach your account just now — this session is saved on this device only.", "warn");
+      doDemoLogin();
+      return;
+    }
   } else {
     configStore = await new DemoStore("@admin:local").open("!intake-config:local");
     store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
