@@ -2459,6 +2459,7 @@ class DemoStore extends BaseStore {
     this._events.push(ev);
     try { localStorage.setItem(this._key, JSON.stringify(this._events)); } catch {}
     this._notify(ev);
+    ev.sent = Promise.resolve(true); // local storage: already durable
     return ev;
   }
   async reset() { this._events = []; try { localStorage.removeItem(this._key); } catch {} this._notify(null); }
@@ -2581,26 +2582,63 @@ class MatrixStore extends BaseStore {
   // rendered "saved", so a rejected send (crypto missing, room unencrypted,
   // network gone) produced an unhandled rejection and nothing else. The
   // person was told their answer was stored when it was not.
+  // `ev.sent` resolves true once the event is actually on the server (or
+  // false once it has finally given up). Callers that only care about the
+  // optimistic local copy ignore it, exactly as before; seeding the shared
+  // question set waits on it, because writing "seeded" before the questions
+  // themselves have landed is how a half-written form becomes permanent.
   emit(op, payload) {
     const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user, _pending: true };
     this._events.push(ev);
     this._notify(ev);
-    this._send(ev, op, payload);
+    ev.sent = this._send(ev, op, payload);
     return ev;
   }
 
-  async _send(ev, op, payload) {
-    try {
-      if (this.requireEncryption) await this._assertEncrypted();
-      await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
-      ev._pending = false;
-    } catch (e) {
-      ev._pending = false;
-      ev._failed = true;
-      console.error("Refused to send unencrypted, or send failed — kept local only:", e);
-      toast("Couldn't securely save that to your account — it's still here on this device.", "warn");
+  // Measured against the real homeserver: answering three questions in quick
+  // succession earns an M_LIMIT_EXCEEDED, and one attempt per answer turned
+  // that into "kept local only" — the answer sat on the device, the office
+  // never saw it, and all anyone got was a warning that reads like a
+  // permanent failure. A rate limit is a "not yet", not a "no": the server
+  // even says how long to wait. Same for a connection that drops mid-send on
+  // a phone. Only a refusal we caused (unencrypted room, no crypto) or one
+  // the server will repeat (a 4xx that isn't 429) is final.
+  static _retryAfterMs(e, attempt) {
+    const status = e?.httpStatus ?? e?.status;
+    const server = e?.data?.retry_after_ms ?? e?.retry_after_ms;
+    if (e?.errcode === "M_LIMIT_EXCEEDED" || status === 429) {
+      return Math.min(Number(server) || SEND_RETRY_MS[attempt] || 20000, 30000);
     }
-    this._notify(ev);
+    // No HTTP status at all is a transport failure (offline, reset, DNS).
+    if (status == null && !/not encrypted|encryption backend/i.test(e?.message || "")) {
+      return SEND_RETRY_MS[attempt] ?? null;
+    }
+    return null;
+  }
+
+  async _send(ev, op, payload) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        if (this.requireEncryption) await this._assertEncrypted();
+        await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+        ev._pending = false;
+        ev._failed = false;
+        this._notify(ev);
+        return true;
+      } catch (e) {
+        const wait = attempt < SEND_RETRY_MS.length ? MatrixStore._retryAfterMs(e, attempt) : null;
+        if (wait == null) {
+          ev._pending = false;
+          ev._failed = true;
+          console.error("Refused to send unencrypted, or send failed — kept local only:", e);
+          toast("Couldn't securely save that to your account — it's still here on this device.", "warn");
+          this._notify(ev);
+          return false;
+        }
+        console.warn(`[store] send failed (${e?.errcode || e?.message}); retrying in ${wait}ms`);
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
   }
 
   static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
@@ -2626,6 +2664,10 @@ class MatrixStore extends BaseStore {
     for (const e of room.getLiveTimeline().getEvents()) {
       if (e.getType() === EVENT_TYPE) { events.push(decodeMxEvent(e)); continue; }
       if (!e.isEncrypted?.()) continue;
+      // Unreadable events from before the pilot cutoff are not news — they
+      // are the same test rooms the office surfaces already hide, and
+      // reporting hundreds of them buries the one that would matter.
+      if (!afterCutoff(e.getTs())) continue;
       if (e.isDecryptionFailure?.()) { undecryptable++; continue; }
       if (e.isBeingDecrypted?.() || e.getType() === "m.room.encrypted") {
         pending++;
@@ -3670,25 +3712,103 @@ const DEFAULT_CONFIG = {
   knowledge: DEMO_KNOWLEDGE.toJSON(),
 };
 
-function seedConfig(store, cfg = DEFAULT_CONFIG) {
-  setMeta(store, "id", cfg.meta.id);
-  setMeta(store, "title", cfg.meta.title);
-  setMeta(store, "blurb", cfg.meta.blurb);
-  setMeta(store, "titleEs", cfg.meta.titleEs || "");
-  setMeta(store, "blurbEs", cfg.meta.blurbEs || "");
-  setSystemPrompt(store, cfg.systemPrompt);
-  for (const f of cfg.fields) putField(store, f);
-  setFieldOrder(store, cfg.fields.map((f) => f.path));
-  for (const k of cfg.knowledge) putKnowledge(store, k);
-  setMeta(store, "seeded", true);
+// Writes the starting document one event at a time, waiting for each to
+// actually reach the server, and marks "seeded" only if every one of them
+// did.
+//
+// This used to fire ~45 events without waiting and set the marker
+// immediately. Against a homeserver that rate-limits — which is every
+// homeserver — some of those writes were refused, the marker landed anyway,
+// and the room was left holding a fragment of the question set forever.
+// Since the folded config REPLACES the built-in schema whenever it has any
+// fields at all, a three-field fragment is what every applicant is then
+// asked, and the office receives three answers per family and no way to see
+// why. Sequential is also gentler on the rate limiter that caused it.
+async function seedConfig(store, cfg = DEFAULT_CONFIG) {
+  const writes = [
+    () => setMeta(store, "id", cfg.meta.id),
+    () => setMeta(store, "title", cfg.meta.title),
+    () => setMeta(store, "blurb", cfg.meta.blurb),
+    () => setMeta(store, "titleEs", cfg.meta.titleEs || ""),
+    () => setMeta(store, "blurbEs", cfg.meta.blurbEs || ""),
+    () => setSystemPrompt(store, cfg.systemPrompt),
+    ...cfg.fields.map((f) => () => putField(store, f)),
+    () => setFieldOrder(store, cfg.fields.map((f) => f.path)),
+    ...cfg.knowledge.map((k) => () => putKnowledge(store, k)),
+  ];
+  let complete = true;
+  for (const write of writes) {
+    const ev = write();
+    if (ev && ev.sent && (await ev.sent) === false) complete = false;
+  }
+  // Left unmarked on any failure, so the next admin session tries again
+  // rather than treating a half-written form as finished.
+  if (complete) setMeta(store, "seeded", true);
+  return complete;
 }
 
-// Idempotent: seed once, guarded by a `seeded` marker so opening the shared room
-// from several places never double-writes the starting document.
-function ensureSeeded(store, cfg = DEFAULT_CONFIG) {
+// Which field ids were deliberately removed by someone, as opposed to never
+// having arrived. A deletion is its own event (see putField's `deleted`
+// marker), so the two are distinguishable — which is what makes it safe to
+// restore what's missing without resurrecting what an admin threw away.
+function deletedFieldIds(events) {
+  const gone = new Set();
+  for (const e of events) {
+    if (e.op === OP.INS && e.payload.entity === ENTITY.FIELD && e.payload.attrs?.deleted) gone.add(e.payload.id);
+  }
+  return gone;
+}
+
+// Puts back any default question that isn't in the room and wasn't deleted
+// on purpose — the repair for a room already holding a half-written form,
+// which no amount of fixing seedConfig can undo on its own. Order is
+// rewritten too: restored fields would otherwise land after the fragment,
+// so an interview would open on whichever question happened to survive.
+async function repairSeed(store, cfg, folded) {
+  const present = new Set(folded.schema.fields.map((f) => f.path));
+  const deleted = deletedFieldIds(store.timeline());
+  const missing = cfg.fields.filter((f) => !present.has(f.path) && !deleted.has(f.path));
+  if (!missing.length) return false;
+  console.warn(`[config] restoring ${missing.length} question(s) missing from the shared set`);
+  for (const f of missing) {
+    const ev = putField(store, f);
+    if (ev && ev.sent) await ev.sent;
+  }
+  const defaults = cfg.fields.map((f) => f.path).filter((p) => !deleted.has(p));
+  const extras = folded.schema.fields.map((f) => f.path).filter((p) => !defaults.includes(p));
+  const ev = setFieldOrder(store, [...defaults, ...extras]);
+  if (ev && ev.sent) await ev.sent;
+  return true;
+}
+
+// Seed once, guarded by a `seeded` marker so opening the shared room from
+// several places never double-writes the starting document — and repair it
+// if what's actually in there is a fragment.
+//
+// `write` is false for everyone but the office: an applicant resolves the
+// same room's alias and reads the questions from it, and a form filled in by
+// a family is not the place to be authoring the form.
+async function ensureSeeded(store, cfg = DEFAULT_CONFIG, { write = true } = {}) {
   let folded = foldConfig(store.timeline());
-  if (!folded.meta.seeded) { seedConfig(store, cfg); folded = foldConfig(store.timeline()); }
+  if (!write) return folded;
+  if (!folded.meta.seeded) {
+    await seedConfig(store, cfg);
+    return foldConfig(store.timeline());
+  }
+  if (await repairSeed(store, cfg, folded)) folded = foldConfig(store.timeline());
   return folded;
+}
+
+// Everyone else's protection against the same fragment: a stored question
+// set that is missing questions the complaint itself requires, with no
+// record of anyone deleting them, is a broken room rather than an authored
+// form. Applicants get the built-in set until an office session repairs it.
+function schemaLooksPartial(folded, events, cfg = DEFAULT_CONFIG) {
+  const fields = folded.schema.fields;
+  if (!fields.length) return true;
+  const present = new Set(fields.map((f) => f.path));
+  const deleted = deletedFieldIds(events);
+  return cfg.fields.some((f) => f.required && !present.has(f.path) && !deleted.has(f.path));
 }
 
 
@@ -4575,11 +4695,37 @@ const LETTER_STATUSES = [
   { key: "filed", label: "Filed" },
 ];
 
+// ── The line under the pilot ────────────────────────────────────────────────
+// Everything written while this was being built — test families, half-seeded
+// question sets, submissions whose keys no longer exist anywhere — is noise
+// the office should never have to read past. The office surfaces show what
+// arrived on or after this date and nothing before it. Nothing is deleted:
+// the events are still in their rooms, and moving this date back brings them
+// straight back into view.
+const OFFICE_DATA_CUTOFF = "2026-09-03T00:00:00.000Z";
+const OFFICE_CUTOFF_MS = Date.parse(OFFICE_DATA_CUTOFF);
+
+function afterCutoff(at) {
+  const t = typeof at === "number" ? at : Date.parse(at || "");
+  return Number.isFinite(t) ? t >= OFFICE_CUTOFF_MS : true;
+}
+
+// The one read every office surface goes through, so the cutoff can't be
+// applied in five places and forgotten in a sixth. Deliberately NOT used by
+// an applicant's own session: a family resuming an interview they started
+// last week must still see everything they told us.
+function officeRoomEvents(storeKind, client, roomId) {
+  const events = storeKind === "matrix"
+    ? MatrixStore.foldRoomEvents(client, roomId)
+    : DemoStore.loadEvents(roomId);
+  return events.filter((e) => afterCutoff(e.at));
+}
+
 function collectSubmissions({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const submissions = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value;
@@ -4600,7 +4746,7 @@ function collectAllAnswers({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const answers = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     // Only the person's own answers belong in this table: DEF events also
     // carry admin bookkeeping (letter status/text on record-id anchors, case
@@ -4635,7 +4781,7 @@ function collectAllDocuments({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const docs = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
@@ -4676,7 +4822,7 @@ function collectAllLetters({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const letters = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
@@ -4692,7 +4838,7 @@ function collectAllLetters({ storeKind, client }) {
 // are also room records; the answer's DEF event points here by id. Used by
 // the Letters tab's audit trace to replay audio against the letter text.
 function collectVoiceClipsForRoom(ctx, roomId) {
-  const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, roomId) : DemoStore.loadEvents(roomId);
+  const events = officeRoomEvents(ctx.storeKind, ctx.client, roomId);
   if (!events.length) return [];
   const folded = fold(events);
   return Object.entries(folded.records)
@@ -4707,7 +4853,7 @@ function collectApplicantRooms({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const rooms = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     const folded = fold(events);
     const anchor = folded.anchors?.applicant ? "applicant" : "_root";
@@ -4730,7 +4876,7 @@ function collectPipelineData({ storeKind, client }) {
   const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
   const pipelines = [];
   for (const roomId of roomIds) {
-    const events = storeKind === "matrix" ? MatrixStore.foldRoomEvents(client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(storeKind, client, roomId);
     if (!events.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
@@ -5622,7 +5768,7 @@ function initAdminView({ onClose }) {
   // raw input produced it — typed text, voice transcript + encrypted clip id,
   // or an in-place edit — plus who and when.
   function traceFor(roomId, templateId = null) {
-    const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, roomId) : DemoStore.loadEvents(roomId);
+    const events = officeRoomEvents(ctx.storeKind, ctx.client, roomId);
     const folded = fold(events);
     const anchor = folded.anchors?.applicant ? "applicant" : "_root";
     const answers = answersOf(folded, anchor);
@@ -8184,10 +8330,54 @@ function openMatrixPasswordReset() {
 // to read. Throwing here routes every caller into its existing fallback,
 // which keeps the person on local-only storage: their answers survive, they
 // just never leave the device.
+// The one crypto store this origin gets. matrix-js-sdk hardcodes its
+// IndexedDB prefix ("matrix-js-sdk"), so every session in this browser
+// shares one store, and the store belongs to exactly one user+device. Sign
+// in a second time — which mints a new device — and opening it fails with
+// "the account in the store doesn't match the account in the constructor."
+// How long to wait between attempts at a send the server hasn't refused
+// outright (see MatrixStore._send). Four tries over ~32 seconds, which
+// covers a homeserver rate limit and a phone changing networks without
+// leaving anyone waiting on a spinner — the local copy is already stored
+// and the UI never blocks on this.
+const SEND_RETRY_MS = [1000, 3000, 8000, 20000];
+
+const CRYPTO_DB_PREFIX = "matrix-js-sdk";
+const CRYPTO_STORE_MISMATCH = "crypto-store-belongs-to-another-session";
+
+function isCryptoStoreMismatch(e) {
+  return /account in the store doesn'?t match/i.test(e?.message || "") || e?.code === CRYPTO_STORE_MISMATCH;
+}
+
+// Everything this device could decrypt, discarded. Only ever called with a
+// person's explicit say-so (see the sign-in recovery below): the keys in
+// here are the only way to read messages already received, and the server
+// cannot re-send them.
+async function wipeCryptoStore() {
+  const dbs = (await indexedDB.databases?.().catch(() => null)) || [];
+  const names = dbs.map((d) => d.name).filter((n) => n && n.startsWith(CRYPTO_DB_PREFIX));
+  // indexedDB.databases() is unavailable in some browsers (Firefox); fall
+  // back to the names the SDK actually uses.
+  const targets = names.length ? names : [`${CRYPTO_DB_PREFIX}::matrix-sdk-crypto`, `${CRYPTO_DB_PREFIX}::matrix-sdk-crypto-meta`];
+  await Promise.all(targets.map((name) => new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = req.onerror = req.onblocked = () => resolve();
+  })));
+}
+
 async function initClientCrypto(client) {
   try {
     await client.initRustCrypto({ useIndexedDB: true });
   } catch (e) {
+    if (isCryptoStoreMismatch(e)) {
+      // Not a broken browser and not a network problem — a second session.
+      // Handed up as its own kind of failure so the sign-in screen can offer
+      // the one recovery that exists instead of reporting a server outage.
+      const err = new Error("This browser already holds the encryption keys for a different session of this account.");
+      err.code = CRYPTO_STORE_MISMATCH;
+      console.error("[e2ee] crypto store belongs to another session:", e);
+      throw err;
+    }
     console.error("E2EE setup failed — refusing to use server storage:", e);
     toast("This browser can't set up encryption, so nothing will be sent to the server. Your answers stay on this device.", "warn");
     throw e;
@@ -8887,12 +9077,16 @@ function loginErrorMessage(e, homeserver) {
     return { text: "That doesn't look like a valid username. Try a plain name, like alice.", offerSignup: false, offerReset: false };
   if (code === "M_LIMIT_EXCEEDED")
     return { text: "Too many attempts — wait a moment and try again.", offerSignup: false, offerReset: false };
+  // An encryption failure is not the server being unreachable, and saying so
+  // sent people off checking a homeserver that was answering perfectly well.
+  if (/encrypt|crypto|indexeddb/i.test(e?.message || ""))
+    return { text: "Sign-in failed while setting up encryption on this device: " + e.message, offerSignup: false, offerReset: false };
   if (!onMatrixOrg)
     return { text: `Couldn't reach ${homeserver}: ${e.message}. If your account isn't on a server of its own, we can set one up for you.`, offerSignup: true, offerReset: false };
   return { text: "Sign-in failed: " + e.message, offerSignup: false, offerReset: false };
 }
 
-function showLoginError(text, { offerSignup = false, offerReset = false } = {}) {
+function showLoginError(text, { offerSignup = false, offerReset = false, offerFreshStart = null } = {}) {
   const err = document.getElementById("loginError");
   err.textContent = text;
   const cta = (label, handler) => {
@@ -8903,9 +9097,27 @@ function showLoginError(text, { offerSignup = false, offerReset = false } = {}) 
     err.appendChild(document.createElement("br"));
     err.appendChild(el);
   };
+  if (offerFreshStart) cta("Start fresh on this device →", offerFreshStart);
   if (offerReset) cta("Forgot your password? →", openMatrixPasswordReset);
   if (offerSignup) cta("Create a free account →", openSignupWizard);
   err.classList.add("show");
+}
+
+// Signing in again on a browser that already has a session for the same
+// account used to be the worst thing you could do to yourself: it mints a
+// second device, and a second device shares neither the crypto store (the
+// sign-in fails outright) nor any of the history the first one could read.
+// So when the saved session IS this account, resume it instead of logging
+// in again — same device, same keys, nothing lost. Returns true if it took.
+async function resumeInsteadOfNewDevice(userId) {
+  const saved = loadSilentAccount();
+  if (!saved || saved.userId !== userId) return false;
+  const client = await tryResumeSilentAccount(saved).catch(() => null);
+  if (!client) return false;
+  loginState = { kind: "matrix", client, userId: saved.userId };
+  hideLogin();
+  boot();
+  return true;
 }
 
 async function doMatrixLogin(homeserver, userId, password, submitBtn) {
@@ -8914,6 +9126,7 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
   try {
     const sdk = window.matrixcs;
     if (!sdk) throw new Error("Matrix SDK not loaded");
+    if (await resumeInsteadOfNewDevice(userId)) return;
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
     // useAuthorizationHeader — see MatrixStore.login's comment.
@@ -8931,11 +9144,32 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
     hideLogin();
     boot();
   } catch (e) {
+    if (e?.code === CRYPTO_STORE_MISMATCH) {
+      err.textContent = "";
+      showLoginError(
+        "This browser already holds encryption keys for a different session of this account, and only one session's keys can live here at a time. "
+        + "Starting fresh will sign you in — but messages received by that earlier session stay readable only there.",
+        { offerFreshStart: () => startFreshAndRetry(homeserver, userId, password, btn) },
+      );
+      btn.disabled = false;
+      return;
+    }
     const { text, offerSignup, offerReset } = loginErrorMessage(e, homeserver);
     err.textContent = "";
     showLoginError(text, { offerSignup, offerReset });
     btn.disabled = false;
   }
+}
+
+// The one recovery for a store that belongs to another session, taken only
+// when the person chooses it: discard this browser's keys and sign in as a
+// new device. Deliberately not automatic — what it throws away cannot be
+// fetched again from the server by anyone.
+async function startFreshAndRetry(homeserver, userId, password, btn) {
+  btn.disabled = true;
+  try { await wipeCryptoStore(); }
+  catch (e) { console.error("[e2ee] couldn't clear the old crypto store:", e); }
+  await doMatrixLogin(homeserver, userId, password, btn);
 }
 
 function doDemoLogin() {
@@ -9072,7 +9306,7 @@ async function boot() {
   // entirely and lands straight on the read-only dashboard, defaulted to the
   // Pipeline tab (submissions table + per-applicant inbox-style detail view).
   if (isAdmin(loginState.userId)) {
-    const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
+    const cfg = configStore.roomId ? await ensureSeeded(configStore, DEFAULT_CONFIG, { write: true }) : foldConfig([]);
     knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
     store.subscribe(renderDocs);
     configStore.subscribe(onConfigChange);
@@ -9110,14 +9344,23 @@ async function _bootAfterStore() {
   // A regular (non-admin) user can land here before the admin has ever logged
   // in to create the shared config room — configStore.roomId is null in that
   // case. Read-only defaults are fine; only the admin's session seeds the room.
-  const cfg = configStore.roomId ? ensureSeeded(configStore) : foldConfig([]);
+  const isOffice = isAdmin(configStore.user);
+  const cfg = configStore.roomId ? await ensureSeeded(configStore, DEFAULT_CONFIG, { write: isOffice }) : foldConfig([]);
+  // A stored set that is missing questions the complaint requires, with
+  // nothing recording that anyone deleted them, is a half-written room — not
+  // an authored form. Asking a family three of the thirty-six questions and
+  // calling it an intake is worse than ignoring the room until an office
+  // session repairs it.
+  const partial = configStore.roomId && schemaLooksPartial(cfg, configStore.timeline());
+  if (partial) console.warn("[config] stored question set looks incomplete — using the built-in questions");
+  const useStored = cfg.schema.fields.length && !partial;
   const schema = {
-    id: cfg.schema.id || SCHEMA.id,
-    title: cfg.schema.title || SCHEMA.title,
-    blurb: cfg.schema.blurb || SCHEMA.blurb || "",
-    titleEs: cfg.schema.titleEs || SCHEMA.titleEs || "",
-    blurbEs: cfg.schema.blurbEs || SCHEMA.blurbEs || "",
-    fields: cfg.schema.fields.length ? cfg.schema.fields : SCHEMA.fields,
+    id: useStored ? (cfg.schema.id || SCHEMA.id) : SCHEMA.id,
+    title: (useStored && cfg.schema.title) || SCHEMA.title,
+    blurb: (useStored && cfg.schema.blurb) || SCHEMA.blurb || "",
+    titleEs: (useStored && cfg.schema.titleEs) || SCHEMA.titleEs || "",
+    blurbEs: (useStored && cfg.schema.blurbEs) || SCHEMA.blurbEs || "",
+    fields: useStored ? cfg.schema.fields : SCHEMA.fields,
   };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
