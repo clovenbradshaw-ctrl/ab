@@ -248,6 +248,21 @@
       // Milestone encouragement, said occasionally after a save — never in
       // place of the acknowledgement, always in addition, and only at
       // moderate intervals so it stays meaningful.
+      // The back-and-forth on an open question (see readAttempt below). One
+      // line per rung of the ladder: the first time an answer comes back
+      // unusable the question is specific, the second time it's easier and
+      // says the way out. There is no third rung — Intake stops asking and
+      // keeps whatever the person wrote (see MAX_PROBES).
+      probing: {
+        unreadable: [
+          "Sorry — I couldn't quite make that out. Could you tell me in your own words what happened?",
+          "I still can't read that one. Even a single plain sentence is enough, or you can skip this and come back to it later.",
+        ],
+        bare: [
+          "Thank you — can you tell me a bit more? Even a sentence or two about what happened, and roughly when, really helps.",
+          "Whatever you can add helps: who was involved, about when it happened, or what it's meant for your child. If that's all you want to say for now, say so and we'll move on.",
+        ],
+      },
       progress: (done, total) => `That's ${done} of ${total} — you're making real progress.`,
       // The OCR-complaint drive: how much of the *fileable complaint* is
       // still missing. Count-based so one wording works for any mix of
@@ -275,6 +290,16 @@
         "Guardado — gracias.",
         "Gracias. Quedó registrado.",
       ],
+      probing: {
+        unreadable: [
+          "Perdón — no logré entender eso. ¿Puedes contarme con tus propias palabras qué pasó?",
+          "Sigo sin poder leerlo. Con una sola frase sencilla basta, o puedes saltar esto y volver más tarde.",
+        ],
+        bare: [
+          "Gracias — ¿puedes contarme un poco más? Con una o dos frases sobre qué pasó, y más o menos cuándo, ya ayuda mucho.",
+          "Lo que puedas agregar ayuda: quién estuvo involucrado, cuándo pasó aproximadamente, o qué ha significado para tu hijo o hija. Si eso es todo lo que quieres decir por ahora, dilo y seguimos.",
+        ],
+      },
       progress: (done, total) => `Ya llevas ${done} de ${total} — vas muy bien.`,
       almostDone: (n) => n === 1
         ? "Ya casi — solo falta una respuesta requerida para la queja."
@@ -310,6 +335,13 @@
     if (focus === "confirmed") {
       const all = [L.confirmed, ...(L.confirmedAlt || [])];
       return all[(meta.n ?? 0) % all.length];
+    }
+    // The ladder clamps at its last rung rather than running off the end;
+    // Intake stops asking before that anyway (MAX_PROBES), so a third call
+    // would only ever be a bug elsewhere, not a reason to show nothing.
+    if (focus === "probing") {
+      const ladder = (L.probing && L.probing[meta.kind]) || L.probing.bare;
+      return ladder[clamp(meta.n ?? 0, 0, ladder.length - 1)];
     }
     if (focus === "progress") return L.progress(meta.done ?? 0, meta.total ?? 0);
     if (focus === "almostDone") return L.almostDone(meta.n ?? 0);
@@ -413,6 +445,72 @@
       if (/!\s*$/.test(t) && !/^¡/.test(t)) t = "¡" + t;
     }
     return t;
+  }
+
+  // ---- reading an attempt: is this an answer yet? ---------------------------
+  //
+  // validate() answers "does this fit the field's shape" — a required field
+  // is satisfied by any non-empty string, which is the right bar for a phone
+  // number and the wrong one for "tell us what happened to your child." A
+  // stray keystroke and a two-word shrug both pass it, get confirmed, and end
+  // up quoted in a federal civil rights complaint as the family's own account.
+  // This is the second, softer read: not "is it valid" but "is this yet an
+  // attempt at the question," and its only power is to make the conversation
+  // ask once more (see Intake._probeReply, which caps the asking and then
+  // stores whatever the person wrote regardless).
+  //
+  // What it borrows from eoreader7: the shape of its material reader
+  // (native/adapters/text/material.js), which scores text by average per-word
+  // surprisal against a frequency table. There's no table to score against
+  // here — a browser page with no build step can't ship a corpus, and one
+  // intake answer wouldn't calibrate one — so the same question ("do these
+  // tokens look like language?") is asked of each word's own letter shape
+  // instead. Deliberately crude in one direction only: every rule below has
+  // to be wrong about a real word before it can nudge someone, and being
+  // wrong costs one extra gentle question, never a blocked answer.
+  const UNREADABLE_SHARE = 0.5;   // half the words unreadable => the text is
+  const NARRATIVE_MIN_WORDS = 4;  // shorter than this isn't yet a story
+
+  // Accent-stripped, apostrophe-tolerant word list. Digits and punctuation
+  // are not words: "12/2024" contributes nothing either way.
+  function letterTokens(text) {
+    return normalize(text).split(" ")
+      .map((w) => w.replace(/'/g, ""))
+      .filter((w) => w && !/[0-9]/.test(w));
+  }
+
+  // Every threshold here is one step past what English or Spanish spelling
+  // actually does, so an ordinary word can't trip it: "strength" and
+  // "transcripción" carry 4-consonant runs, so the run test starts at 5;
+  // "aa" and "ll" are ordinary, so the repeat test starts at 4. Words under
+  // three letters are never judged at all — initials, "ok", "no", "sí".
+  function looksUnreadable(word) {
+    if (word.length < 3) return false;
+    if (!/[aeiouy]/.test(word)) return true;      // no vowel anywhere
+    if (/[^aeiouy]{5,}/.test(word)) return true;  // an unpronounceable run
+    if (/(.)\1{3,}/.test(word)) return true;      // "aaaaa"
+    if (word.length > 24) return true;            // one unbroken mash
+    return false;
+  }
+
+  // readAttempt(text, field) -> { kind: "answer" | "unreadable" | "bare" }
+  //
+  // "unreadable" is judged for any free-text field — a language name or a
+  // caseworker's name is no more usefully recorded as keyboard noise than a
+  // story is. "bare" (too short to be an account of anything) is judged only
+  // for fields the schema marks `narrative: true`, because "Spanish" is a
+  // complete answer to "which language?" and a three-word answer to "what
+  // happened to your child" is the start of one.
+  function readAttempt(text, field = {}) {
+    const raw = (text ?? "").toString().trim();
+    const f = field || {};
+    const freeText = (f.type == null || f.type === "text") && !f.enum && !f.digits;
+    if (!raw || !freeText) return { kind: "answer" };
+    const tokens = letterTokens(raw);
+    const unreadable = tokens.filter(looksUnreadable).length;
+    if (tokens.length && unreadable / tokens.length >= UNREADABLE_SHARE) return { kind: "unreadable" };
+    if (f.narrative && tokens.length < NARRATIVE_MIN_WORDS) return { kind: "bare" };
+    return { kind: "answer" };
   }
 
   // ---- bilingual field validation -------------------------------------------
@@ -659,7 +757,7 @@
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
     VALIDATION_MESSAGES, validate,
-    tidyText,
+    tidyText, readAttempt,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
     isFieldSkipped,
   };

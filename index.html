@@ -1342,6 +1342,10 @@ const SCHEMA = {
       label: "Your family's story",
       type: "text",
       required: false,
+      // See Steer.readAttempt / Intake._probeReply: this question is asking
+      // for an account, so two words back is the start of a conversation to
+      // continue, not an answer to store and move on from.
+      narrative: true,
       // No length cap, on purpose — see NARRATIVE_FOLLOWUPS above. This
       // answer becomes core content in the letter, so the prompt invites
       // as much detail as the person has rather than steering them toward
@@ -1378,6 +1382,7 @@ const SCHEMA = {
       label: "What DCS did or failed to do",
       type: "text",
       required: true,
+      narrative: true,
       prompt: "Now the main part. In your own words, what did DCS do, or fail to do, that you believe was wrong? Please include dates you remember, and the names of any caseworkers or supervisors involved.",
       promptEs: "Ahora la parte principal. En tus propias palabras, ¿qué hizo DCS, o qué dejó de hacer, que crees que estuvo mal? Por favor incluye las fechas que recuerdes, y los nombres de cualquier trabajador social o supervisor involucrado.",
       help: "Take your time. Specific details help, like what was said, what was promised, and what actually happened, but general is fine too if that's what you remember.",
@@ -1400,6 +1405,7 @@ const SCHEMA = {
       label: "How this has affected your child",
       type: "text",
       required: false,
+      narrative: true,
       prompt: "How has all of this affected your child? You can describe emotional, physical, or educational harm, or how things have changed for them since entering DCS custody.",
       promptEs: "¿Cómo ha afectado todo esto a tu hijo o hija? Puedes describir daño emocional, físico o educativo, o cómo han cambiado las cosas para él o ella desde que entró bajo la custodia de DCS.",
       help: "For example, changes in mood or behavior, missed school, medication changes, or new diagnoses. Only share what you're comfortable sharing.",
@@ -1942,6 +1948,16 @@ const COVERAGE_FRAMEWORKS = {
     ],
   },
 };
+
+// How many times one question may ask again before it takes what it's given.
+// An open question is a back-and-forth (see Intake._probeReply): an answer
+// that isn't usable yet gets a specific, pre-written question back rather
+// than being stored as the family's own account. That has to end, and end
+// early: a parent describing what happened to their child is not a form to
+// be argued with, and a person who has said all they can say must never be
+// held at one question. After this many asks their words stand exactly as
+// written, whatever this file thinks of them.
+const MAX_PROBES = 2;
 
 // Both messages below are required, exact wording (per the project's
 // intake instructions), not phrasing the model or Steer's generic table
@@ -3567,6 +3583,8 @@ class Intake {
     this.steer = Steer.createState();
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
+    this._probes = Object.create(null);  // field path -> times asked again (see _probeReply)
+    this._drafts = Object.create(null);  // field path -> earlier partial answers to that same question
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
     this._listeners = new Set();
   }
@@ -3855,9 +3873,13 @@ class Intake {
       if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang, f);
       const err = validate(f, parsed.extracted, this.lang);
       if (err) { thinking.text = err; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
+      // Valid by shape, but not yet an answer to THIS question — ask again
+      // rather than confirming a stray keystroke into a legal complaint.
+      const probe = this._probeReply(f, parsed.extracted);
+      if (probe) { thinking.text = probe; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
       this.pending = {
         field: f,
-        value: parsed.extracted,
+        value: this._withDrafts(f, parsed.extracted),
         // The raw submitted text is kept verbatim — the value may be a
         // normalized/typed-corrected version of it, and the audit chain
         // must be able to compare the stored value against what the person
@@ -3866,7 +3888,9 @@ class Intake {
         inputKind: meta.inputKind === "voice" ? "voice" : "typed",
         voiceClipId: meta.voiceClipId || null,
       };
-      thinking.text = this._reply("confirming", { meta: { value: parsed.extracted } }); thinking.streaming = false; thinking.support = false;
+      // Confirms the whole value being stored, which after a back-and-forth
+      // is everything the person said across those turns, not just the last.
+      thinking.text = this._reply("confirming", { meta: { value: this.pending.value } }); thinking.streaming = false; thinking.support = false;
       this._emit("message", thinking);
       this._emit("pending", this.pending);
       return;
@@ -3913,9 +3937,67 @@ class Intake {
     // _parseClassification, which only ever populates it for exactly this
     // kind of field. Still never the stored answer itself: this only ever
     // reaches the "not ready yet" branch, never the confirm/store path above.
-    thinking.text = parsed.followup || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    // Order of preference for "not an answer yet": the model's own grounded
+    // question about what's missing, then the fixed ladder for text that
+    // couldn't be read at all or is too short to be an account, and only
+    // then the generic "take your time" — which says nothing about how to
+    // succeed on the next try.
+    thinking.text = parsed.followup
+      || this._probeReply(f, text)
+      || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
     thinking.streaming = false; thinking.support = true;
     this._emit("message", thinking);
+  }
+
+  // The one place a question gets asked twice. Returns the line to send back
+  // instead of the confirm step, or null to go ahead and take the answer.
+  //
+  // Deliberately model-independent, and checked on the ready path as well as
+  // the not-ready one: a small local model marking a stray keystroke "ready"
+  // is the same failure as EchoModel's validate() doing it, and neither is
+  // worth a second implementation. What the person reads is still a fixed,
+  // reviewed line from Steer's table (or, with a real backend, the model's
+  // own grounded `followup` — see _classifyAndReply), never invented here.
+  //
+  // Three things end the asking, permanently, on purpose:
+  //   — MAX_PROBES, so nobody is ever held at one question;
+  //   — an explicit decline on an optional field ("N/A", "I don't have one"),
+  //     which is a complete answer to a question that says so itself;
+  //   — the person simply saying the same thing again, which after the cap
+  //     is stored as written.
+  _probeReply(field, text) {
+    const read = Steer.readAttempt(text, field);
+    if (read.kind === "answer") return null;
+    if (!field.required && Steer.classifyIntent(text, this.lang).skip) return null;
+    const asked = this._probes[field.path] || 0;
+    if (asked >= MAX_PROBES) return null;
+    this._probes[field.path] = asked + 1;
+    // A short-but-real answer is kept and carried into the next turn, so
+    // "he was moved twice" followed by "in March, without telling me" is
+    // stored as one account instead of the second sentence alone. Keyboard
+    // noise is never carried forward — there's nothing in it to keep.
+    if (read.kind === "bare") {
+      (this._drafts[field.path] || (this._drafts[field.path] = [])).push(text.trim());
+    }
+    return this._reply("probing", { meta: { kind: read.kind, n: asked } });
+  }
+
+  // Folds anything kept by an earlier turn of the same question into the
+  // value about to be confirmed, so the person confirms the whole account
+  // they gave rather than only its last sentence.
+  _withDrafts(field, value) {
+    const parts = this._drafts[field.path];
+    if (!parts || !parts.length) return value;
+    delete this._drafts[field.path];
+    // Joined as separate sentences, because that's what they were — two
+    // turns of a conversation, not one interrupted sentence. Anything that
+    // already ends in its own punctuation keeps it.
+    const joined = [...parts, value].reduce((acc, part) => {
+      const piece = part.toString().trim();
+      if (!acc) return piece;
+      return /[.!?…]$/.test(acc) ? `${acc} ${piece}` : `${acc}. ${piece}`;
+    }, "");
+    return Steer.tidyText(joined, this.lang, field);
   }
 
   // A structured control (buttons, a dropdown, checkboxes) already IS the
@@ -3968,6 +4050,7 @@ class Intake {
       source: source ?? null, inputKind: inputKind ?? "typed", voiceClipId: voiceClipId ?? null,
     });
     this.pending = null;
+    delete this._drafts[field.path];
     this.epoch++;
     // Rotate through the vetted acknowledgement variants (keyed by how many
     // answers this session has stored) so thirty saves don't read as the

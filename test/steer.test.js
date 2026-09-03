@@ -396,3 +396,54 @@ test("isFieldSkipped: a legacy function-valued skipIf (never persisted through c
   assert.equal(Steer.isFieldSkipped(field, { y: "yes" }), false);
   assert.equal(Steer.isFieldSkipped(field, { y: "no" }), true);
 });
+
+// ── readAttempt: is this an answer yet? ──────────────────────────────────────
+
+const NARRATIVE = { path: "family_background", type: "text", required: false, narrative: true };
+const SHORT_TEXT = { path: "home_language_other", type: "text", required: false };
+
+test("readAttempt: keyboard noise is not an answer, on any free-text field", () => {
+  assert.equal(Steer.readAttempt("wefklmw;efklm", NARRATIVE).kind, "unreadable");
+  assert.equal(Steer.readAttempt("asdfgh", SHORT_TEXT).kind, "unreadable");
+  assert.equal(Steer.readAttempt("kkkkkkkk", NARRATIVE).kind, "unreadable");
+});
+
+test("readAttempt: ordinary answers are answers — including short ones on a short question", () => {
+  assert.equal(Steer.readAttempt("Spanish", SHORT_TEXT).kind, "answer");
+  assert.equal(Steer.readAttempt("Mixteco", SHORT_TEXT).kind, "answer");
+  assert.equal(Steer.readAttempt("They took her in March 2024 without telling me", NARRATIVE).kind, "answer");
+  // Real words that stress the letter-shape rules: 4-consonant runs in both
+  // languages, and a doubled letter.
+  assert.equal(Steer.readAttempt("strength transcripción llamé nunca", NARRATIVE).kind, "answer");
+});
+
+test("readAttempt: a date-shaped answer isn't misread as noise for having no vowels", () => {
+  assert.equal(Steer.readAttempt("March 2024", SHORT_TEXT).kind, "answer");
+  assert.equal(Steer.readAttempt("2024-03-01", { type: "text" }).kind, "answer");
+});
+
+test("readAttempt: too short to be an account, but only where the question asks for one", () => {
+  assert.equal(Steer.readAttempt("he took her", NARRATIVE).kind, "bare");
+  assert.equal(Steer.readAttempt("idk", NARRATIVE).kind, "bare");
+  // The same three words are a complete answer to a question that only wants
+  // a language, a name, or a yes/no.
+  assert.equal(Steer.readAttempt("he took her", SHORT_TEXT).kind, "answer");
+});
+
+test("readAttempt: structured fields are validate()'s business, not this one's", () => {
+  assert.equal(Steer.readAttempt("xyz", { type: "date", narrative: true }).kind, "answer");
+  assert.equal(Steer.readAttempt("qqqq", { type: "text", enum: ["Yes", "No"] }).kind, "answer");
+  assert.equal(Steer.readAttempt("5551234567", { type: "text", digits: 10 }).kind, "answer");
+  assert.equal(Steer.readAttempt("", NARRATIVE).kind, "answer"); // emptiness is validate()'s job
+});
+
+test("probing ladder: two rungs per kind, in both languages, clamped past the end", () => {
+  for (const lang of ["en", "es"]) {
+    for (const kind of ["unreadable", "bare"]) {
+      const first = Steer.pickReply({ lang, focus: "probing", meta: { kind, n: 0 } });
+      const second = Steer.pickReply({ lang, focus: "probing", meta: { kind, n: 1 } });
+      assert.ok(first && second && first !== second, `${lang}/${kind} should have two distinct rungs`);
+      assert.equal(Steer.pickReply({ lang, focus: "probing", meta: { kind, n: 9 } }), second);
+    }
+  }
+});
