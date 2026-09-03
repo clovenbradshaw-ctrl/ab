@@ -7525,6 +7525,35 @@ function hideLangGate() { document.getElementById("langGate").classList.add("hid
 function showEntryLoader(text) { document.getElementById("entryLoaderText").textContent = text; document.getElementById("entryLoader").classList.remove("hidden"); }
 function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
 
+// Set for exactly one load by "Switch account", read and cleared by
+// initEntry. sessionStorage, not localStorage: a tab that was sent to the
+// sign-in screen once should not keep landing there tomorrow.
+const FORCE_LOGIN_KEY = "ab.forceLogin";
+function requestLoginScreen() {
+  try { sessionStorage.setItem(FORCE_LOGIN_KEY, "1"); } catch {}
+}
+// Three ways to say "I want the sign-in screen, not the interview": the
+// ?staff=1 / #staff address staff can bookmark, and the one-shot flag the
+// Switch account button sets before reloading. Without this, the only door
+// to staff sign-in was the language gate, which is skipped the moment a
+// session exists on the device — so reaching it meant clearing site data.
+function wantsLoginScreen() {
+  try {
+    if (new URLSearchParams(location.search).get("staff") === "1") return true;
+    if ((location.hash || "").toLowerCase() === "#staff") {
+      // Dropped from the address bar straight away: a refresh on the sign-in
+      // screen should go back to normal, not pin the tab there.
+      history.replaceState(null, "", location.pathname + location.search);
+      return true;
+    }
+    if (sessionStorage.getItem(FORCE_LOGIN_KEY) === "1") {
+      sessionStorage.removeItem(FORCE_LOGIN_KEY);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 async function initEntry() {
   // Form preview: opened from the admin dashboard's "Preview the form" link
   // (see wireNewNav) in a fresh tab, so it never touches the admin's real
@@ -7545,6 +7574,13 @@ async function initEntry() {
     openAdmin();
     const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
     if (pipelineTab) pipelineTab.click();
+    return;
+  }
+  // Checked before the saved-session resume below, which otherwise carries
+  // straight on into the interview and never shows a door out of it.
+  if (wantsLoginScreen()) {
+    hideLangGate();
+    showLogin();
     return;
   }
   const saved = loadSilentAccount();
@@ -8474,6 +8510,11 @@ function wireLogin() {
     if (confirm("Switch accounts?")) {
       loginState = null;
       if (store?.client) try { store.client.stopClient(); } catch {}
+      // Without this the reload finds the saved session and resumes it, so
+      // "Switch account" landed the person back in the same interview they
+      // just asked to leave. The saved session itself is left alone — this
+      // load shows the sign-in screen; nothing is signed out or deleted.
+      requestLoginScreen();
       location.reload();
     }
   };
