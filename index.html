@@ -304,6 +304,14 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .msg-bubble.editable:hover,.msg-bubble.editable:focus-visible{box-shadow:0 0 0 2px var(--seal) inset}
 .msg-bubble.editable:hover .edit-hint,.msg-bubble.editable:focus-visible .edit-hint{opacity:.85}
 .msg-bubble.editable:focus-visible{outline:none}
+.msg-bubble.speakable{cursor:pointer;position:relative;padding-right:30px}
+.msg-bubble.speakable .speak-hint{position:absolute;top:9px;right:10px;font-size:13px;opacity:0;transition:opacity .15s ease;color:var(--turn)}
+.msg-bubble.speakable:hover,.msg-bubble.speakable:focus-visible{box-shadow:0 0 0 2px var(--turn) inset}
+.msg-bubble.speakable:hover .speak-hint,.msg-bubble.speakable:focus-visible .speak-hint{opacity:.85}
+.msg-bubble.speakable:focus-visible{outline:none}
+.msg-bubble.speakable.speaking{animation:speak-glow 1.4s ease-in-out infinite}
+.msg-bubble.speakable.speaking .speak-hint{opacity:1;color:var(--turn)}
+@keyframes speak-glow{0%,100%{box-shadow:0 0 0 2px rgba(182,122,46,.2) inset}50%{box-shadow:0 0 0 2px rgba(182,122,46,.5) inset}}
 @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .typing{display:inline-flex;gap:4px;padding:3px 0}.typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
@@ -6644,6 +6652,68 @@ function renderQuickAnswer(field) {
   if (box.children.length) box.classList.remove("hidden");
 }
 
+// ── Voice output (read aloud) ──
+//
+// The mirror of the mic button: that's speech-to-text for input, this is
+// text-to-speech for output. Click any assistant bubble to hear it, click
+// it again (or hit Enter/Space while it's focused) to stop mid-sentence.
+// Uses the browser's built-in SpeechSynthesis rather than anything from
+// voice.js — Whisper (voice.js's model) only transcribes, it doesn't speak,
+// and unlike Whisper there's no equivalent open-weight TTS worth shipping a
+// multi-hundred-MB model for when every browser already ships native voices
+// for free. Nothing is sent anywhere: speechSynthesis speaks through
+// whatever voice the OS/browser already has installed.
+let speakingBubble = null;
+
+function speechSupported() {
+  return "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+}
+
+// getVoices() can return [] until the browser's async "voiceschanged" event
+// fires (Chrome does this the first time); re-picking on every click rather
+// than caching once means real voices get used as soon as they're ready,
+// with no reload needed. Prefers a local (on-device) voice over a remote
+// one when both exist for the language, since it speaks instantly either
+// way but a local voice has no network round-trip to stall on.
+function pickVoice(lang) {
+  const voices = window.speechSynthesis.getVoices();
+  const prefix = lang === "es" ? "es" : "en";
+  return voices.find((v) => v.lang.toLowerCase().startsWith(prefix) && v.localService)
+    || voices.find((v) => v.lang.toLowerCase().startsWith(prefix))
+    || null;
+}
+
+function resetSpeakIcon(bubble) {
+  const hint = bubble && bubble.querySelector(".speak-hint");
+  if (hint) hint.className = "ph ph-speaker-high speak-hint";
+  if (bubble) bubble.classList.remove("speaking");
+}
+
+function stopSpeaking() {
+  window.speechSynthesis.cancel();
+  resetSpeakIcon(speakingBubble);
+  speakingBubble = null;
+}
+
+// Clicking the bubble that's currently talking stops it — clicking any
+// other bubble (speaking or not) cancels whatever was playing and starts
+// the new one, so at most one bubble is ever speaking at a time.
+function speakBubble(text, bubble, lang) {
+  const wasThisBubble = speakingBubble === bubble;
+  stopSpeaking();
+  if (wasThisBubble) return;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang === "es" ? "es-ES" : "en-US";
+  const voice = pickVoice(lang);
+  if (voice) utter.voice = voice;
+  utter.onend = utter.onerror = () => { resetSpeakIcon(bubble); if (speakingBubble === bubble) speakingBubble = null; };
+  speakingBubble = bubble;
+  bubble.classList.add("speaking");
+  const hint = bubble.querySelector(".speak-hint");
+  if (hint) hint.className = "ph ph-stop-circle speak-hint";
+  window.speechSynthesis.speak(utter);
+}
+
 function renderMessage(m) {
   const isUser = m.role === "user";
   // Banner messages (the mandatory closing block, the 180-day filing
@@ -6700,6 +6770,20 @@ function renderMessage(m) {
     };
     bubble.onclick = openEdit;
     bubble.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openEdit(); } });
+  }
+  // Assistant bubbles get the reverse of the editable-user-bubble affordance
+  // above: click to hear it instead of click to edit it. The two never
+  // overlap since isUser is mutually exclusive with this branch.
+  if (!isUser && speechSupported()) {
+    bubble.classList.add("speakable");
+    bubble.tabIndex = 0;
+    bubble.setAttribute("role", "button");
+    bubble.setAttribute("aria-label", intake?.lang === "es" ? "Leer en voz alta" : "Read this aloud");
+    bubble.appendChild(el("i", "ph ph-speaker-high speak-hint"));
+    const spoken = m.text + (m.value ? ". " + m.value : "");
+    const doSpeak = () => speakBubble(spoken, bubble, intake?.lang);
+    bubble.onclick = doSpeak;
+    bubble.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); doSpeak(); } });
   }
   body.appendChild(bubble);
   group.appendChild(body);
