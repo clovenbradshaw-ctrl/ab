@@ -323,7 +323,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)}
 .compose .input-wrap{flex:1;display:flex;align-items:flex-end;gap:6px;border:1px solid var(--line);border-radius:10px;padding:3px 3px 3px 10px;background:var(--surface);transition:border-color .15s ease}
 .compose .input-wrap:focus-within{border-color:var(--seal);box-shadow:0 0 0 3px rgba(46,111,94,.1)}
-.compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:100px;background:transparent;color:var(--ink);outline:none}
+.compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:180px;background:transparent;color:var(--ink);outline:none}
 .compose .input-actions{display:flex;gap:3px}
 .compose .input-actions button{border:none;background:transparent;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;font-size:15px;line-height:1;display:grid;place-items:center}
 .compose .input-actions button:hover{background:var(--wash);color:var(--ink)}
@@ -342,7 +342,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .voice-note.hidden{display:none}
 .compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
 @keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
-.compose .voice-wave{flex:1;height:34px;width:100%;display:block}
+.compose .voice-wave{flex:none;height:26px;width:56px;display:block;opacity:.85;align-self:center}
 .compose .voice-wave.hidden{display:none}
 
 /* Rail */
@@ -7068,9 +7068,12 @@ function wizardCompleteUI(shouldCelebrate) {
 // placeholder mid-character on narrow screens, leaving a stray sliver of its
 // second line poking through the overflow — an autosize call after every
 // reset avoids that.
+// Kept in step with .compose textarea's own max-height in CSS: a spoken
+// answer is a paragraph, and the box has to be able to show one.
+const COMPOSE_MAX_H = 180;
 function autosizeInput(input) {
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  input.style.height = Math.min(input.scrollHeight, COMPOSE_MAX_H) + "px";
 }
 function wireCompose() {
   const input = $("input");
@@ -7256,7 +7259,11 @@ function voiceCopy(key) {
     consent: es
       ? "Si usas el micrófono, tu grabación se guarda de forma segura para poder verificar que la transcripción sea correcta."
       : "If you use the microphone, your recording is saved securely so we can double-check the transcript is accurate.",
-    recording: es ? "Grabando… toca de nuevo para detener." : "Recording… tap again to stop.",
+    // Says what actually happens now: stopping is the pause at the end of a
+    // sentence, and the button is only there for anyone who'd rather use it.
+    recording: es
+      ? "Escuchando… tus palabras aparecen abajo. Cuando termines de hablar, me detengo solo."
+      : "Listening… your words appear below. When you stop talking, I'll stop on my own.",
     downloading: es ? "Preparando el modelo de voz (descarga única)…" : "Preparing the speech model (one-time download)…",
     transcribing: es ? "Transcribiendo…" : "Transcribing…",
     micDenied: es ? "Se necesita permiso del micrófono para hablar tu respuesta." : "Microphone permission is needed to speak an answer.",
@@ -7388,12 +7395,15 @@ function wireVoice() {
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
           input.classList.toggle("streaming", s === "recording");
-          // While recording, the waveform replaces the textarea in the same
-          // flex slot — the live partial transcript (onPartial below) still
-          // lands in the textarea's value underneath, so nothing is lost
-          // the moment recording stops and the textarea reappears.
+          // The waveform sits BESIDE the box now, not in place of it. It used
+          // to replace the textarea in the same flex slot, which meant the
+          // live transcript was landing in a hidden element: someone speaking
+          // watched a waveform and saw none of their own words until they
+          // stopped. Worse, a hidden textarea has no scrollHeight, so the
+          // auto-grow that runs on every change did nothing while it was
+          // away and the box came back one line tall with a paragraph
+          // scrolled out of sight inside it.
           if (wave) wave.classList.toggle("hidden", s !== "recording");
-          input.classList.toggle("hidden", s === "recording");
           if (s === "recording") { setVoiceNote(voiceCopy("recording")); startWaveform(voiceInstance && voiceInstance.stream); }
           else {
             stopWaveform();
@@ -7414,27 +7424,48 @@ function wireVoice() {
           if (!voiceInstance || voiceInstance.state !== "recording") return;
           input.value = voicePreText ? (text ? voicePreText + " " + text : voicePreText) : text;
           input.dispatchEvent(new Event("input"));
+          // Grow with what's been heard so far, and keep the newest words in
+          // view — a transcript that has scrolled out of the top of a
+          // one-line box is the same as no transcript at all.
+          autosizeInput(input);
+          input.scrollTop = input.scrollHeight;
         },
+        // Finishing a sentence is how a person says they're done; reaching
+        // for a button afterwards is not something to require of someone
+        // describing what happened to their child.
+        onSilence: () => { finishRecording(); },
       });
       try { await voiceInstance.start(); }
       catch (e) { setVoiceNote(voiceCopy(e && e.name === "NotAllowedError" ? "micDenied" : "micFailed")); }
       return;
     }
-    if (voiceInstance.state === "recording") {
-      try {
-        const { text, blob } = await voiceInstance.stop();
-        setVoiceNote(voiceCopy("consent"));
-        if (text) {
-          input.value = voicePreText ? voicePreText + " " + text : text;
-          input.dispatchEvent(new Event("input"));
-        }
-        input.focus();
-        if (blob) await saveVoiceClip(blob, text);
-      } catch (e) {
-        setVoiceNote(voiceCopy("micFailed"));
-      }
-    }
+    if (voiceInstance.state === "recording") await finishRecording();
   };
+
+  // Ends the take and lands the authoritative transcript. Reached two ways —
+  // the person tapping the mic again, or the recording going quiet for long
+  // enough (see voice.js's onSilence) — and guarded so those two can't both
+  // run it for the same take.
+  let finishing = false;
+  async function finishRecording() {
+    if (finishing || !voiceInstance || voiceInstance.state !== "recording") return;
+    finishing = true;
+    try {
+      const { text, blob } = await voiceInstance.stop();
+      setVoiceNote(voiceCopy("consent"));
+      if (text) {
+        input.value = voicePreText ? voicePreText + " " + text : text;
+        input.dispatchEvent(new Event("input"));
+      }
+      autosizeInput(input);
+      input.focus();
+      if (blob) await saveVoiceClip(blob, text);
+    } catch (e) {
+      setVoiceNote(voiceCopy("micFailed"));
+    } finally {
+      finishing = false;
+    }
+  }
 
   input.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && voiceInstance && voiceInstance.state === "recording") {

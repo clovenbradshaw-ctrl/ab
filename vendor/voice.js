@@ -284,7 +284,10 @@
   // `lang`: "en" | "es" — passed through to Whisper as a language hint,
   // since guessing the wrong language on a short clip costs more accuracy
   // than a bilingual UI should have to pay for.
-  function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = null, lang = "en", partialIntervalMs = 2500 } = {}) {
+  // onSilence (opt) fires once, while still recording, after the take has
+  // heard speech and then gone quiet for `silenceMs`. The caller decides
+  // what that means — this module never stops a recording on its own.
+  function createVoice({ onState = () => {}, onProgress = () => {}, onPartial = null, onSilence = null, lang = "en", partialIntervalMs = 2500, silenceMs = 2600 } = {}) {
     let stream = null, rec = null, chunks = [];
     let state = "idle"; // idle | recording | transcribing
     let streamTimer = null;
@@ -340,6 +343,60 @@
       streamBusy = false;
     }
 
+    // ---- knowing when someone has finished speaking -------------------------
+    // Nobody should have to find a button to say "I'm done" — least of all
+    // someone mid-sentence about their child. A small RMS meter on the same
+    // MediaStream the recorder is reading decides it instead: once the take
+    // has actually heard speech, a stretch of quiet ends it.
+    //
+    // One-directional on purpose. Silence BEFORE anything is said never ends
+    // anything, because someone gathering themselves before answering a hard
+    // question is the most ordinary thing that happens here. The threshold is
+    // low enough to count a quiet voice as speech and let room tone read as
+    // silence; being wrong in the generous direction costs a few extra
+    // seconds of recording, being wrong the other way cuts someone off.
+    const SILENCE_RMS = 0.012;
+    let vadCtx = null, vadTimer = null, heardSpeech = false, quietSince = 0;
+
+    function startSilenceWatch() {
+      if (typeof onSilence !== "function" || !stream) return;
+      const Ctx = typeof AudioContext !== "undefined" ? AudioContext : self.webkitAudioContext;
+      if (!Ctx) return;
+      try {
+        vadCtx = new Ctx();
+        const analyser = vadCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        vadCtx.createMediaStreamSource(stream).connect(analyser);
+        const buf = new Float32Array(analyser.fftSize);
+        heardSpeech = false;
+        quietSince = 0;
+        vadTimer = setInterval(() => {
+          if (state !== "recording") return;
+          analyser.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+          if (rms > SILENCE_RMS) { heardSpeech = true; quietSince = 0; return; }
+          if (!heardSpeech) return;
+          const now = Date.now();
+          if (!quietSince) { quietSince = now; return; }
+          if (now - quietSince >= silenceMs) {
+            stopSilenceWatch();
+            try { onSilence(); } catch {}
+          }
+        }, 100);
+      } catch (e) {
+        // No Web Audio here — the recording simply keeps going until the
+        // person ends it themselves, exactly as before.
+        stopSilenceWatch();
+      }
+    }
+
+    function stopSilenceWatch() {
+      if (vadTimer) { clearInterval(vadTimer); vadTimer = null; }
+      if (vadCtx) { try { vadCtx.close(); } catch {} vadCtx = null; }
+    }
+
     async function start() {
       if (state !== "idle") return;
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -359,6 +416,7 @@
         rec.start();
       }
       set("recording");
+      startSilenceWatch();
     }
 
     function releaseMic() { try { stream && stream.getTracks().forEach((t) => t.stop()); } catch {} stream = null; }
@@ -369,6 +427,7 @@
     function stop() {
       return new Promise((resolve, reject) => {
         stopStreamTimer();
+        stopSilenceWatch();
         if (state !== "recording" || !rec) return resolve({ text: "", blob: null });
         rec.onstop = async () => {
           releaseMic();
@@ -401,6 +460,7 @@
     // Abandon a recording without transcribing (e.g. the user pressed Escape).
     function cancel() {
       stopStreamTimer();
+      stopSilenceWatch();
       if (rec && state === "recording") { rec.onstop = () => {}; try { rec.stop(); } catch {} }
       releaseMic();
       chunks = [];
