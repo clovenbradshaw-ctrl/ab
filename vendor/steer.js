@@ -520,6 +520,21 @@
     return { kind: "answer" };
   }
 
+  // initialsOf("Maria Lopez") -> "M.L." — how a complaint refers to a child
+  // whose name the office still needs on file. Particles that are not part
+  // of what anyone would call an initial ("de", "van", "of") are left out,
+  // and a hyphenated name contributes both halves ("Ana-Sofia" -> "A.S."),
+  // since that is how such a name is initialised in practice.
+  const NAME_PARTICLES = new Set(["de", "del", "la", "las", "los", "van", "von", "der", "den", "di", "da", "dos", "of", "y", "e"]);
+  function initialsOf(name) {
+    const parts = (name ?? "").toString()
+      .split(/[\s,]+/).flatMap((w) => w.split("-"))
+      .map((w) => w.replace(/[^\p{L}]/gu, ""))
+      .filter((w) => w && !NAME_PARTICLES.has(w.toLowerCase()));
+    if (!parts.length) return "";
+    return parts.map((w) => w[0].toUpperCase() + ".").join("");
+  }
+
   // ---- bilingual field validation -------------------------------------------
   const VALIDATION_MESSAGES = {
     en: {
@@ -792,7 +807,7 @@
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
     VALIDATION_MESSAGES, validate, dateBounds,
-    tidyText, readAttempt,
+    tidyText, readAttempt, initialsOf,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
     isFieldSkipped,
   };

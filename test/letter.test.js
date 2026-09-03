@@ -244,3 +244,66 @@ test("editField marks the value as an in-place edit with no source or clip", asy
   assert.equal(hit.value, "Nora Alvarez Corrigan");
   assert.equal(hit.inputKind, "edited");
 });
+
+// ── one family, several children, several complaints ────────────────────────
+
+// A family with two children, answered once. The per-child drafts below are
+// all written from this one set of answers.
+function twoChildAnswers() {
+  return {
+    complainant_name: "Nora Alvarez",
+    complainant_relationship: "Parent",
+    complainant_address: "12 Harness Way, Nashville, TN 37201",
+    complainant_phone: "6155550148",
+    child_1_name: "Ana Bell", child_1_initials: "A.B.", child_1_dob: "2015-04-10",
+    child_1_race_ethnicity: "White", child_1_disability_has: "No",
+    child_2_name: "Carlos Diaz", child_2_initials: "C.D.", child_2_dob: "2017-09-01",
+    child_2_race_ethnicity: "Black or African American", child_2_disability_has: "No",
+    family_background: "Both children were removed on the same day.",
+    dcs_actions_failures: "In March 2024, Caseworker Jane Smith did not respond to my calls.",
+  };
+}
+
+test("multiple children: one complaint per child, each naming only that child", () => {
+  const engine = loadEngine();
+  const answers = twoChildAnswers();
+  const first = engine.buildComplaintLetter(answers, {}, { child: 1 }).letter;
+  const second = engine.buildComplaintLetter(answers, {}, { child: 2 }).letter;
+
+  assert.match(first, /Re: .*on behalf of A\.B\./);
+  assert.match(second, /Re: .*on behalf of C\.D\./);
+  // Each draft covers its own child and not the sibling.
+  assert.match(first, /Initials: A\.B\./);
+  assert.ok(!/Initials: C\.D\./.test(first), "a child's complaint must not carry their sibling's details");
+  assert.match(second, /Initials: C\.D\./);
+  assert.ok(!/Initials: A\.B\./.test(second));
+});
+
+test("multiple children: everything but the child's own section is shared, so one correction reaches every complaint", () => {
+  const engine = loadEngine();
+  const before = twoChildAnswers();
+  const firstBefore = engine.buildComplaintLetter(before, {}, { child: 1 }).letter;
+  const secondBefore = engine.buildComplaintLetter(before, {}, { child: 2 }).letter;
+
+  // The family-level parts are identical between the two drafts.
+  for (const shared of ["Nora Alvarez", "12 Harness Way, Nashville, TN 37201", "Both children were removed on the same day.", "Caseworker Jane Smith"]) {
+    assert.ok(firstBefore.includes(shared), `first draft should carry ${shared}`);
+    assert.ok(secondBefore.includes(shared), `second draft should carry ${shared}`);
+  }
+
+  // A parent corrects one shared answer — every child's complaint follows,
+  // because the drafts are projections of the one set of answers.
+  const after = { ...before, complainant_phone: "6155559999" };
+  for (const round of [1, 2]) {
+    const letter = engine.buildComplaintLetter(after, {}, { child: round }).letter;
+    assert.match(letter, /6155559999/);
+    assert.ok(!letter.includes("6155550148"), "the corrected value replaces the old one everywhere");
+  }
+});
+
+test("multiple children: with no child named, the draft still covers them all", () => {
+  const engine = loadEngine();
+  const combined = engine.buildComplaintLetter(twoChildAnswers(), {}).letter;
+  assert.match(combined, /Initials: A\.B\./);
+  assert.match(combined, /Initials: C\.D\./);
+});

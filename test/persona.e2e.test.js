@@ -270,29 +270,31 @@ test("conditional field: the disability follow-up is asked and stored when the Y
 test("repeating group: 'another child?' answered yes adds a second child round, answered no moves on", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
-  const idx = fields.findIndex((f) => f.path === "child_1_initials");
+  const idx = fields.findIndex((f) => f.path === "child_1_name");
   const lines = [];
   lines.push(...linesUpTo(fields, idx));
   lines.push(
-    "A.B.",
+    "Ana Bell",     // the name is what's asked; the initials come from it
     "2015-04-10",
     "White",
     "No",
     "Yes",
   );
   const { intake } = await converse(engine, "en", lines);
-  assert.equal(intake.answers().child_1_initials, "A.B.");
+  assert.equal(intake.answers().child_1_name, "Ana Bell");
+  assert.equal(intake.answers().child_1_initials, "A.B.", "initials are filled in, never asked for");
   assert.equal(intake.answers().child_more_1, "Yes");
-  assert.equal(intake.nextField().path, "child_2_initials");
+  assert.equal(intake.nextField().path, "child_2_name");
 
-  await intake.submit("C.D.");
+  await intake.submit("Carlos Diaz");
   await intake.submit("2017-09-01");
   await intake.submit("Black or African American");
   await intake.submit("No");
   await intake.submit("No");
+  assert.equal(intake.answers().child_2_name, "Carlos Diaz");
   assert.equal(intake.answers().child_2_initials, "C.D.");
   assert.equal(intake.answers().child_more_2, "No");
-  assert.equal(intake.answers().child_3_initials, undefined);
+  assert.equal(intake.answers().child_3_name, undefined);
   assert.equal(intake.nextField().path, "custody_start_date");
 });
 

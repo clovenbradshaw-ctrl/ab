@@ -1668,19 +1668,42 @@ function childRoundFields(n) {
   const ordinalEs = n === 1 ? "primer" : n === 2 ? "segundo" : n === 3 ? "tercer" : `${n}.º`;
   return [
     {
+      path: `child_${n}_name`,
+      section: "about",
+      label: `Child ${n} — name`,
+      type: "text",
+      nameCase: true,
+      required: n === 1,
+      prompt: n === 1
+        ? "Now let's talk about your child. What's their name?"
+        : `What's the ${ordinal} child's name?`,
+      promptEs: n === 1
+        ? "Ahora hablemos de tu hijo o hija. ¿Cómo se llama?"
+        : `¿Cómo se llama el ${ordinalEs} niño o niña?`,
+      // Says what happens to it, because a parent has every reason to ask
+      // before typing their child's name into a government complaint.
+      help: "The office needs their name to work the case. The complaint itself only uses their initials, which we'll fill in for you.",
+      helpEs: "La oficina necesita su nombre para trabajar el caso. La queja en sí solo usa sus iniciales, que completaremos por ti.",
+    },
+    {
       path: `child_${n}_initials`,
       section: "about",
       label: `Child ${n} — initials`,
       type: "text",
-      required: n === 1,
-      prompt: n === 1
-        ? "Now let's talk about your child. To help protect their privacy, please give just their initials, not their full name."
-        : `What are the ${ordinal} child's initials?`,
-      promptEs: n === 1
-        ? "Ahora hablemos de tu hijo o hija. Para proteger su privacidad, por favor da solo sus iniciales, no su nombre completo."
-        : `¿Cuáles son las iniciales del ${ordinalEs} niño o niña?`,
-      help: "For example, if their name is Maria Lopez, you'd enter M.L.",
-      helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
+      required: false,
+      // Never asked: worked out from the name above (see Intake._deriveFrom).
+      // Asking for initials AND a name is asking the same question twice, and
+      // asking only for initials cost the office the name it needs to work
+      // the case. Still a stored field of its own, because the complaint is
+      // written with initials and the audit trail has to show what was filed.
+      derived: true,
+      derivedFrom: `child_${n}_name`,
+      derivedAs: "initials",
+      label_note: "filled in from the name",
+      prompt: `What are the ${ordinal} child's initials?`,
+      promptEs: `¿Cuáles son las iniciales del ${ordinalEs} niño o niña?`,
+      help: "For example, if their name is Maria Lopez, this is M.L.",
+      helpEs: "Por ejemplo, si su nombre es Maria Lopez, esto es M.L.",
     },
     {
       path: `child_${n}_dob`,
@@ -2258,12 +2281,26 @@ function expandOtherPicks(raw, otherValue) {
     .join(", ");
 }
 
-function buildComplaintLetter(answers, provenance = {}) {
+// `child` names one round from childRoundNumbers() to write the complaint
+// about; omitted, the draft covers every child at once (the original shape,
+// kept because a family with one child is the common case and a single
+// combined complaint is still sometimes what the office wants).
+//
+// Per-child drafts are PROJECTIONS of one set of answers, never copies of
+// it. Everything except section 2 — who the complainant is, the family's
+// account, what DCS did, the placements, the remedies already tried — is
+// shared, so a parent correcting their phone number corrects it for every
+// child's complaint at once, with nothing to keep in step. That is why the
+// split lives here, at the point the document is written, and not in the
+// data: one family answers one interview, however many complaints come out
+// of it.
+function buildComplaintLetter(answers, provenance = {}, { child = null } = {}) {
   const today = new Date().toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
   const v = (p) => { const s = answers[p]; return s == null ? "" : String(s).trim(); };
   const sec = (title, body) => `\n${title}\n${"-".repeat(title.length)}\n${body || "(not provided)"}`;
   const missing = LETTER_REQUIRED_FIELDS.filter((f) => !v(f.path));
-  const childRounds = childRoundNumbers(answers);
+  const allRounds = childRoundNumbers(answers);
+  const childRounds = child == null ? allRounds : allRounds.filter((n) => n === child);
   const childPaths = childRounds.flatMap((n) => [
     `child_${n}_initials`, `child_${n}_dob`, `child_${n}_race_ethnicity`, `child_${n}_race_ethnicity_other`,
     `child_${n}_disability_has`, `child_${n}_disability_explain`,
@@ -2306,7 +2343,9 @@ function buildComplaintLetter(answers, provenance = {}) {
     "Office for Civil Rights (OCR)",
     "U.S. Department of Health and Human Services",
     "",
-    "Re: Complaint against the Tennessee Department of Children's Services (DCS)",
+    child == null
+      ? "Re: Complaint against the Tennessee Department of Children's Services (DCS)"
+      : `Re: Complaint against the Tennessee Department of Children's Services (DCS), on behalf of ${(answers[`child_${child}_initials`] || "").toString().trim() || "the child named below"}`,
     "",
     "To the Office for Civil Rights,",
     "",
@@ -3952,12 +3991,15 @@ class Intake {
   // disorienting.
   nextField() {
     const a = this.answers();
-    return this._visibleFields(a).find((f) => a[f.path] == null || a[f.path] === "");
+    // A derived field is filled in from another answer (see _deriveFrom), so
+    // it is never put to the person — it still exists, is still stored, and
+    // still shows up in the review and the checklist like any other answer.
+    return this._visibleFields(a).find((f) => !f.derived && (a[f.path] == null || a[f.path] === ""));
   }
 
   isComplete() {
     const a = this.answers();
-    return this._visibleFields(a).every((f) => !f.required || a[f.path]);
+    return this._visibleFields(a).every((f) => f.derived || !f.required || a[f.path]);
   }
 
   // One entry per SECTIONS key, in that order — done/total counted only over
@@ -4453,6 +4495,7 @@ class Intake {
     }
     this._sayMilestone();
     this._emit("stored", { field, value, event: ev });
+    this._deriveFrom(field, value);
     this._checkFilingDeadline(field, value);
     await this._maybeInjectFollowups(field, value);
     await this._maybeInjectCoverageFollowup(field, value);
@@ -4643,6 +4686,29 @@ class Intake {
       helpEs: nextSlot.followup.helpEs,
       _coverageSlotKey: nextSlot.key,
     });
+  }
+
+  // Fills in whatever the just-stored answer is the source for. Only one
+  // derivation exists today — a child's initials from their name — and it is
+  // declared as plain data on the field (derivedFrom/derivedAs) so it
+  // survives the JSON round trip through the admin's question editor, the
+  // same reasoning as skipUnless.
+  //
+  // Stored as its own DEF carrying the text it came from, so the audit trail
+  // shows the complaint's "M.L." tracing back to the name a parent typed. An
+  // office that corrects the initials by hand keeps that correction: only a
+  // change to the name itself derives them again.
+  _deriveFrom(field, value) {
+    for (const f of this.schema.fields) {
+      if (!f.derived || f.derivedFrom !== field.path || f.derivedAs !== "initials") continue;
+      const next = Steer.initialsOf(value);
+      if (!next || this.answers()[f.path] === next) continue;
+      const ev = this.store.emit(OP.DEF, {
+        anchor: this.anchor, path: f.path, value: next,
+        source: String(value ?? ""), inputKind: "derived", voiceClipId: null,
+      });
+      this._emit("stored", { field: f, value: next, event: ev });
+    }
   }
 
   // "If someone uses the tool and the incident is past 180 days, the
@@ -5089,12 +5155,18 @@ function sendGuardedOrWarn(ctx, roomId, op, payload) {
   });
 }
 
-function saveLetter(ctx, roomId, text, template = null) {
+// `about` names the child this draft is for ({ childRound, childInitials,
+// childName }), so a family's drafts can be told apart, filed separately,
+// and traced back to the one interview they were all written from.
+function saveLetter(ctx, roomId, text, template = null, about = {}) {
   const payload = {
     entity: "letter",
     id: newId("letter"),
     attrs: {
       text, generatedAt: nowIso(), generatedBy: ctx.currentUserId, status: "draft",
+      childRound: about.childRound ?? null,
+      childInitials: about.childInitials || "",
+      childName: about.childName || "",
       // Which template produced this draft — "Regenerate" and the audit
       // trail rebuild from the same one instead of assuming the built-in.
       templateId: template?.id || BUILTIN_TEMPLATE_ID,
@@ -5836,17 +5908,36 @@ function initAdminView({ onClose }) {
     if (pl.answers.length > 0) {
       const genItem = $e("div", "mem");
       genItem.style.cssText = "padding:8px;background:var(--surface);border:2px dashed var(--seal);border-radius:8px;text-align:center";
+      // A family with more than one child gets one complaint each: OCR
+      // complaints are per child, and the office files and tracks them
+      // separately. They stay linked by living in this family's own room and
+      // being written from the one set of answers — see buildComplaintLetter's
+      // note on why the split happens here and not in the data.
+      const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
+      const rounds = childRoundNumbers(answersOf(fold(events), "applicant"));
+      const perChild = rounds.length > 1;
+
       const genBtn = document.createElement("button");
-      genBtn.textContent = "✎ Generate complaint letter from current answers";
+      genBtn.textContent = perChild
+        ? `✎ Generate ${rounds.length} complaint letters — one per child`
+        : "✎ Generate complaint letter from current answers";
       genBtn.style.cssText = "border:1px solid var(--seal);border-radius:6px;background:var(--seal);color:#fff;font:600 11px Inter;padding:6px 12px;cursor:pointer;width:100%";
       genBtn.onclick = () => {
-        const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
-        const folded = fold(events);
+        const folded = fold(ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId));
         const ans = answersOf(folded, "applicant");
         const prov = provenanceOf(folded, "applicant");
-        const { letter } = buildComplaintLetter(ans, prov);
-        saveLetter(ctx, pl.roomId, letter);
-        toast(`Letter generated for ${pl.applicantName} — status: draft`, "success");
+        const targets = perChild ? rounds : [null];
+        for (const round of targets) {
+          const { letter } = buildComplaintLetter(ans, prov, { child: round });
+          saveLetter(ctx, pl.roomId, letter, null, {
+            childRound: round,
+            childInitials: round == null ? "" : (ans[`child_${round}_initials`] || ""),
+            childName: round == null ? "" : (ans[`child_${round}_name`] || ""),
+          });
+        }
+        toast(perChild
+          ? `${targets.length} letters generated for ${pl.applicantName} — one per child`
+          : `Letter generated for ${pl.applicantName} — status: draft`, "success");
         setTimeout(() => renderActive(), 400);
       };
       genItem.appendChild(genBtn);
@@ -5857,6 +5948,13 @@ function initAdminView({ onClose }) {
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px";
       item.appendChild($e("span", "pill pill-" + l.status, LETTER_STATUSES.find((s) => s.key === l.status)?.label || l.status));
+      // Which child this draft is for, when a family has more than one — the
+      // drafts are otherwise near-identical and impossible to tell apart.
+      if (l.childInitials || l.childName) {
+        const who = $e("span", "mono", ` for ${l.childName || l.childInitials}`);
+        who.style.cssText = "font-size:10px;color:var(--muted);margin-left:6px";
+        item.appendChild(who);
+      }
       const preview = $e("div", null, (l.text || "").slice(0, 280));
       preview.style.cssText = "margin-top:4px;white-space:pre-wrap;font-size:11px;color:var(--ink);line-height:1.45";
       item.appendChild(preview);
