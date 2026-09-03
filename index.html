@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>Feedback Platform</title>
 <!-- Content-Security-Policy — the load-bearing control for "the homeserver
      operator can't read submissions".
@@ -53,13 +54,25 @@
      actually asks for an m.login.recaptcha stage. -->
 
 <style>
-:root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
+:root{color-scheme:light;--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--wash:#F2F5F7;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
+/* Everything in this file is sized in px, so one zoom on the body is the
+   only lever that scales the whole page at once: type, spacing, rails and
+   chat column all step down together and the layout math underneath is
+   untouched. Below the phone breakpoint it goes back to 1 — a small screen
+   has no room to give away. */
+body{zoom:.82;background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
 .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
 .hidden{display:none!important}
 nav .setup .rail-toggle{display:none}
-@media(prefers-color-scheme:dark){:root{--ink:#E9EDF0;--paper:#11181C;--surface:#1A2429;--line:#2A353C;--muted:#88969E;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);--shadow-lg:0 4px 16px rgba(0,0,0,.4),0 16px 48px rgba(0,0,0,.3);--seal-soft:#1A2F28;--turn-soft:#2F2416;--red-soft:#2F1814}.msg-group.end .msg-bubble{background:var(--seal)!important;color:#fff!important}.msg-group.start .msg-bubble{background:#1F2A30!important;color:var(--ink)!important;border-color:var(--line)!important}.msg-group.start .msg-bubble.support{background:var(--seal-soft)!important}.loader{background:rgba(17,24,28,.92)!important}.kcol{background:#1A2429!important}.kcard{background:#1F2A30!important}.docs-drop{background:#1A2429!important}.atable th{background:var(--surface)!important}.drawer{background:var(--paper)!important}.mem,.q{border-color:var(--line)!important}.scrim,.docscrim{background:rgba(0,0,0,.5)!important}}
+/* One theme, on purpose. The dark palette that used to live here was a
+   second set of colors nobody was reviewing: hardcoded light tints kept
+   appearing in new components with no dark counterpart, so a section
+   stepper or a status pill would come out as white text on a white chip.
+   color-scheme below tells the browser to keep its own furniture — form
+   controls, scrollbars, spellcheck underlines — light too, so a person
+   whose whole OS is dark still gets one coherent page rather than half
+   of each. */
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* Login screen */
@@ -83,7 +96,7 @@ nav .setup .rail-toggle{display:none}
 .login-btn.primary:hover{opacity:.88}
 .login-btn.primary:active{transform:scale(.98)}
 .login-btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:8px}
-.login-btn.ghost:hover{background:#F2F5F7}
+.login-btn.ghost:hover{background:var(--wash)}
 .login-btn:disabled{opacity:.4;cursor:default;transform:none}
 .login-card .matrix-fields{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease;opacity:0}
 .login-card .matrix-fields.open{max-height:600px;opacity:1}
@@ -134,7 +147,7 @@ nav .setup .rail-toggle{display:none}
 .su-head h2{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0;letter-spacing:-.01em}
 .su-head .su-sub{font-size:12px;color:var(--muted);margin:2px 0 0}
 .su-back{flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;margin-top:2px}
-.su-back:hover{background:#F2F5F7;color:var(--ink)}
+.su-back:hover{background:var(--wash);color:var(--ink)}
 .su-steps{display:flex;gap:4px;margin:0 0 16px}
 .su-steps i{flex:1;height:3px;border-radius:99px;background:var(--line);transition:background .3s ease}
 .su-steps i.at{background:var(--seal)}
@@ -168,7 +181,7 @@ nav .setup .rail-toggle{display:none}
 .su-pw{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface)}
 .su-pw .val{flex:1;font-family:"IBM Plex Mono",monospace;font-size:14px;word-break:break-all;letter-spacing:.01em}
 .su-pw button{flex:none;font:600 11.5px Inter;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
-.su-pw button:hover{background:#F2F5F7}
+.su-pw button:hover{background:var(--wash)}
 .su-strength{font-size:12px;margin-top:6px;min-height:17px}
 .su-strength.ok{color:var(--seal)}
 .su-strength.mid{color:var(--turn)}
@@ -195,7 +208,7 @@ nav .setup .rail-toggle{display:none}
 .su-cred .k{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);width:74px;flex:none}
 .su-cred .v{flex:1;font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
 .su-cred .cp{flex:none;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer}
-.su-cred .cp:hover{background:#F2F5F7}
+.su-cred .cp:hover{background:var(--wash)}
 .su-cred .cp.done{color:var(--seal);border-color:var(--seal)}
 .su-dl{display:block;width:100%;padding:11px;border:none;border-radius:9px;font:600 14px Inter;cursor:pointer;background:var(--ink);color:#fff;margin-bottom:10px}
 .su-dl:hover{opacity:.88}
@@ -215,7 +228,7 @@ nav.top .brand .sub{color:var(--muted);font-size:12px;display:none}
 nav .spacer{flex:1;min-width:8px}
 nav .setup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 nav .setup select,nav .setup button,nav .setup a.btn{font:inherit;font-size:11.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:background .15s ease}
-nav .setup button:hover{background:#F2F5F7}
+nav .setup button:hover{background:var(--wash)}
 nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-size:15px}
 nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .status{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:4px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -256,7 +269,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
    what's left / when do I get to the story part" question the interview
    overview text answers, answered visually every screen instead of once. */
 .sect-stepper{display:flex;gap:6px;padding:9px 16px 11px;border-bottom:1px solid var(--line);background:var(--surface)}
-.sect-stepper .sect{flex:1;min-width:0;position:relative;border-radius:9px;padding:7px 10px;background:#F2F5F7;border:1.5px solid transparent;overflow:hidden;transition:border-color .15s ease,opacity .15s ease}
+.sect-stepper .sect{flex:1;min-width:0;position:relative;border-radius:9px;padding:7px 10px;background:var(--wash);border:1.5px solid transparent;overflow:hidden;transition:border-color .15s ease,opacity .15s ease}
 .sect-stepper .sect .fill{position:absolute;left:0;top:0;bottom:0;background:var(--seal-soft);width:0%;transition:width .35s ease;z-index:0}
 .sect-stepper .sect .row{position:relative;z-index:1;display:flex;align-items:flex-start;gap:6px}
 .sect-stepper .sect .num{flex:none;width:16px;height:16px;border-radius:50%;background:var(--line);color:var(--muted);font:700 9px "IBM Plex Mono",monospace;display:grid;place-items:center;line-height:1;margin-top:1px}
@@ -281,7 +294,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .msg-name{font-weight:600}
 .msg-bubble{padding:9px 12px;border-radius:12px;font-size:14px;white-space:pre-wrap;word-break:break-word;line-height:1.5}
 .msg-group.end .msg-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:4px}
-.msg-group.start .msg-bubble{background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg-group.start .msg-bubble{background:var(--wash);border:1px solid var(--line);border-bottom-left-radius:4px}
 .msg-group.start .msg-bubble.support{background:var(--seal-soft);border-color:#C9E0D5}
 .msg-bubble .tag{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
 .msg-bubble .tag.help{color:var(--turn)}
@@ -300,7 +313,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .quick-answer .qa-btn{font:600 13px Inter;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:border-color .15s ease,background .15s ease}
 .quick-answer .qa-btn:hover{border-color:var(--seal);background:var(--seal-soft)}
 .quick-answer .qa-decline{font-weight:500;color:var(--muted);border-style:dashed}
-.quick-answer .qa-decline:hover{border-color:var(--muted);background:#F2F5F7}
+.quick-answer .qa-decline:hover{border-color:var(--muted);background:var(--wash)}
 .quick-answer .qa-select{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:260px}
 .quick-answer .qa-go{font:600 13px Inter;padding:7px 14px;border-radius:8px;border:none;background:var(--ink);color:#fff;cursor:pointer}
 .quick-answer .qa-checks{display:flex;flex-direction:column;gap:4px;width:100%}
@@ -313,12 +326,12 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:100px;background:transparent;color:var(--ink);outline:none}
 .compose .input-actions{display:flex;gap:3px}
 .compose .input-actions button{border:none;background:transparent;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;font-size:15px;line-height:1;display:grid;place-items:center}
-.compose .input-actions button:hover{background:#F2F5F7;color:var(--ink)}
+.compose .input-actions button:hover{background:var(--wash);color:var(--ink)}
 .compose .send-btn{border:none;background:var(--ink);color:#fff;border-radius:8px;padding:0 14px;height:34px;font:600 13px Inter;cursor:pointer;flex:none;transition:opacity .15s ease,transform .1s ease}
 .compose .send-btn:active{transform:scale(.96)}
 .compose .send-btn:disabled{opacity:.35;cursor:default;transform:none}
 .hint{padding:0 14px 8px;font-size:11px;color:var(--muted)}
-.hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
+.hint kbd{font-family:inherit;background:var(--wash);border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
 #micBtn.recording{color:var(--red);background:var(--red-soft);animation:mic-pulse 1.4s ease-in-out infinite}
 #micBtn.busy{opacity:.6;cursor:default}
 #micBtn{position:relative}
@@ -336,7 +349,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
 .card h2{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;flex:none}
-.card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:#F2F5F7}
+.card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
 /* "Your answers" vs "Supporting docs" split the rail's vertical space 4:1
    (not their natural content height) — each is a flex column with its own
    internal scroll area, so a short docs list doesn't leave a tall empty gap
@@ -347,7 +360,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .check{list-style:none;margin:0;padding:4px;overflow-y:auto;scrollbar-width:thin}
 .rail-4 .check{flex:1;min-height:0}
 .check li{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer;transition:background .12s ease}
-.check li:hover{background:#F2F5F7}
+.check li:hover{background:var(--wash)}
 .check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;flex:none;margin-top:1px;display:grid;place-items:center;transition:all .2s ease;font-size:10px}
 .check li.done .box{background:var(--seal);border-color:var(--seal);color:#fff}
 .check li.active .box{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.15)}
@@ -375,7 +388,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:3px;font-size:10px}
 
 /* Docs */
-.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:#FAFBFC;transition:border-color .15s ease,background .15s ease;flex:none}
+.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:var(--wash);transition:border-color .15s ease,background .15s ease;flex:none}
 .docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
 .docs-drop p{margin:0 0 3px;font-size:11.5px;color:var(--muted)}
 .docs-drop p:last-child{margin-bottom:0;font-size:10.5px}
@@ -392,7 +405,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .docs-list .dtitle-input{width:100%;box-sizing:border-box;font:inherit;font-size:11px;padding:3px 6px;margin-top:3px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
 .docs-list .docs-status{font-size:11px;color:var(--muted)}
 .docs-list .dview{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
-.docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:#F2F5F7}
+.docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:var(--wash)}
 .docs-list .doc.status-verified .dstatus{background:var(--seal-soft);color:var(--seal)}
 .docs-list .doc.status-flagged .dstatus{background:var(--red-soft);color:var(--red)}
 .docs-list .doc.status-in_review .dstatus{background:var(--turn-soft);color:var(--turn)}
@@ -462,7 +475,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 #pwModal .pw-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.inline-editor .btns button.cancel:hover{background:#F2F5F7}
+.inline-editor .btns button.cancel:hover{background:var(--wash)}
 .inline-editor .btns button:disabled{opacity:.4;cursor:default}
 .inline-editor#letterModal .modal{width:min(760px,94vw)}
 .inline-editor#traceModal .modal{width:min(640px,94vw)}
@@ -516,7 +529,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .pill-approved{background:#E4F0EA;color:#1E6B47}
 .pill-filed{background:var(--red-soft);color:var(--red)}
 .kanban{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px}
-.kcol{background:#F2F5F7;border:1px solid var(--line);border-radius:var(--r);padding:9px;min-height:80px}
+.kcol{background:var(--wash);border:1px solid var(--line);border-radius:var(--r);padding:9px;min-height:80px}
 .khead{display:flex;justify-content:space-between;align-items:center;font:600 11.5px Inter;margin-bottom:6px}
 .kcount{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);border-radius:99px;padding:1px 6px}
 .klist{display:flex;flex-direction:column;gap:5px;min-height:40px;border-radius:7px;transition:background .12s ease;padding:3px}
@@ -552,7 +565,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .part>pre{margin:0;padding:8px 9px;white-space:pre-wrap;word-break:break-word;font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.5;color:var(--ink)}
 .turn{border:1px dashed var(--line);border-radius:8px;padding:6px 9px;margin-bottom:5px;font-size:12px}
 .turn .r{font:600 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:1px}
-.turn.assistant{background:var(--surface)}.turn.user{background:#F2F5F7}
+.turn.assistant{background:var(--surface)}.turn.user{background:var(--wash)}
 .empty-turns{font-size:11.5px;color:var(--muted);font-style:italic}
 
 /* Question authoring (admin panel) */
@@ -587,7 +600,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .q.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
 .q .qtype{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex:none}
 .q .qsection{font:600 9.5px Inter;color:var(--seal);background:var(--seal-soft);border-radius:99px;padding:2px 8px;flex:none;white-space:nowrap}
-.q .qsection.qsection-none{color:var(--muted);background:#F2F5F7}
+.q .qsection.qsection-none{color:var(--muted);background:var(--wash)}
 .q .req{font:600 9px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--turn);flex:none}
 .sec button,.mem button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
 .sec button.danger{color:var(--red);border-color:var(--red-soft)}
@@ -637,7 +650,7 @@ nav .setup .rail-toggle{display:inline-flex}
 .msg-group{max-width:95%}
 .kanban{grid-template-columns:1fr 1fr}
 }
-@media(max-width:500px){.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
+@media(max-width:500px){body{zoom:1}.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
 </style>
 </head>
 <body>
@@ -5250,7 +5263,7 @@ function initAdminView({ onClose }) {
   function renderSingleSubmission(wrap, pl) {
     // ── Audit summary bar ──
     const auditBar = $e("div");
-    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#F2F5F7;border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
+    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--wash);border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
     const typedCount = pl.answers.filter((a) => a.inputKind === "typed").length;
     const voiceCount = pl.answers.filter((a) => a.inputKind === "voice").length;
     const editedCount = pl.answers.filter((a) => a.inputKind === "edited").length;
@@ -5285,7 +5298,7 @@ function initAdminView({ onClose }) {
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:4px";
       const badge = $e("span", "mono", isVoice ? "🎙 voice" : "⌨ typed");
-      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "#F2F5F7"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
+      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "var(--wash)"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
       item.appendChild(badge);
       const sourceText = $e("div", null, a.source);
       sourceText.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
@@ -5337,7 +5350,7 @@ function initAdminView({ onClose }) {
 
     // Column 3: Parsed answer — model's extraction, editable
     const colReview = $e("div");
-    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:#F2F5F7;padding:10px;display:flex;flex-direction:column;gap:6px";
+    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:var(--wash);padding:10px;display:flex;flex-direction:column;gap:6px";
     const reviewHead = $e("div");
     reviewHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
     reviewHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#5C6B72;border-radius:4px;padding:1px 5px;font-weight:600">review</span><span style="font-size:11.5px;font-weight:600">Parsed answer</span>`;
@@ -5786,7 +5799,7 @@ function initAdminView({ onClose }) {
     for (const o of options) {
       const chip = $e("button", "mono", `{{${o.path}}}`);
       chip.title = o.label;
-      chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:#F2F5F7;font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
+      chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--wash);font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
       chip.onclick = () => {
         const at = bodyInput.selectionStart ?? bodyInput.value.length;
         const token = `{{${o.path}}}`;
@@ -6190,7 +6203,7 @@ function buildFieldInput(field, currentValue) {
   }
   if (field.type === "date") {
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "field-input";
+    inp.type = "date"; inp.className = "field-input"; boundDateInput(inp);
     if (currentValue) { try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {} }
     return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
   }
@@ -6200,12 +6213,14 @@ function buildFieldInput(field, currentValue) {
     const inp = document.createElement("input");
     inp.className = "field-input";
     inp.type = monthOnly ? "month" : "date";
+    boundDateInput(inp);
     inp.value = currentValue || "";
     const toggle = el("button", "addr-toggle", monthOnly ? "I know the exact day" : "I only know the month");
     toggle.type = "button";
     toggle.onclick = () => {
       monthOnly = !monthOnly;
       inp.type = monthOnly ? "month" : "date";
+      boundDateInput(inp);
       inp.value = "";
       toggle.textContent = monthOnly ? "I know the exact day" : "I only know the month";
     };
@@ -6423,12 +6438,13 @@ function renderQuickAnswer(field) {
     const row = el("div", "qa-row");
     let monthOnly = false;
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select";
+    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
     const toggle = el("button", "qa-btn", es ? "Solo sé el mes" : "I only know the month");
     toggle.type = "button";
     toggle.onclick = () => {
       monthOnly = !monthOnly;
       inp.type = monthOnly ? "month" : "date";
+      boundDateInput(inp);
       inp.value = "";
       toggle.textContent = monthOnly ? (es ? "Sé el día exacto" : "I know the exact day") : (es ? "Solo sé el mes" : "I only know the month");
     };
@@ -6441,7 +6457,7 @@ function renderQuickAnswer(field) {
   } else if (field.type === "date") {
     const row = el("div", "qa-row");
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select";
+    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
     const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
     go.type = "button";
     go.onclick = () => { if (inp.value) choose(inp.value); };
@@ -6648,6 +6664,18 @@ function renderSide() {
   // A hand-added admin question with no section picked yet — still shown,
   // just without a heading, rather than silently vanishing from the list.
   prog.filter((f) => !SECTIONS.some((s) => s.key === f.section)).forEach(renderRow);
+}
+
+// Pins a native date/month control to the same window Steer.validate()
+// enforces, so the picker can't offer a year the validator is about to
+// refuse — and a mistyped one ("0023") can't be committed by pressing Enter.
+// Called again whenever a control flips between date and month, since the
+// bounds differ in shape.
+function boundDateInput(inp) {
+  const b = Steer.dateBounds(inp.type === "month" ? "month" : "date");
+  inp.min = b.min;
+  inp.max = b.max;
+  return inp;
 }
 
 // The section stepper above the chat — see SECTIONS and

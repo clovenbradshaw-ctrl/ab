@@ -447,3 +447,35 @@ test("probing ladder: two rungs per kind, in both languages, clamped past the en
     }
   }
 });
+
+// ── dates have to be dates that could have happened ─────────────────────────
+
+const DATE_FIELD = { path: "custody_start_date", type: "date", required: false };
+
+test("validate: a date with an impossible year is refused, in both languages", () => {
+  // "0023-12-22" is what a mistyped year actually produces, and Date.parse
+  // accepts it happily — it reached a real interview this way.
+  const en = Steer.validate(DATE_FIELD, "0023-12-22", "en");
+  assert.match(en || "", /year/i);
+  assert.match(Steer.validate(DATE_FIELD, "0023-12-22", "es") || "", /año/i);
+  assert.ok(Steer.validate(DATE_FIELD, "1823-04-01", "en"), "a year before the window is refused");
+  assert.ok(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, "0023-12", "en"), "date_flex is held to the same window");
+});
+
+test("validate: ordinary dates still pass, including month-only and next year", () => {
+  const nextYear = new Date().getFullYear() + 1;
+  assert.equal(Steer.validate(DATE_FIELD, "1990-04-23", "en"), null);
+  assert.equal(Steer.validate(DATE_FIELD, new Date().toISOString().slice(0, 10), "en"), null);
+  assert.equal(Steer.validate(DATE_FIELD, `${nextYear}-06-01`, "en"), null, "a hearing already on the calendar is a real date");
+  assert.equal(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, "2024-03", "en"), null);
+  assert.equal(Steer.validate(DATE_FIELD, "", "en"), null, "an empty optional date is still fine");
+});
+
+test("dateBounds matches what validate() will accept, for both control shapes", () => {
+  const d = Steer.dateBounds("date");
+  const m = Steer.dateBounds("month");
+  assert.equal(Steer.validate(DATE_FIELD, d.min, "en"), null);
+  assert.equal(Steer.validate(DATE_FIELD, d.max, "en"), null);
+  assert.equal(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, m.min, "en"), null);
+  assert.equal(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, m.max, "en"), null);
+});

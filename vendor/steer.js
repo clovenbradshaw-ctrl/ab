@@ -519,6 +519,7 @@
       required: "This one's required — even a rough answer is fine to start.",
       email: "That doesn't look like an email address — mind checking it?",
       date: "I couldn't read that as a date. A format like 1990-04-23 works well.",
+      year: (lo, hi) => `That year doesn't look right — please use a year between ${lo} and ${hi}.`,
       number: "That should be a number.",
       digits: (n) => `That should be exactly ${n} digits.`,
       enumMsg: (opts) => `Please pick one of: ${opts.join(", ")}.`,
@@ -531,12 +532,28 @@
       required: "Este campo es obligatorio — una respuesta aproximada está bien para empezar.",
       email: "Eso no parece una dirección de correo electrónico — ¿puedes revisarla?",
       date: "No pude leer eso como una fecha. Un formato como 1990-04-23 funciona bien.",
+      year: (lo, hi) => `Ese año no parece correcto — por favor usa un año entre ${lo} y ${hi}.`,
       number: "Eso debería ser un número.",
       digits: (n) => `Eso debería tener exactamente ${n} dígitos.`,
       enumMsg: (opts) => `Por favor elige una opción: ${opts.join(", ")}.`,
       zip: "Un código postal de EE. UU. tiene 5 dígitos, como 37201.",
     },
   };
+
+  // The plausible window for any date this intake asks about — see the note
+  // in validate(). maxYear() is a function so a session left open across New
+  // Year's doesn't start rejecting today.
+  const MIN_YEAR = 1900;
+  function maxYear() { return new Date().getFullYear() + 1; }
+
+  // ISO bounds for a native date/month picker, taken from the same window
+  // validate() enforces, so a control can't hand back what the validator is
+  // about to reject. `kind` is "date" or "month" (the date_flex toggle).
+  function dateBounds(kind = "date") {
+    return kind === "month"
+      ? { min: `${MIN_YEAR}-01`, max: `${maxYear()}-12` }
+      : { min: `${MIN_YEAR}-01-01`, max: `${maxYear()}-12-31` };
+  }
 
   function validate(field, value, lang = "en") {
     const M = VALIDATION_MESSAGES[lang] || VALIDATION_MESSAGES.en;
@@ -546,7 +563,18 @@
     // "date_flex" is the same field, just answerable to month precision
     // ("2024-03") instead of always requiring an exact day — Date.parse
     // already accepts that shorter ISO form, so no separate check is needed.
-    if ((field.type === "date" || field.type === "date_flex") && v && isNaN(Date.parse(v))) return M.date;
+    if ((field.type === "date" || field.type === "date_flex") && v) {
+      if (isNaN(Date.parse(v))) return M.date;
+      // Date.parse is happy with a year of 23, and a date picker will hand
+      // one over from a mistyped keystroke ("0023-12-22" reached a real
+      // interview this way). A complaint dated in the third century is not a
+      // typo anyone benefits from having stored, and neither is one dated
+      // decades out. The window is deliberately wide — a grandparent's birth
+      // year at one end, next year at the other for an already-scheduled
+      // hearing — so it only ever catches what could not have happened.
+      const year = new Date(v).getFullYear();
+      if (year < MIN_YEAR || year > maxYear()) return M.year(MIN_YEAR, maxYear());
+    }
     if (field.type === "number" && v && isNaN(Number(v))) return M.number;
     // `digits: N` requires the value, once non-digit formatting characters
     // are stripped, to contain exactly N digits — used for phone numbers and
@@ -756,7 +784,7 @@
     createState, applyForce, tierOf,
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
-    VALIDATION_MESSAGES, validate,
+    VALIDATION_MESSAGES, validate, dateBounds,
     tidyText, readAttempt,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
     isFieldSkipped,
