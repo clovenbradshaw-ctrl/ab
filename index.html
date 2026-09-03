@@ -454,6 +454,12 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .field-address .addr-toggle:hover{color:var(--ink)}
 @media (max-width:420px){.field-address .addr-grid{grid-template-columns:1fr}.field-address .addr-grid .wide{grid-column:auto}}
 .inline-editor .btns{display:flex;gap:7px;justify-content:flex-end}
+#pwModal .pw-group{margin:12px 0}
+#pwModal label{display:block;font:600 11px Inter;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
+#pwModal input{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink)}
+#pwModal input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+#pwModal .pw-gen{background:none;border:none;color:var(--seal);font:600 12px Inter;cursor:pointer;padding:5px 0 0}
+#pwModal .pw-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .inline-editor .btns button.cancel:hover{background:#F2F5F7}
@@ -828,6 +834,7 @@ nav .setup .rail-toggle{display:inline-flex}
       <button id="railToggleBtn" class="icon-btn rail-toggle" title="Your answers &amp; supporting docs"><i class="ph ph-list-checks"></i></button>
       <button id="submissionBtn" class="icon-btn" title="View my submission" style="display:none"><i class="ph ph-clipboard-text"></i></button>
       <button id="resetBtn" class="icon-btn" title="Start over"><i class="ph ph-arrow-counter-clockwise"></i></button>
+      <button id="pwBtn" class="icon-btn" title="Change password" style="display:none"><i class="ph ph-key"></i></button>
       <button id="logoutBtn" class="icon-btn" title="Switch account"><i class="ph ph-sign-out"></i></button>
       <span class="setup-admin hidden" id="navAdmin">
         <select id="modelSel" title="Model backend"><option value="echo" selected>Demo</option><option value="webllm">Qwen2.5 0.5B (smallest)</option><option value="ollama">Ollama</option></select>
@@ -943,6 +950,32 @@ nav .setup .rail-toggle{display:inline-flex}
     <button class="cancel" id="qWizCancel">Cancel</button>
     <button id="qWizBack">← Back</button>
     <button class="primary" id="qWizNext">Next →</button>
+  </div>
+</div></div>
+
+<!-- Change this account's password. The new password is downloaded as a
+     small file the moment the change succeeds: most homeservers, matrix.org
+     included, have no password reset, so a password nobody wrote down is an
+     account (and every answer in it) lost. Nothing is stored in the browser
+     — see saveSilentAccount's note on why a password is never persisted
+     here. The file is the record. -->
+<div class="inline-editor" id="pwModal"><div class="modal">
+  <h3>Change password</h3>
+  <p class="field-path" id="pwWho"></p>
+  <div class="pw-group">
+    <label for="pwCurrent">Current password</label>
+    <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="••••••••">
+  </div>
+  <div class="pw-group">
+    <label for="pwNew">New password</label>
+    <input id="pwNew" type="text" autocomplete="new-password" spellcheck="false">
+    <button type="button" class="pw-gen" id="pwGenerate">Generate a strong one</button>
+  </div>
+  <p class="pw-note">Saving downloads a small text file with the new password in it. Keep that file somewhere safe: this homeserver most likely has no password reset, so if the password is lost, so is the account and everything in it.</p>
+  <p class="field-path" id="pwError" style="color:var(--red);display:none"></p>
+  <div class="btns">
+    <button class="cancel" id="pwCancel">Cancel</button>
+    <button class="primary" id="pwSave">Change it &amp; download</button>
   </div>
 </div></div>
 
@@ -8237,17 +8270,149 @@ function suCredentialsText(data) {
   ].join("\n");
 }
 
-function suDownloadCredentials() {
-  const text = suCredentialsText(suRegisteredData);
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
+// Hands the browser a text file to save. The one way an account credential
+// leaves this page on purpose — see the password-change flow and the signup
+// wizard, both of which exist because a password nobody wrote down is an
+// account nobody can get back into.
+function downloadTextFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `matrix-account-${suRegisteredData.user_id.replace(/[^a-z0-9]/gi, "_")}.txt`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function credentialFilename(prefix, userId) {
+  return `${prefix}-${userId.replace(/[^a-z0-9]/gi, "_")}.txt`;
+}
+
+function suDownloadCredentials() {
+  downloadTextFile(credentialFilename("matrix-account", suRegisteredData.user_id), suCredentialsText(suRegisteredData));
+}
+
+// ── Changing this account's password ────────────────────────────────────────
+//
+// The change itself is one call to the homeserver, but it is wrapped in the
+// user-interactive auth dance because that's what a homeserver asks for: the
+// first POST comes back 401 with the flows it will accept, and the current
+// password is replayed into a second POST carrying that challenge's session.
+//
+// logout_devices stays false on purpose. Someone may well do this in the
+// middle of an interview, and signing every device out from under them would
+// take this browser's own session — the one holding their answers — with it.
+async function changeAccountPassword({ client, userId, current, next }) {
+  const base = (client.baseUrl || "").replace(/\/+$/, "");
+  const token = client.getAccessToken();
+  const post = (extra) => fetch(`${base}/_matrix/client/v3/account/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ new_password: next, logout_devices: false, ...extra }),
+  });
+
+  let res = await post({});
+  if (res.status === 401) {
+    const challenge = await res.json().catch(() => ({}));
+    const stages = (challenge.flows || []).flatMap((f) => f.stages || []);
+    if (!stages.includes("m.login.password")) {
+      throw new Error("This provider wants a sign-in step this page can't do. Change the password from your provider's own site instead.");
+    }
+    if (!current) throw new Error("Your current password is needed to change it.");
+    res = await post({
+      auth: {
+        type: "m.login.password",
+        session: challenge.session,
+        user: userId,
+        identifier: { type: "m.id.user", user: userId },
+        password: current,
+      },
+    });
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `The provider refused the change (${res.status}).`);
+  }
+}
+
+function passwordRecordText({ userId, homeserver, password }) {
+  return [
+    "Feedback Platform — account password",
+    "",
+    `User ID:    ${userId}`,
+    `Password:   ${password}`,
+    `Homeserver: ${homeserver}`,
+    "",
+    "Changed " + new Date().toString(),
+    "Keep this somewhere safe. Most homeservers have no password reset, so",
+    "losing this password means losing the account and everything in it.",
+  ].join("\n");
+}
+
+function openPasswordModal() {
+  const client = loginState?.client;
+  if (!client) return;
+  document.getElementById("pwWho").textContent = loginState.userId || client.getUserId() || "";
+  document.getElementById("pwCurrent").value = "";
+  // Pre-filled with the same generator the silent-registration path uses, so
+  // the easy path is a strong password; it's a plain text input, so anyone
+  // who would rather pick their own just types over it.
+  document.getElementById("pwNew").value = randomStrongPassword();
+  const err = document.getElementById("pwError");
+  err.style.display = "none"; err.textContent = "";
+  document.getElementById("pwModal").classList.add("on");
+  document.getElementById("pwCurrent").focus();
+}
+
+function closePasswordModal() { document.getElementById("pwModal").classList.remove("on"); }
+
+async function submitPasswordChange() {
+  const client = loginState?.client;
+  const btn = document.getElementById("pwSave");
+  const err = document.getElementById("pwError");
+  const next = document.getElementById("pwNew").value.trim();
+  const current = document.getElementById("pwCurrent").value;
+  const userId = loginState?.userId || client?.getUserId();
+  const fail = (msg) => { err.textContent = msg; err.style.display = "block"; };
+
+  err.style.display = "none";
+  if (!client || !userId) return fail("You're not signed in to an account that has a password.");
+  if (next.length < 8) return fail("Please use at least 8 characters.");
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Changing…";
+  try {
+    await changeAccountPassword({ client, userId, current, next });
+    // Downloaded before anything else can go wrong, and before the modal
+    // closes: this file is now the only record of the password that exists
+    // anywhere outside the person's own memory.
+    downloadTextFile(
+      credentialFilename("account-password", userId),
+      passwordRecordText({ userId, homeserver: client.baseUrl, password: next }),
+    );
+    closePasswordModal();
+    toast("Password changed — check your downloads for the file with it in.");
+  } catch (e) {
+    console.error("[password] change failed:", e);
+    fail(e?.message || "The password couldn't be changed.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+function wirePasswordModal() {
+  document.getElementById("pwBtn").onclick = openPasswordModal;
+  document.getElementById("pwCancel").onclick = closePasswordModal;
+  document.getElementById("pwGenerate").onclick = () => {
+    document.getElementById("pwNew").value = randomStrongPassword();
+  };
+  document.getElementById("pwSave").onclick = submitPasswordChange;
+  document.getElementById("pwModal").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("pwModal")) closePasswordModal();
+  });
 }
 
 async function suCopyField(kind, btn) {
@@ -8500,6 +8665,7 @@ function wireLogin() {
   document.getElementById("demoBarSignin").onclick = () => {
     loginState = null;
     if (store?.client) try { store.client.stopClient(); } catch {}
+    requestLoginScreen();  // same reason as the Switch account button below
     location.reload();
   };
   document.getElementById("demoBarClose").onclick = () => {
@@ -8526,6 +8692,9 @@ async function boot() {
 
   document.getElementById("submissionBtn").style.display = "none";
   currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";
+  // Only a real account has a password to change; a demo session has no
+  // account behind it at all.
+  document.getElementById("pwBtn").style.display = currentStoreKind === "matrix" ? "" : "none";
 
   let demoBarDismissed = false;
   try { demoBarDismissed = sessionStorage.getItem("eo.demoBarDismissed") === "1"; } catch {}
@@ -9073,6 +9242,7 @@ function closeQuestionWizard() {
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
+  wirePasswordModal();
   wireCompose();
   wireBulk();
   wireVoice();
