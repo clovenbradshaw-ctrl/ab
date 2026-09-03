@@ -333,17 +333,35 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .hint{padding:0 14px 8px;font-size:11px;color:var(--muted)}
 .hint kbd{font-family:inherit;background:var(--wash);border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
 #micBtn.recording{color:var(--red);background:var(--red-soft);animation:mic-pulse 1.4s ease-in-out infinite}
-#micBtn.busy{opacity:.6;cursor:default}
+#micBtn.busy{cursor:default}
+#micBtn.busy i{opacity:.25}
 #micBtn{position:relative}
 #micBtn::after{content:"";position:absolute;top:1px;right:1px;width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 0 1.5px var(--surface)}
 #micBtn.ready::after{background:var(--seal)}
+/* A dimmed mic glyph alone ("busy" used to just be opacity:.6 on the whole
+   button) reads as disabled, not working — indistinguishable at a glance
+   from any other greyed-out control. The spinning ring is the same visual
+   language the rest of the app already uses for "processing" (.spin, used
+   by the model/account loaders below), so transcribing looks like the one
+   other thing this page calls loading, instead of inventing a new signal. */
+#micBtn.busy::before{content:"";position:absolute;top:50%;left:50%;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--seal);animation:spin .7s linear infinite}
 @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,64,47,.25)}50%{box-shadow:0 0 0 5px rgba(176,64,47,.08)}}
 .voice-note{padding:0 14px 6px;font-size:11px;color:var(--muted);line-height:1.4}
 .voice-note.hidden{display:none}
 .compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
 @keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
+/* Between "recording" and the final transcript landing, the box still
+   shows the last partial pass — real words, but not the answer of record
+   yet. A soft fade (not a spinner over the text itself, which would fight
+   with actually reading it) says "this is about to change" without
+   hiding what was heard. */
+.compose textarea.finalizing{opacity:.55;transition:opacity .2s ease}
 .compose .voice-wave{flex:none;height:26px;width:56px;display:block;opacity:.85;align-self:center}
 .compose .voice-wave.hidden{display:none}
+/* Same 56px slot the waveform uses, so the row doesn't reflow when
+   recording hands off to transcribing. */
+.compose .voice-processing{flex:none;width:56px;height:26px;align-items:center;justify-content:center;align-self:center;color:var(--seal)}
+.compose .voice-processing i{background:var(--seal)}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
@@ -891,14 +909,15 @@ nav .setup .rail-toggle{display:inline-flex}
           <div class="input-wrap">
             <textarea id="input" rows="1" placeholder="Type your answer… or ask a question."></textarea>
             <canvas id="voiceWave" class="voice-wave hidden" height="34" aria-hidden="true"></canvas>
+            <span id="voiceProcessing" class="typing voice-processing hidden" aria-hidden="true"><i></i><i></i><i></i></span>
             <div class="input-actions">
-              <button id="micBtn" title="Speak your answer" type="button" hidden><i class="ph ph-microphone"></i></button>
+              <button id="micBtn" title="Speak your answer" aria-label="Speak your answer" aria-pressed="false" type="button" hidden><i class="ph ph-microphone"></i></button>
               <button id="attachBtn" title="Attach a file" type="button"><i class="ph ph-paperclip"></i></button>
             </div>
           </div>
           <button class="send-btn" id="send">Send</button>
         </div>
-        <div class="voice-note hidden" id="voiceNote"></div>
+        <div class="voice-note hidden" id="voiceNote" role="status"></div>
         <div class="hint">
           <kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck
           · <a href="#" id="bulkOpen">prefer to write it all out at once?</a>
@@ -7265,9 +7284,16 @@ function voiceCopy(key) {
       ? "Escuchando… tus palabras aparecen abajo. Cuando termines de hablar, me detengo solo."
       : "Listening… your words appear below. When you stop talking, I'll stop on my own.",
     downloading: es ? "Preparando el modelo de voz (descarga única)…" : "Preparing the speech model (one-time download)…",
-    transcribing: es ? "Transcribiendo…" : "Transcribing…",
+    // Shown the instant recording stops, while the final (authoritative)
+    // pass runs — the live partial is already sitting in the box, so this
+    // says plainly that it's about to be replaced rather than leaving a
+    // static "Transcribing…" as the only sign anything is happening.
+    transcribing: es ? "Escribiendo tu respuesta final…" : "Writing your final answer…",
     micDenied: es ? "Se necesita permiso del micrófono para hablar tu respuesta." : "Microphone permission is needed to speak an answer.",
     micFailed: es ? "No se pudo transcribir. Puedes escribir en su lugar." : "Couldn't transcribe — you can type instead.",
+    noSpeech: es
+      ? "No escuché nada claro. Intenta de nuevo o escribe tu respuesta."
+      : "Didn't catch that — try again, or type your answer instead.",
   };
   return C[key];
 }
@@ -7368,10 +7394,22 @@ function stopWaveform() {
   if (canvas) { const c = canvas.getContext("2d"); if (c) c.clearRect(0, 0, canvas.width, canvas.height); }
 }
 
+// Per-state label for the mic button's accessible name — sighted users get
+// the waveform/dots/spinner, but a screen-reader user gets only whatever
+// this string says, so it has to carry the same "what's happening right
+// now" information on its own rather than leaning on "Speak your answer"
+// for every state.
+function micAriaLabel(s) {
+  if (s === "recording") return "Recording — tap to stop";
+  if (s === "transcribing") return "Writing your answer — please wait";
+  return "Speak your answer";
+}
+
 function wireVoice() {
   const btn = document.getElementById("micBtn");
   const input = document.getElementById("input");
   const wave = document.getElementById("voiceWave");
+  const processing = document.getElementById("voiceProcessing");
   if (!btn) return;
   if (!window.Voice || !Voice.isSupported()) { btn.hidden = true; return; }
   btn.hidden = false;
@@ -7394,7 +7432,22 @@ function wireVoice() {
           btn.classList.toggle("recording", s === "recording");
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
+          btn.setAttribute("aria-pressed", s === "recording" ? "true" : "false");
+          btn.setAttribute("aria-label", micAriaLabel(s));
+          btn.title = micAriaLabel(s);
           input.classList.toggle("streaming", s === "recording");
+          // The gap between "stopped talking" and "final transcript lands"
+          // is real — a full re-hearing of the whole clip, not the cheap
+          // trailing-window pass a partial is — and it used to have no
+          // feedback of its own: the waveform (recording-only) disappeared,
+          // the button just dimmed, and the box sat there showing the last,
+          // soon-to-be-replaced partial with nothing moving on screen. Now
+          // the box fades to say "about to change" (.finalizing, CSS) and
+          // the mic gets a spinning ring + the waveform's slot gets the same
+          // three-dot "working" indicator the assistant's own replies use —
+          // so a multi-second final pass reads as busy, not stuck.
+          input.classList.toggle("finalizing", s === "transcribing");
+          if (processing) processing.classList.toggle("hidden", s !== "transcribing");
           // The waveform sits BESIDE the box now, not in place of it. It used
           // to replace the textarea in the same flex slot, which meant the
           // live transcript was landing in a hidden element: someone speaking
@@ -7452,14 +7505,30 @@ function wireVoice() {
     finishing = true;
     try {
       const { text, blob } = await voiceInstance.stop();
-      setVoiceNote(voiceCopy("consent"));
       if (text) {
         input.value = voicePreText ? voicePreText + " " + text : text;
         input.dispatchEvent(new Event("input"));
+        setVoiceNote(voiceCopy("consent"));
+      } else {
+        // Nothing recognized — say so. Silently falling back to the generic
+        // consent copy here used to leave someone who spoke and got no
+        // change staring at an unchanged box with no idea whether the app
+        // heard nothing, crashed, or is still working.
+        setVoiceNote(voiceCopy("noSpeech"));
       }
       autosizeInput(input);
       input.focus();
       if (blob) await saveVoiceClip(blob, text);
+      // Speaking IS answering. The review this app insists on for a voice
+      // answer already happened live — the words were visible in the box
+      // as they were heard (see onPartial above) — so a second, separate
+      // tap on Send afterward has nothing left to catch; it was only ever
+      // catching a typo in words nobody had seen yet. This calls the exact
+      // same handler a manual tap would (wireCompose's send()), so any
+      // per-field "does that look right?" confirmation still runs exactly
+      // as it does for typed text — only the redundant tap is gone, not
+      // the check.
+      if (text) $("send").click();
     } catch (e) {
       setVoiceNote(voiceCopy("micFailed"));
     } finally {
@@ -7467,7 +7536,11 @@ function wireVoice() {
     }
   }
 
-  input.addEventListener("keydown", (e) => {
+  // Document-level, not just the textarea's: someone who tabbed to the mic
+  // button itself (or anywhere else) while recording should still be able
+  // to hit Escape and cancel, same as the context drawer and rail panel
+  // already do below.
+  document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && voiceInstance && voiceInstance.state === "recording") {
       voiceInstance.cancel();
       setVoiceNote(voiceCopy("consent"));
