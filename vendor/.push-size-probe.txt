@@ -1,0 +1,14 @@
+    <button class="primary" id="qWizNext">Next →</button>
+  </div>
+</div></div>
+
+<!-- Admin: generated outgoing draft — editable in place. Saving an edit
+     emits a DEF event on the letter's anchor, so the original generated
+     text stays in the room timeline untouched. -->
+<div class="inline-editor" id="letterModal"><div class="modal">
+  <h3 id="letterTitle">Complaint draft</h3><p class="field-path" id="letterPath"></p>
+  <textarea id="letterBody" spellcheck="false" style="width:100%;min-height:320px;max-height:50vh;resize:vertical;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)"></textarea>
+  <div class="btns"><button class="cancel" id="letterRegen">Regenerate letter</button><button class="cancel" id="letterCopy">Copy</button><button class="cancel" id="letterSave">Save edits</button><button class="primary" id="letterClose">Close</button></div>
+</div></div>
+
+PROBE_PADDING_START
