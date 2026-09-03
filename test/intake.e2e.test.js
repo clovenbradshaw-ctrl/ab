@@ -243,3 +243,61 @@ test("every single reply across a long, typo-heavy conversation is a literal lin
     );
   }
 });
+
+// ── open questions are a back-and-forth, not a single capture ────────────────
+
+// Walks the interview to whichever field asks for the family's story, so
+// these tests read against the real schema position rather than a hardcoded
+// index that any question edit would silently invalidate.
+function linesToNarrative(engine) {
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.narrative);
+  assert.ok(idx > 0, "schema must contain at least one narrative field");
+  return { fields, idx, lines: linesUpTo(fields, idx, "yes") };
+}
+
+test("a narrative question asks again instead of storing keyboard noise, and keeps what was said along the way", async () => {
+  const engine = loadEngine();
+  const { fields, idx, lines } = linesToNarrative(engine);
+  const P = engine.Steer.REPLIES.en.probing;
+
+  const { intake, turns } = await converse(engine, "en", [
+    ...lines,
+    "wefklmw;efklm",              // the stray keystroke from the bug report
+    "he took her",                // real, but three words isn't yet an account
+    "in March 2024 without telling me or my lawyer",
+    "yes",
+  ]);
+
+  const [noise, bare, real] = turns.slice(-4);
+  assert.equal(noise.reply, P.unreadable[0], "noise gets a question back, not 'does that look right?'");
+  assert.equal(bare.reply, P.bare[1], "the second ask is the next rung of the ladder, not a repeat");
+  // The third turn is usable, and what it confirms is the whole account —
+  // the sentence the person managed first, plus what they added when asked.
+  assert.match(real.reply, confirmingPattern(engine, "en"));
+  assert.match(real.reply, /he took her/i);
+  assert.match(real.reply, /in March 2024 without telling me/i);
+  assert.equal(intake.answers()[fields[idx].path], "He took her. In March 2024 without telling me or my lawyer");
+});
+
+test("the asking always ends: after MAX_PROBES the person's own words are taken as written", async () => {
+  const engine = loadEngine();
+  const { fields, idx, lines } = linesToNarrative(engine);
+  const { intake, turns } = await converse(engine, "en", [
+    ...lines,
+    "wefklmw;efklm",
+    "wefklmw;efklm",
+    "wefklmw;efklm",
+    "yes",
+  ]);
+  // Two asks, then it stops arguing and confirms whatever it was given.
+  assert.match(turns[turns.length - 2].reply, confirmingPattern(engine, "en"));
+  assert.ok(intake.answers()[fields[idx].path], "an answer nobody could improve on is still the person's answer");
+});
+
+test("Spanish: the same back-and-forth happens in the person's own language", async () => {
+  const engine = loadEngine();
+  const { lines } = linesToNarrative(engine);
+  const { turns } = await converse(engine, "es", [...lines, "asdfgh"]);
+  assert.equal(turns[turns.length - 1].reply, engine.Steer.REPLIES.es.probing.unreadable[0]);
+});
