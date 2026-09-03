@@ -40,6 +40,12 @@
 // try/catch around the *load* can't catch, since the quantized model still
 // loads fine and only produces bad transcriptions. Full precision is a
 // larger one-time download in exchange for output you can trust.
+//
+// One deterministic cleanup runs on every transcript, partial and final
+// alike: spoken email addresses. Nobody dictates "@" or "." — they say
+// "john dot smith at gmail dot com" — so Whisper hears and prints exactly
+// those words, and a legal complaint form is a bad place to leave "at" and
+// "dot" sitting where an address was meant. See normalizeSpokenEmails below.
 
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -263,6 +269,36 @@
       && !!(window.AudioContext || window.webkitAudioContext);
   }
 
+  // "john dot smith at gmail dot com" -> "john.smith@gmail.com". Scoped
+  // tightly on purpose: it only fires on a run that has BOTH "at" and a
+  // "dot" after it, which is how people actually dictate an address and
+  // not how "at" turns up in ordinary sentences ("I was at the store" has
+  // no following "dot" and is left untouched). Local and domain parts may
+  // themselves be dot/underscore/dash-joined ("maria underscore lopez at
+  // hotmail dot com"), and a domain may carry more than one label ("co dot
+  // state dot tn dot us"). The match is lowercased, since addresses are
+  // conventionally lowercase and Whisper capitalizes whatever word opens a
+  // sentence, dictated address or not.
+  const EMAIL_WORD = "[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?";
+  const EMAIL_SEP = "(?:dot|underscore|dash|hyphen|period)";
+  const EMAIL_PART = `${EMAIL_WORD}(?:\\s+${EMAIL_SEP}\\s+${EMAIL_WORD})*`;
+  const EMAIL_RE = new RegExp(
+    `\\b(${EMAIL_PART})\\s+at\\s+(${EMAIL_PART}\\s+(?:dot|period)\\s+${EMAIL_WORD}(?:\\s+(?:dot|period)\\s+${EMAIL_WORD})*)\\b`,
+    "gi"
+  );
+  function normalizeSpokenEmails(text) {
+    if (!text) return text;
+    return text.replace(EMAIL_RE, (whole, local, domain) => {
+      const email = (local + "@" + domain)
+        .replace(/\s+dot\s+/gi, ".")
+        .replace(/\s+period\s+/gi, ".")
+        .replace(/\s+underscore\s+/gi, "_")
+        .replace(/\s+(?:dash|hyphen)\s+/gi, "-")
+        .replace(/\s+/g, "");
+      return email.toLowerCase();
+    });
+  }
+
   // Start the model download as soon as the page can, not lazily on first
   // mic tap — loadASR() caches on the same shared promise either way, so
   // calling this early just means the download is already finished (or
@@ -337,7 +373,7 @@
             chunk_length_s: 30, stride_length_s: 5, return_timestamps: false,
             language: lang === "es" ? "spanish" : "english",
           });
-          if (state === "recording") onPartial(String((out && out.text) || "").trim());
+          if (state === "recording") onPartial(normalizeSpokenEmails(String((out && out.text) || "").trim()));
         }
       } catch (e) { /* a partial pass failing is never fatal — stop()'s final pass is authoritative */ }
       streamBusy = false;
@@ -450,7 +486,7 @@
               language: lang === "es" ? "spanish" : "english",
             });
             set("idle");
-            resolve({ text: String((out && out.text) || "").trim(), blob });
+            resolve({ text: normalizeSpokenEmails(String((out && out.text) || "").trim()), blob });
           } catch (e) { set("idle"); reject(e); }
         };
         try { rec.stop(); } catch (e) { releaseMic(); set("idle"); reject(e); }
