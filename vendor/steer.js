@@ -233,6 +233,10 @@
         "You're doing fine. Even a partial answer helps — we can always add more later.",
       ],
       confirming: (value) => `You said: "${value}". Does that look right? You can say yes to keep it, or no to change it.`,
+      // Said once per section, when a stretch of the interview is finished
+      // and worth looking over as a whole (see Intake._openReview).
+      reviewing: (section) => `Now let's review what you've told me about ${section.toLowerCase()}. Have a read — if anything needs fixing, you can change it right there. Say yes when it looks right.`,
+      reviewHelp: "Take a look at the summary — you can edit anything in it. When it looks right, say yes and we'll carry on.",
       confirmed: "Thank you — I've saved that.",
       // Hand-written variants of the same acknowledgement, rotated per
       // stored answer (see pickReply's meta.n) so a 30-question interview
@@ -283,6 +287,8 @@
         "Lo estás haciendo bien. Incluso una respuesta parcial ayuda — siempre podemos añadir más después.",
       ],
       confirming: (value) => `Dijiste: "${value}". ¿Está correcto? Puedes decir sí para guardarlo, o no para cambiarlo.`,
+      reviewing: (section) => `Ahora repasemos lo que me has contado sobre ${section.toLowerCase()}. Léelo con calma — si algo hay que corregir, puedes cambiarlo ahí mismo. Di sí cuando esté bien.`,
+      reviewHelp: "Revisa el resumen — puedes editar cualquier cosa. Cuando esté bien, di sí y seguimos.",
       confirmed: "Gracias — ya lo guardé.",
       confirmedAlt: [
         "Listo — quedó guardado.",
@@ -328,6 +334,7 @@
     if (focus === "supporting") return L.supporting[clamp(tier, 0, L.supporting.length - 1)];
     if (focus === "welcomeBack") return L.welcomeBack(meta.done ?? 0, meta.total ?? 0);
     if (focus === "confirming") return L.confirming(meta.value ?? "");
+    if (focus === "reviewing") return L.reviewing(meta.section ?? "");
     // "confirmed" rotates through the vetted variants, keyed by how many
     // answers have been stored (meta.n) — deterministic, so the same
     // conversation always reads the same way, and with no meta.n it's the

@@ -168,7 +168,9 @@ async function walkAll(engine, lang = "en") {
     if (!f) break;
     const ans = validAnswerFor(f);
     await intake.submit(ans);
-    if (intake.pending) await intake.submit("yes");
+    // A section review pauses the interview until someone looks it over —
+    // stand in for the person pressing "Looks right".
+    while (intake.awaitingReview) await intake.approveReview();
     answers[f.path] = ans;
   }
   return { intake, answers };

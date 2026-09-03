@@ -199,10 +199,8 @@ test("voice-meta from a real Intake conversation reaches fold() provenance and t
 
   // Dictated answer (first field) via a voice transcription.
   await intake.submit("Nora Alvarez", { inputKind: "voice", voiceClipId: "clip_v0j2kl" });
-  // Store the raw source text before tidyText, so the trace can compare.
-  const spokenRaw = intake.history[intake.history.length - 1];
-  assert.equal(spokenRaw.text, engine.Steer.REPLIES.en.confirming("Nora Alvarez"));
-  await intake.submit("yes");
+  // The answer is stored as it is given — the provenance below is what the
+  // trace compares against, not a confirmation step that no longer exists.
 
   const folded = store.fold();
   const prov = engine.provenanceOf(folded, "applicant");
@@ -232,7 +230,6 @@ test("editField marks the value as an in-place edit with no source or clip", asy
   const f0 = engine.SCHEMA.fields[0];
 
   await intake.submit(validAnswerFor(f0), { inputKind: "voice", voiceClipId: "clip_abc" });
-  await intake.submit("yes");
   intake.editField(f0.path, "Nora Alvarez Corrigan");
 
   const folded = store.fold();

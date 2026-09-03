@@ -499,6 +499,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 #pwModal input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
 #pwModal .pw-gen{background:none;border:none;color:var(--seal);font:600 12px Inter;cursor:pointer;padding:5px 0 0}
 #pwModal .pw-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
+.inline-editor .modal.review-modal{width:min(560px,94vw)}
+#reviewModal .review-sub{font-size:12.5px;color:var(--muted);line-height:1.5;margin:2px 0 12px}
+#reviewModal .review-rows{max-height:min(52vh,420px);overflow-y:auto;margin-bottom:14px;scrollbar-width:thin}
+#reviewModal .rrow{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--line)}
+#reviewModal .rrow:last-child{border-bottom:none}
+#reviewModal .rrow .rlabel{flex:0 0 38%;font:600 11.5px Inter;color:var(--muted);line-height:1.4}
+#reviewModal .rrow .rvalue{flex:1;font-size:13px;color:var(--ink);line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+#reviewModal .rrow .redit{flex:none;background:none;border:none;color:var(--seal);font:600 11.5px Inter;cursor:pointer;padding:1px 2px;text-decoration:underline;text-underline-offset:2px}
+#reviewModal .rrow .redit:hover{color:var(--ink)}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .inline-editor .btns button.cancel:hover{background:var(--wash)}
@@ -993,6 +1002,19 @@ nav .setup .rail-toggle{display:inline-flex}
   </div>
 </div></div>
 
+<!-- Section review. Shown when a stretch of the interview is finished: what
+     was captured, in the person's own words, editable in place. This is the
+     only place the app asks "does this look right?" — see Intake._openReview
+     for why it is per section and not per answer. -->
+<div class="inline-editor" id="reviewModal"><div class="modal review-modal">
+  <h3 id="reviewTitle">Let's review</h3>
+  <p class="review-sub" id="reviewSub"></p>
+  <div class="review-rows" id="reviewRows"></div>
+  <div class="btns">
+    <button class="primary" id="reviewOk">Looks right →</button>
+  </div>
+</div></div>
+
 <!-- Change this account's password. The new password is downloaded as a
      small file the moment the change succeeds: most homeservers, matrix.org
      included, have no password reset, so a password nobody wrote down is an
@@ -1099,7 +1121,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="pipeline">Pipeline</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -3873,6 +3895,8 @@ class Intake {
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
     this._probes = Object.create(null);  // field path -> times asked again (see _probeReply)
+    this.awaitingReview = null;          // section key whose review is open, if any
+    this._reviewed = new Set();          // sections already looked over
     this._drafts = Object.create(null);  // field path -> earlier partial answers to that same question
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
     this._listeners = new Set();
@@ -3990,6 +4014,10 @@ class Intake {
     this.pending = null;
     const f = this.nextField();
     if (!f) {
+      // The last section never crosses a boundary, so its review happens here
+      // instead — nobody should reach "thank you, we're done" without having
+      // seen the final stretch of what they said.
+      if (this._lastSection !== undefined && this._openReview(this._lastSection)) return;
       // The mandatory Rep. Behn's-office closing only applies to the OCR
       // intake this schema was built for — a differently-repurposed schema
       // (via the admin's "Author questions" panel) falls back to Steer's
@@ -4002,6 +4030,15 @@ class Intake {
       this._emit("complete", this.answers());
       return;
     }
+    const sec = f.section || null;
+    // Leaving a section is the moment to look back at it. Everything in it is
+    // already stored — answers are no longer held hostage to a yes after each
+    // one — so this is a review, not a gate: read it over, fix anything, keep
+    // going. Asking "does that look right?" thirty-six times taught people to
+    // say yes without reading; asking three times, about a page of their own
+    // words at once, is a question someone can actually answer.
+    if (this._lastSection !== undefined && sec !== this._lastSection && this._openReview(this._lastSection)) return;
+
     this._emit("field", f);
     this._emitContext();  // the fold changed with the field — refresh any open inspector
     // Crossing into a new section gets its one hand-written transition line
@@ -4009,7 +4046,6 @@ class Intake {
     // flat list. The FIRST section of a session is seated silently: the
     // opening blurb/overview already covers "here's how this starts", and a
     // resumed session shouldn't re-announce the part it's already in.
-    const sec = f.section || null;
     if (this._lastSection === undefined) this._lastSection = sec;
     else if (sec && sec !== this._lastSection) {
       const intro = SECTION_INTROS[sec];
@@ -4017,6 +4053,56 @@ class Intake {
       this._lastSection = sec;
     }
     this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
+  }
+
+  // Everything answered in one section, in the order it was asked — what the
+  // review shows, and what the letter will be built from.
+  reviewRows(sectionKey) {
+    const a = this.answers();
+    return this._visibleFields(a)
+      .filter((f) => (f.section || null) === sectionKey)
+      .map((f) => ({ path: f.path, label: f.label, value: a[f.path] ?? "", field: f }))
+      .filter((r) => r.value !== "" && r.value != null);
+  }
+
+  // Opens the review for a finished section, if there is anything in it and
+  // it hasn't already been reviewed. Returns true when the interview should
+  // pause here and wait for the person to approve it.
+  _openReview(sectionKey) {
+    if (!sectionKey || this._reviewed.has(sectionKey)) return false;
+    const rows = this.reviewRows(sectionKey);
+    if (!rows.length) { this._reviewed.add(sectionKey); return false; }
+    const section = SECTIONS.find((s) => s.key === sectionKey);
+    const title = (this.lang === "es" && section?.labelEs) || section?.label || "";
+    this.awaitingReview = sectionKey;
+    this._say("assistant", this._reply("reviewing", { meta: { section: title } }), { support: true });
+    this._emit("review", { section: sectionKey, title, rows });
+    return true;
+  }
+
+  // The person said the section reads right (from the review panel, or by
+  // simply saying so in the chat). Nothing is stored here — it already was —
+  // this only releases the interview to carry on into the next section.
+  async approveReview() {
+    if (!this.awaitingReview) return;
+    this._reviewed.add(this.awaitingReview);
+    this._lastSection = this.awaitingReview;
+    this.awaitingReview = null;
+    this._emit("reviewClosed", {});
+    return this._askNext();
+  }
+
+  // Re-opens the review the person is currently in — used after an edit, so
+  // the panel shows what they just changed.
+  refreshReview() {
+    if (!this.awaitingReview) return;
+    const sectionKey = this.awaitingReview;
+    const section = SECTIONS.find((s) => s.key === sectionKey);
+    this._emit("review", {
+      section: sectionKey,
+      title: (this.lang === "es" && section?.labelEs) || section?.label || "",
+      rows: this.reviewRows(sectionKey),
+    });
   }
 
   // The person sent a message. This is where the physics-steered,
@@ -4050,6 +4136,17 @@ class Intake {
     if (intent.distress) {
       Steer.applyForce(this.steer, { distress: true });
       this._say("assistant", this._reply("safety"), { support: true });
+      return;
+    }
+
+    // While a section review is open the interview is paused on purpose: the
+    // next question is not asked until the person has looked over the last
+    // stretch. Saying "yes" here is the same as pressing the button on the
+    // panel; anything else gets pointed back at it, since a typed correction
+    // has no field to land in.
+    if (this.awaitingReview) {
+      if (intent.yes) return this.approveReview();
+      this._say("assistant", this._reply("reviewHelp"), { support: true });
       return;
     }
 
@@ -4177,12 +4274,13 @@ class Intake {
         inputKind: meta.inputKind === "voice" ? "voice" : "typed",
         voiceClipId: meta.voiceClipId || null,
       };
-      // Confirms the whole value being stored, which after a back-and-forth
-      // is everything the person said across those turns, not just the last.
-      thinking.text = this._reply("confirming", { meta: { value: this.pending.value } }); thinking.streaming = false; thinking.support = false;
-      this._emit("message", thinking);
-      this._emit("pending", this.pending);
-      return;
+      // Stored on the spot. The old "You said: … does that look right?" ran
+      // after every single answer — thirty-six yes/no round trips to get
+      // through one interview, which is both exhausting and self-defeating:
+      // asked that many times, people stop reading and just say yes. What
+      // they get instead is one look back over each section (see _openReview),
+      // where a page of their own words is something they can actually check.
+      return this._confirm({ ackInto: thinking });
     }
 
     // The person attempted an answer but it didn't validate (e.g. free text
@@ -4332,7 +4430,7 @@ class Intake {
   // The DEF payload carries the full audit provenance (raw source text,
   // typed vs voice-transcribed, and the encrypted recording id) so the
   // assembled letter can trace every line back to what was said.
-  async _confirm() {
+  async _confirm({ ackInto = null } = {}) {
     const { field, value, source, inputKind, voiceClipId } = this.pending;
     const ev = this.store.emit(OP.DEF, {
       anchor: this.anchor, path: field.path, value,
@@ -4344,7 +4442,15 @@ class Intake {
     // Rotate through the vetted acknowledgement variants (keyed by how many
     // answers this session has stored) so thirty saves don't read as the
     // same sentence thirty times — still only ever lines from the table.
-    this._say("assistant", this._reply("confirmed", { meta: { n: this.epoch - 1 } }));
+    const ack = this._reply("confirmed", { meta: { n: this.epoch - 1 } });
+    if (ackInto) {
+      // Reuse the "thinking" bubble already on screen rather than leaving an
+      // empty one behind and adding a second.
+      ackInto.text = ack; ackInto.streaming = false; ackInto.support = false;
+      this._emit("message", ackInto);
+    } else {
+      this._say("assistant", ack);
+    }
     this._sayMilestone();
     this._emit("stored", { field, value, event: ev });
     this._checkFilingDeadline(field, value);
@@ -4734,6 +4840,11 @@ function afterCutoff(at) {
 // an applicant's own session: a family resuming an interview they started
 // last week must still see everything they told us.
 function officeRoomEvents(storeKind, client, roomId) {
+  // The shared question set lives in a room of its own, and it is not a
+  // family. Left in, it renders as a submission with no name, no phone and
+  // no answers — an empty row the office has to learn to ignore. Skipping it
+  // here covers every surface at once, since they all read through this.
+  if (configStore && configStore.roomId && roomId === configStore.roomId) return [];
   const events = storeKind === "matrix"
     ? MatrixStore.foldRoomEvents(client, roomId)
     : DemoStore.loadEvents(roomId);
@@ -4941,7 +5052,17 @@ function collectPipelineData({ storeKind, client }) {
 
     const caseStatus = folded.anchors?.case?.status?.value || "new";
 
-    pipelines.push({ roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus });
+    const valueOf = (path) => (answers.find((a) => a.path === path) || {}).value || "";
+    // "Can this device read it" belongs on the row, not only in a banner at
+    // the top: a submission that shows two answers because the rest can't be
+    // decrypted must not look like a family who only answered twice.
+    const unreadable = storeKind === "matrix" ? MatrixStore.readRoom(client, roomId).undecryptable : 0;
+    pipelines.push({
+      roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus,
+      phone: valueOf("complainant_phone"),
+      email: valueOf("complainant_email"),
+      unreadable,
+    });
   }
   return pipelines.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 }
@@ -5039,7 +5160,7 @@ function initAdminView({ onClose }) {
   const body = document.getElementById("adminBody");
   const who = document.getElementById("adminWho");
   const tabs = Array.from(root.querySelectorAll(".atab"));
-  let active = "table";
+  let active = "answers";  // the submissions list — what an office opens this for
   let ctx = null;
   let searchQuery = "";
   let searchTimer = null;
@@ -5050,18 +5171,26 @@ function initAdminView({ onClose }) {
   // so state stored on it never survives the re-render its own click
   // handlers trigger.
   let pipelineViewing = null;
+  // Which column the case table is sorted by, and which way. Held here, not
+  // on the table, because renderActive() throws the table away and rebuilds
+  // it on every refresh (including the live ones a new answer triggers).
+  let caseSort = { key: "updated", dir: "desc" };
   // Which of the three kanban boards (submissions / documents / letters)
   // the Kanban tab is showing. Submissions is the default: it's the queue
   // of whole cases, which is what "processing" mostly means here.
   let kanbanBoard = "submissions";
 
-  tabs.forEach((btn) => {
-    btn.onclick = () => {
-      active = btn.dataset.view;
-      tabs.forEach((b) => b.classList.toggle("on", b === btn));
-      renderActive();
-    };
-  });
+  // Switching tabs from a click, or from code (opening a family from the
+  // case table lands on the tab that reviews one submission).
+  function showTab(key) {
+    const btn = tabs.find((b) => b.dataset.view === key);
+    if (!btn) return;
+    active = key;
+    tabs.forEach((b) => b.classList.toggle("on", b === btn));
+    renderActive();
+  }
+
+  tabs.forEach((btn) => { btn.onclick = () => showTab(btn.dataset.view); });
   document.getElementById("adminClose").onclick = onClose;
 
   function matchesQuery(text, q) {
@@ -5098,9 +5227,28 @@ function initAdminView({ onClose }) {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
       body.appendChild(renderTable(filtered));
     } else if (active === "answers") {
-      const allAnswers = collectAllAnswers(ctx);
-      const filtered = allAnswers.filter((a) => matchesQuery(`${a.applicantName} ${a.path} ${a.value}`, q));
-      body.appendChild(renderAnswersTable(filtered));
+      // One list of families, and the full review of whichever one is open —
+      // the same single-submission view the queue used, rendered here so
+      // opening a family doesn't move the reviewer to another tab.
+      const all = collectPipelineData(ctx);
+      const viewing = pipelineViewing ? all.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
+      if (viewing) {
+        const bar = $e("div");
+        bar.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px";
+        const back = document.createElement("button");
+        back.textContent = "← All submissions";
+        back.className = "aclose";
+        back.onclick = () => { pipelineViewing = null; renderActive(); };
+        bar.appendChild(back);
+        bar.appendChild($e("div", "acell-name", viewing.applicantName));
+        bar.appendChild(caseStatusSelect(viewing));
+        body.appendChild(bar);
+        renderSingleSubmission(body, viewing);
+      } else {
+        body.appendChild(renderCaseTable(
+          all.filter((p) => matchesQuery(`${p.applicantName} ${p.phone} ${p.email} ${p.caseStatus}`, q)),
+        ));
+      }
     } else if (active === "kanban") {
       body.appendChild(kanbanSwitcher());
       if (kanbanBoard === "documents") {
@@ -5246,34 +5394,94 @@ function initAdminView({ onClose }) {
     return wrap;
   }
 
-  function renderAnswersTable(answers) {
-    if (!answers.length) return $e("div", "aempty", answers.length === 0 && !searchQuery ? "No answers recorded yet." : "No answers match your search.");
+  // One row per family, not one row per answer. The old grid listed every
+  // stored value on its own line — thousands of rows of "applicant / field /
+  // value" that answered no question an office actually has. What they need
+  // on sight is who this is, how to reach them, whether the submission can
+  // be read here, and how far along it is.
+  function renderCaseTable(cases) {
+    if (!cases.length) {
+      return $e("div", "aempty", searchQuery ? "No submissions match your search." : "No submissions yet — they appear here as constituents answer questions.");
+    }
+
+    const columns = [
+      { key: "name", label: "Applicant", get: (c) => c.applicantName || "" },
+      { key: "phone", label: "Phone", get: (c) => c.phone || "" },
+      { key: "answers", label: "Answers", get: (c) => c.answers.length, numeric: true },
+      { key: "readable", label: "Readable here", get: (c) => c.unreadable },
+      { key: "letters", label: "Drafts", get: (c) => c.letters.length, numeric: true },
+      { key: "updated", label: "Last activity", get: (c) => c.lastActivity || "" },
+      { key: "status", label: "Status", get: (c) => c.caseStatus || "" },
+    ];
+
+    const col = columns.find((c) => c.key === caseSort.key) || columns[0];
+    const dir = caseSort.dir === "asc" ? 1 : -1;
+    const rows = [...cases].sort((a, b) => {
+      const x = col.get(a), y = col.get(b);
+      if (col.numeric || typeof x === "number") return ((x || 0) - (y || 0)) * dir;
+      return String(x).localeCompare(String(y), undefined, { sensitivity: "base" }) * dir;
+    });
+
     const wrap = $e("div", "atable-wrap");
-    const table = document.createElement("table"); table.className = "atable";
-    table.innerHTML = "<thead><tr><th>Applicant</th><th>Field</th><th>Value</th><th>Input</th><th>Updated</th><th>By</th><th></th></tr></thead>";
+    const table = document.createElement("table");
+    table.className = "atable";
+
+    const thead = document.createElement("thead");
+    const htr = document.createElement("tr");
+    for (const c of columns) {
+      const th = document.createElement("th");
+      th.textContent = c.label + (caseSort.key === c.key ? (caseSort.dir === "asc" ? " ↑" : " ↓") : "");
+      th.style.cursor = "pointer";
+      th.title = "Sort by " + c.label.toLowerCase();
+      th.onclick = () => {
+        // Clicking the sorted column flips it; clicking another starts on the
+        // order that column is most useful in — newest first for a date, A-Z
+        // for a name.
+        caseSort = caseSort.key === c.key
+          ? { key: c.key, dir: caseSort.dir === "asc" ? "desc" : "asc" }
+          : { key: c.key, dir: c.key === "updated" || c.numeric ? "desc" : "asc" };
+        renderActive();
+      };
+      htr.appendChild(th);
+    }
+    htr.appendChild(document.createElement("th"));
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
     const tbody = document.createElement("tbody");
-    for (const a of answers) {
+    for (const c of rows) {
       const tr = document.createElement("tr");
-      tr.appendChild($e("td", "acell-name", a.applicantName));
-      tr.appendChild($e("td", "acell-field", a.path));
-      tr.appendChild($e("td", "acell-val", String(a.value).slice(0, 200)));
-      tr.appendChild($e("td", "acell-mime mono", a.inputKind));
-      tr.appendChild($e("td", "acell-date mono", fmtDate(a.at)));
-      tr.appendChild($e("td", "acell-by mono", a.by));
-      // Voice-answered fields get a play button right beside the transcript
-      // it produced — the reviewer can check the transcription against
-      // exactly what was said without leaving this table.
-      const audioTd = document.createElement("td");
-      if (a.voiceClip) {
-        const play = $e("button", "aview", "▶ Play");
-        play.title = "Play the original recording this transcript came from";
-        play.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
-        audioTd.appendChild(play);
+      tr.style.cursor = "pointer";
+      tr.onclick = () => { pipelineViewing = c; renderActive(); };
+      tr.appendChild($e("td", "acell-name", c.applicantName || "(no name yet)"));
+      tr.appendChild($e("td", "acell-val", c.phone || "—"));
+      tr.appendChild($e("td", "acell-mime mono", String(c.answers.length)));
+
+      const readable = document.createElement("td");
+      readable.className = "acell-mime mono";
+      if (c.unreadable) {
+        readable.textContent = `${c.unreadable} unreadable`;
+        readable.style.color = "var(--turn)";
+        readable.title = "Encrypted for an office device that isn't this one — open on that device.";
+      } else {
+        readable.textContent = "yes";
+        readable.style.color = "var(--muted)";
       }
-      tr.appendChild(audioTd);
+      tr.appendChild(readable);
+
+      tr.appendChild($e("td", "acell-mime mono", String(c.letters.length)));
+      tr.appendChild($e("td", "acell-date mono", c.lastActivity ? fmtDate(c.lastActivity) : "—"));
+      tr.appendChild($e("td", "acell-mime mono", c.caseStatus || "new"));
+
+      const open = document.createElement("td");
+      const btn = $e("button", "aview", "Open →");
+      btn.onclick = (e) => { e.stopPropagation(); pipelineViewing = c; renderActive(); };
+      open.appendChild(btn);
+      tr.appendChild(open);
       tbody.appendChild(tr);
     }
-    table.appendChild(tbody); wrap.appendChild(table);
+    table.appendChild(tbody);
+    wrap.appendChild(table);
     return wrap;
   }
 
@@ -6713,15 +6921,73 @@ function onIntake(kind, data) {
   } else if (kind === "token") {
     if (streamingNode) updateStreamingText(streamingNode, data.text);
   } else if (kind === "stored") {
-    flashLedger(data.event); toast("Answer saved");
+    // No toast per answer any more: with the confirmation step gone, every
+    // answer stores, and a popup for each one is thirty-six popups. The
+    // checklist ticking over and the acknowledgement in the conversation
+    // already say it.
+    flashLedger(data.event);
   } else if (kind === "field") {
     renderSide();
     renderQuickAnswer(data);
   } else if (kind === "context") {
     renderFold(data);
+  } else if (kind === "review") {
+    renderSectionReview(data);
+  } else if (kind === "reviewClosed") {
+    closeSectionReview();
   } else if (kind === "complete") {
     renderSide(); renderQuickAnswer(null); celebrate(); toast("All questions answered!", "success");
   }
+}
+
+// The one "does this look right?" moment in the interview — a section's worth
+// of answers, in the person's own words, each editable where it sits. Rebuilt
+// from scratch each time it opens (and after every edit), because the answers
+// behind it are the live fold, not a copy this panel is holding.
+function renderSectionReview({ title, rows }) {
+  const es = intake?.lang === "es";
+  $("reviewTitle").textContent = es ? `Repasemos: ${title}` : `Let's review: ${title}`;
+  $("reviewSub").textContent = es
+    ? "Esto es lo que tengo hasta ahora. Si algo no está bien, edítalo aquí — nada se envía todavía."
+    : "Here's what I have so far. If anything isn't right, edit it here — nothing is sent yet.";
+  const box = $("reviewRows");
+  box.innerHTML = "";
+  for (const row of rows) {
+    const r = el("div", "rrow");
+    r.appendChild(el("div", "rlabel", row.label));
+    r.appendChild(el("div", "rvalue", String(row.value)));
+    const edit = el("button", "redit", es ? "Cambiar" : "Change");
+    edit.type = "button";
+    edit.onclick = async () => {
+      const next = await openInlineEditor(row.field, row.value);
+      if (next == null) return;
+      const res = intake.editField(row.path, next);
+      if (!res.ok) { toast(res.error, "error"); return; }
+      // Re-read from the store rather than patching this row, so what the
+      // person sees is what was actually stored.
+      intake.refreshReview();
+    };
+    r.appendChild(edit);
+    box.appendChild(r);
+  }
+  $("reviewOk").textContent = es ? "Está bien →" : "Looks right →";
+  $("reviewModal").classList.add("on");
+}
+
+function closeSectionReview() { $("reviewModal").classList.remove("on"); }
+
+function wireSectionReview() {
+  $("reviewOk").onclick = () => {
+    closeSectionReview();
+    intake?.approveReview();
+  };
+  // Clicking the backdrop closes the panel but does NOT approve the section:
+  // the interview stays paused, and the chat says how to reopen it.
+  $("reviewModal").addEventListener("click", (e) => {
+    if (e.target !== $("reviewModal")) return;
+    closeSectionReview();
+    toast(intake?.lang === "es" ? "Di sí cuando el resumen esté bien." : "Say yes when the summary looks right.");
+  });
 }
 
 // A structured control for the current field, shown just above the free-text
@@ -8123,8 +8389,10 @@ async function initEntry() {
     hideLogin();
     await boot();
     openAdmin();
-    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
-    if (pipelineTab) pipelineTab.click();
+    // Submissions is where an office starts; it is also the default tab, so
+    // this only matters when a previous view was left open.
+    const submissionsTab = document.querySelector('.atab[data-view="answers"]');
+    if (submissionsTab) submissionsTab.click();
     return;
   }
   // Checked before the saved-session resume below, which otherwise carries
@@ -9350,8 +9618,10 @@ async function boot() {
     renderDocs();
     renderLedgerFromTimeline();
     openAdmin();
-    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
-    if (pipelineTab) pipelineTab.click();
+    // Submissions is where an office starts; it is also the default tab, so
+    // this only matters when a previous view was left open.
+    const submissionsTab = document.querySelector('.atab[data-view="answers"]');
+    if (submissionsTab) submissionsTab.click();
     return;
   }
 
@@ -9866,6 +10136,7 @@ document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
   wirePasswordModal();
+  wireSectionReview();
   wireCompose();
   wireBulk();
   wireVoice();
