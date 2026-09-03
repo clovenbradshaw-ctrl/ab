@@ -8027,10 +8027,47 @@ function openMatrixPasswordReset() {
 // to read. Throwing here routes every caller into its existing fallback,
 // which keeps the person on local-only storage: their answers survive, they
 // just never leave the device.
+// The one crypto store this origin gets. matrix-js-sdk hardcodes its
+// IndexedDB prefix ("matrix-js-sdk"), so every session in this browser
+// shares one store, and the store belongs to exactly one user+device. Sign
+// in a second time — which mints a new device — and opening it fails with
+// "the account in the store doesn't match the account in the constructor."
+const CRYPTO_DB_PREFIX = "matrix-js-sdk";
+const CRYPTO_STORE_MISMATCH = "crypto-store-belongs-to-another-session";
+
+function isCryptoStoreMismatch(e) {
+  return /account in the store doesn'?t match/i.test(e?.message || "") || e?.code === CRYPTO_STORE_MISMATCH;
+}
+
+// Everything this device could decrypt, discarded. Only ever called with a
+// person's explicit say-so (see the sign-in recovery below): the keys in
+// here are the only way to read messages already received, and the server
+// cannot re-send them.
+async function wipeCryptoStore() {
+  const dbs = (await indexedDB.databases?.().catch(() => null)) || [];
+  const names = dbs.map((d) => d.name).filter((n) => n && n.startsWith(CRYPTO_DB_PREFIX));
+  // indexedDB.databases() is unavailable in some browsers (Firefox); fall
+  // back to the names the SDK actually uses.
+  const targets = names.length ? names : [`${CRYPTO_DB_PREFIX}::matrix-sdk-crypto`, `${CRYPTO_DB_PREFIX}::matrix-sdk-crypto-meta`];
+  await Promise.all(targets.map((name) => new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = req.onerror = req.onblocked = () => resolve();
+  })));
+}
+
 async function initClientCrypto(client) {
   try {
     await client.initRustCrypto({ useIndexedDB: true });
   } catch (e) {
+    if (isCryptoStoreMismatch(e)) {
+      // Not a broken browser and not a network problem — a second session.
+      // Handed up as its own kind of failure so the sign-in screen can offer
+      // the one recovery that exists instead of reporting a server outage.
+      const err = new Error("This browser already holds the encryption keys for a different session of this account.");
+      err.code = CRYPTO_STORE_MISMATCH;
+      console.error("[e2ee] crypto store belongs to another session:", e);
+      throw err;
+    }
     console.error("E2EE setup failed — refusing to use server storage:", e);
     toast("This browser can't set up encryption, so nothing will be sent to the server. Your answers stay on this device.", "warn");
     throw e;
@@ -8730,12 +8767,16 @@ function loginErrorMessage(e, homeserver) {
     return { text: "That doesn't look like a valid username. Try a plain name, like alice.", offerSignup: false, offerReset: false };
   if (code === "M_LIMIT_EXCEEDED")
     return { text: "Too many attempts — wait a moment and try again.", offerSignup: false, offerReset: false };
+  // An encryption failure is not the server being unreachable, and saying so
+  // sent people off checking a homeserver that was answering perfectly well.
+  if (/encrypt|crypto|indexeddb/i.test(e?.message || ""))
+    return { text: "Sign-in failed while setting up encryption on this device: " + e.message, offerSignup: false, offerReset: false };
   if (!onMatrixOrg)
     return { text: `Couldn't reach ${homeserver}: ${e.message}. If your account isn't on a server of its own, we can set one up for you.`, offerSignup: true, offerReset: false };
   return { text: "Sign-in failed: " + e.message, offerSignup: false, offerReset: false };
 }
 
-function showLoginError(text, { offerSignup = false, offerReset = false } = {}) {
+function showLoginError(text, { offerSignup = false, offerReset = false, offerFreshStart = null } = {}) {
   const err = document.getElementById("loginError");
   err.textContent = text;
   const cta = (label, handler) => {
@@ -8746,9 +8787,27 @@ function showLoginError(text, { offerSignup = false, offerReset = false } = {}) 
     err.appendChild(document.createElement("br"));
     err.appendChild(el);
   };
+  if (offerFreshStart) cta("Start fresh on this device →", offerFreshStart);
   if (offerReset) cta("Forgot your password? →", openMatrixPasswordReset);
   if (offerSignup) cta("Create a free account →", openSignupWizard);
   err.classList.add("show");
+}
+
+// Signing in again on a browser that already has a session for the same
+// account used to be the worst thing you could do to yourself: it mints a
+// second device, and a second device shares neither the crypto store (the
+// sign-in fails outright) nor any of the history the first one could read.
+// So when the saved session IS this account, resume it instead of logging
+// in again — same device, same keys, nothing lost. Returns true if it took.
+async function resumeInsteadOfNewDevice(userId) {
+  const saved = loadSilentAccount();
+  if (!saved || saved.userId !== userId) return false;
+  const client = await tryResumeSilentAccount(saved).catch(() => null);
+  if (!client) return false;
+  loginState = { kind: "matrix", client, userId: saved.userId };
+  hideLogin();
+  boot();
+  return true;
 }
 
 async function doMatrixLogin(homeserver, userId, password, submitBtn) {
@@ -8757,6 +8816,7 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
   try {
     const sdk = window.matrixcs;
     if (!sdk) throw new Error("Matrix SDK not loaded");
+    if (await resumeInsteadOfNewDevice(userId)) return;
     const tmp = sdk.createClient({ baseUrl: homeserver });
     const res = await tmp.loginWithPassword(userId, password);
     // useAuthorizationHeader — see MatrixStore.login's comment.
@@ -8774,11 +8834,32 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
     hideLogin();
     boot();
   } catch (e) {
+    if (e?.code === CRYPTO_STORE_MISMATCH) {
+      err.textContent = "";
+      showLoginError(
+        "This browser already holds encryption keys for a different session of this account, and only one session's keys can live here at a time. "
+        + "Starting fresh will sign you in — but messages received by that earlier session stay readable only there.",
+        { offerFreshStart: () => startFreshAndRetry(homeserver, userId, password, btn) },
+      );
+      btn.disabled = false;
+      return;
+    }
     const { text, offerSignup, offerReset } = loginErrorMessage(e, homeserver);
     err.textContent = "";
     showLoginError(text, { offerSignup, offerReset });
     btn.disabled = false;
   }
+}
+
+// The one recovery for a store that belongs to another session, taken only
+// when the person chooses it: discard this browser's keys and sign in as a
+// new device. Deliberately not automatic — what it throws away cannot be
+// fetched again from the server by anyone.
+async function startFreshAndRetry(homeserver, userId, password, btn) {
+  btn.disabled = true;
+  try { await wipeCryptoStore(); }
+  catch (e) { console.error("[e2ee] couldn't clear the old crypto store:", e); }
+  await doMatrixLogin(homeserver, userId, password, btn);
 }
 
 function doDemoLogin() {
