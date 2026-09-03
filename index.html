@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>Feedback Platform</title>
 <!-- Content-Security-Policy — the load-bearing control for "the homeserver
      operator can't read submissions".
@@ -53,13 +54,25 @@
      actually asks for an m.login.recaptcha stage. -->
 
 <style>
-:root{--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
+:root{color-scheme:light;--ink:#16242B;--paper:#E9EDF0;--surface:#FFFFFF;--wash:#F2F5F7;--line:#D3DADF;--muted:#5C6B72;--seal:#2E6F5E;--seal-soft:#E4EFEA;--turn:#B67A2E;--turn-soft:#FBF1E3;--red:#B0402F;--red-soft:#FBE7E1;--shadow:0 1px 3px rgba(22,36,43,.06),0 8px 24px rgba(22,36,43,.05);--shadow-lg:0 4px 16px rgba(22,36,43,.1),0 16px 48px rgba(22,36,43,.08);--r:14px;--max-w:1280px;--col-w:360px;--ease-out:cubic-bezier(.22,1,.36,1)}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
-body{background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
+/* Everything in this file is sized in px, so one zoom on the body is the
+   only lever that scales the whole page at once: type, spacing, rails and
+   chat column all step down together and the layout math underneath is
+   untouched. Below the phone breakpoint it goes back to 1 — a small screen
+   has no room to give away. */
+body{zoom:.82;background:var(--paper);color:var(--ink);font:400 16px/1.55 Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
 .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
 .hidden{display:none!important}
 nav .setup .rail-toggle{display:none}
-@media(prefers-color-scheme:dark){:root{--ink:#E9EDF0;--paper:#11181C;--surface:#1A2429;--line:#2A353C;--muted:#88969E;--shadow:0 1px 3px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);--shadow-lg:0 4px 16px rgba(0,0,0,.4),0 16px 48px rgba(0,0,0,.3);--seal-soft:#1A2F28;--turn-soft:#2F2416;--red-soft:#2F1814}.msg-group.end .msg-bubble{background:var(--seal)!important;color:#fff!important}.msg-group.start .msg-bubble{background:#1F2A30!important;color:var(--ink)!important;border-color:var(--line)!important}.msg-group.start .msg-bubble.support{background:var(--seal-soft)!important}.loader{background:rgba(17,24,28,.92)!important}.kcol{background:#1A2429!important}.kcard{background:#1F2A30!important}.docs-drop{background:#1A2429!important}.atable th{background:var(--surface)!important}.drawer{background:var(--paper)!important}.mem,.q{border-color:var(--line)!important}.scrim,.docscrim{background:rgba(0,0,0,.5)!important}}
+/* One theme, on purpose. The dark palette that used to live here was a
+   second set of colors nobody was reviewing: hardcoded light tints kept
+   appearing in new components with no dark counterpart, so a section
+   stepper or a status pill would come out as white text on a white chip.
+   color-scheme below tells the browser to keep its own furniture — form
+   controls, scrollbars, spellcheck underlines — light too, so a person
+   whose whole OS is dark still gets one coherent page rather than half
+   of each. */
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* Login screen */
@@ -83,7 +96,7 @@ nav .setup .rail-toggle{display:none}
 .login-btn.primary:hover{opacity:.88}
 .login-btn.primary:active{transform:scale(.98)}
 .login-btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:8px}
-.login-btn.ghost:hover{background:#F2F5F7}
+.login-btn.ghost:hover{background:var(--wash)}
 .login-btn:disabled{opacity:.4;cursor:default;transform:none}
 .login-card .matrix-fields{max-height:0;overflow:hidden;transition:max-height .35s ease,opacity .25s ease;opacity:0}
 .login-card .matrix-fields.open{max-height:600px;opacity:1}
@@ -134,7 +147,7 @@ nav .setup .rail-toggle{display:none}
 .su-head h2{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0;letter-spacing:-.01em}
 .su-head .su-sub{font-size:12px;color:var(--muted);margin:2px 0 0}
 .su-back{flex:none;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:15px;line-height:1;cursor:pointer;margin-top:2px}
-.su-back:hover{background:#F2F5F7;color:var(--ink)}
+.su-back:hover{background:var(--wash);color:var(--ink)}
 .su-steps{display:flex;gap:4px;margin:0 0 16px}
 .su-steps i{flex:1;height:3px;border-radius:99px;background:var(--line);transition:background .3s ease}
 .su-steps i.at{background:var(--seal)}
@@ -168,7 +181,7 @@ nav .setup .rail-toggle{display:none}
 .su-pw{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface)}
 .su-pw .val{flex:1;font-family:"IBM Plex Mono",monospace;font-size:14px;word-break:break-all;letter-spacing:.01em}
 .su-pw button{flex:none;font:600 11.5px Inter;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
-.su-pw button:hover{background:#F2F5F7}
+.su-pw button:hover{background:var(--wash)}
 .su-strength{font-size:12px;margin-top:6px;min-height:17px}
 .su-strength.ok{color:var(--seal)}
 .su-strength.mid{color:var(--turn)}
@@ -195,7 +208,7 @@ nav .setup .rail-toggle{display:none}
 .su-cred .k{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);width:74px;flex:none}
 .su-cred .v{flex:1;font-family:"IBM Plex Mono",monospace;font-size:13px;word-break:break-all}
 .su-cred .cp{flex:none;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer}
-.su-cred .cp:hover{background:#F2F5F7}
+.su-cred .cp:hover{background:var(--wash)}
 .su-cred .cp.done{color:var(--seal);border-color:var(--seal)}
 .su-dl{display:block;width:100%;padding:11px;border:none;border-radius:9px;font:600 14px Inter;cursor:pointer;background:var(--ink);color:#fff;margin-bottom:10px}
 .su-dl:hover{opacity:.88}
@@ -215,7 +228,7 @@ nav.top .brand .sub{color:var(--muted);font-size:12px;display:none}
 nav .spacer{flex:1;min-width:8px}
 nav .setup{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 nav .setup select,nav .setup button,nav .setup a.btn{font:inherit;font-size:11.5px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:background .15s ease}
-nav .setup button:hover{background:#F2F5F7}
+nav .setup button:hover{background:var(--wash)}
 nav .setup .icon-btn{padding:5px 7px;min-width:30px;justify-content:center;font-size:15px}
 nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .status{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:4px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -256,7 +269,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
    what's left / when do I get to the story part" question the interview
    overview text answers, answered visually every screen instead of once. */
 .sect-stepper{display:flex;gap:6px;padding:9px 16px 11px;border-bottom:1px solid var(--line);background:var(--surface)}
-.sect-stepper .sect{flex:1;min-width:0;position:relative;border-radius:9px;padding:7px 10px;background:#F2F5F7;border:1.5px solid transparent;overflow:hidden;transition:border-color .15s ease,opacity .15s ease}
+.sect-stepper .sect{flex:1;min-width:0;position:relative;border-radius:9px;padding:7px 10px;background:var(--wash);border:1.5px solid transparent;overflow:hidden;transition:border-color .15s ease,opacity .15s ease}
 .sect-stepper .sect .fill{position:absolute;left:0;top:0;bottom:0;background:var(--seal-soft);width:0%;transition:width .35s ease;z-index:0}
 .sect-stepper .sect .row{position:relative;z-index:1;display:flex;align-items:flex-start;gap:6px}
 .sect-stepper .sect .num{flex:none;width:16px;height:16px;border-radius:50%;background:var(--line);color:var(--muted);font:700 9px "IBM Plex Mono",monospace;display:grid;place-items:center;line-height:1;margin-top:1px}
@@ -281,7 +294,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .msg-name{font-weight:600}
 .msg-bubble{padding:9px 12px;border-radius:12px;font-size:14px;white-space:pre-wrap;word-break:break-word;line-height:1.5}
 .msg-group.end .msg-bubble{background:var(--ink);color:#fff;border-bottom-right-radius:4px}
-.msg-group.start .msg-bubble{background:#F2F5F7;border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg-group.start .msg-bubble{background:var(--wash);border:1px solid var(--line);border-bottom-left-radius:4px}
 .msg-group.start .msg-bubble.support{background:var(--seal-soft);border-color:#C9E0D5}
 .msg-bubble .tag{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--seal);font-weight:600;margin-bottom:2px}
 .msg-bubble .tag.help{color:var(--turn)}
@@ -308,7 +321,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .quick-answer .qa-btn{font:600 13px Inter;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;transition:border-color .15s ease,background .15s ease}
 .quick-answer .qa-btn:hover{border-color:var(--seal);background:var(--seal-soft)}
 .quick-answer .qa-decline{font-weight:500;color:var(--muted);border-style:dashed}
-.quick-answer .qa-decline:hover{border-color:var(--muted);background:#F2F5F7}
+.quick-answer .qa-decline:hover{border-color:var(--muted);background:var(--wash)}
 .quick-answer .qa-select{font:inherit;font-size:13px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);max-width:260px}
 .quick-answer .qa-go{font:600 13px Inter;padding:7px 14px;border-radius:8px;border:none;background:var(--ink);color:#fff;cursor:pointer}
 .quick-answer .qa-checks{display:flex;flex-direction:column;gap:4px;width:100%}
@@ -318,15 +331,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;background:var(--surface)}
 .compose .input-wrap{flex:1;display:flex;align-items:flex-end;gap:6px;border:1px solid var(--line);border-radius:10px;padding:3px 3px 3px 10px;background:var(--surface);transition:border-color .15s ease}
 .compose .input-wrap:focus-within{border-color:var(--seal);box-shadow:0 0 0 3px rgba(46,111,94,.1)}
-.compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:100px;background:transparent;color:var(--ink);outline:none}
+.compose textarea{flex:1;resize:none;border:none;padding:6px 0;font:inherit;font-size:14px;max-height:180px;background:transparent;color:var(--ink);outline:none}
 .compose .input-actions{display:flex;gap:3px}
 .compose .input-actions button{border:none;background:transparent;color:var(--muted);cursor:pointer;padding:5px;border-radius:6px;font-size:15px;line-height:1;display:grid;place-items:center}
-.compose .input-actions button:hover{background:#F2F5F7;color:var(--ink)}
+.compose .input-actions button:hover{background:var(--wash);color:var(--ink)}
 .compose .send-btn{border:none;background:var(--ink);color:#fff;border-radius:8px;padding:0 14px;height:34px;font:600 13px Inter;cursor:pointer;flex:none;transition:opacity .15s ease,transform .1s ease}
 .compose .send-btn:active{transform:scale(.96)}
 .compose .send-btn:disabled{opacity:.35;cursor:default;transform:none}
 .hint{padding:0 14px 8px;font-size:11px;color:var(--muted)}
-.hint kbd{font-family:inherit;background:#F2F5F7;border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
+.hint kbd{font-family:inherit;background:var(--wash);border:1px solid var(--line);border-radius:3px;padding:1px 4px;font-size:10px;border-bottom-width:2px}
 #micBtn.recording{color:var(--red);background:var(--red-soft);animation:mic-pulse 1.4s ease-in-out infinite}
 #micBtn.busy{opacity:.6;cursor:default}
 #micBtn{position:relative}
@@ -337,14 +350,14 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .voice-note.hidden{display:none}
 .compose textarea.streaming{box-shadow:0 0 0 2px rgba(46,111,94,.3);border-radius:6px;animation:voice-glow 1.6s ease-in-out infinite}
 @keyframes voice-glow{0%,100%{box-shadow:0 0 0 2px rgba(46,111,94,.22)}50%{box-shadow:0 0 0 4px rgba(46,111,94,.42)}}
-.compose .voice-wave{flex:1;height:34px;width:100%;display:block}
+.compose .voice-wave{flex:none;height:26px;width:56px;display:block;opacity:.85;align-self:center}
 .compose .voice-wave.hidden{display:none}
 
 /* Rail */
 .rail{display:flex;flex-direction:column;gap:14px;min-height:0;overflow-y:auto;scrollbar-width:thin}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
 .card h2{font-family:Fraunces,serif;font-weight:560;font-size:14px;margin:0;padding:10px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px;flex:none}
-.card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:#F2F5F7}
+.card h2 .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
 /* "Your answers" vs "Supporting docs" split the rail's vertical space 4:1
    (not their natural content height) — each is a flex column with its own
    internal scroll area, so a short docs list doesn't leave a tall empty gap
@@ -355,7 +368,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .check{list-style:none;margin:0;padding:4px;overflow-y:auto;scrollbar-width:thin}
 .rail-4 .check{flex:1;min-height:0}
 .check li{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer;transition:background .12s ease}
-.check li:hover{background:#F2F5F7}
+.check li:hover{background:var(--wash)}
 .check .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;flex:none;margin-top:1px;display:grid;place-items:center;transition:all .2s ease;font-size:10px}
 .check li.done .box{background:var(--seal);border-color:var(--seal);color:#fff}
 .check li.active .box{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.15)}
@@ -383,7 +396,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:3px;font-size:10px}
 
 /* Docs */
-.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:#FAFBFC;transition:border-color .15s ease,background .15s ease;flex:none}
+.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:var(--wash);transition:border-color .15s ease,background .15s ease;flex:none}
 .docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
 .docs-drop p{margin:0 0 3px;font-size:11.5px;color:var(--muted)}
 .docs-drop p:last-child{margin-bottom:0;font-size:10.5px}
@@ -400,7 +413,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .docs-list .dtitle-input{width:100%;box-sizing:border-box;font:inherit;font-size:11px;padding:3px 6px;margin-top:3px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
 .docs-list .docs-status{font-size:11px;color:var(--muted)}
 .docs-list .dview{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
-.docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:#F2F5F7}
+.docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:var(--wash)}
 .docs-list .doc.status-verified .dstatus{background:var(--seal-soft);color:var(--seal)}
 .docs-list .doc.status-flagged .dstatus{background:var(--red-soft);color:var(--red)}
 .docs-list .doc.status-in_review .dstatus{background:var(--turn-soft);color:var(--turn)}
@@ -422,6 +435,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
 .toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
 .toast .toast-icon{font-size:14px;flex:none}
+.toast .toast-count{font-variant-numeric:tabular-nums;opacity:.75;flex:none}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
 @keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
 
@@ -430,6 +444,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .toast{pointer-events:auto;background:var(--ink);color:#fff;padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:7px;animation:toastIn .3s var(--ease-out);max-width:320px}
 .toast.success{background:var(--seal)}.toast.error{background:var(--red)}.toast.warn{background:var(--turn)}
 .toast .toast-icon{font-size:14px;flex:none}
+.toast .toast-count{font-variant-numeric:tabular-nums;opacity:.75;flex:none}
 @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.95)}to{opacity:1;transform:none}}
 @keyframes toastOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px) scale(.95)}}
 
@@ -460,9 +475,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .field-address .addr-toggle:hover{color:var(--ink)}
 @media (max-width:420px){.field-address .addr-grid{grid-template-columns:1fr}.field-address .addr-grid .wide{grid-column:auto}}
 .inline-editor .btns{display:flex;gap:7px;justify-content:flex-end}
+#pwModal .pw-group{margin:12px 0}
+#pwModal label{display:block;font:600 11px Inter;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
+#pwModal input{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink)}
+#pwModal input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
+#pwModal .pw-gen{background:none;border:none;color:var(--seal);font:600 12px Inter;cursor:pointer;padding:5px 0 0}
+#pwModal .pw-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.inline-editor .btns button.cancel:hover{background:#F2F5F7}
+.inline-editor .btns button.cancel:hover{background:var(--wash)}
 .inline-editor .btns button:disabled{opacity:.4;cursor:default}
 .inline-editor#letterModal .modal{width:min(760px,94vw)}
 .inline-editor#traceModal .modal{width:min(640px,94vw)}
@@ -516,7 +537,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .pill-approved{background:#E4F0EA;color:#1E6B47}
 .pill-filed{background:var(--red-soft);color:var(--red)}
 .kanban{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:10px;overflow-x:auto;padding-bottom:6px}
-.kcol{background:#F2F5F7;border:1px solid var(--line);border-radius:var(--r);padding:9px;min-height:80px}
+.kcol{background:var(--wash);border:1px solid var(--line);border-radius:var(--r);padding:9px;min-height:80px}
 .khead{display:flex;justify-content:space-between;align-items:center;font:600 11.5px Inter;margin-bottom:6px}
 .kcount{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);background:var(--surface);border-radius:99px;padding:1px 6px}
 .klist{display:flex;flex-direction:column;gap:5px;min-height:40px;border-radius:7px;transition:background .12s ease;padding:3px}
@@ -552,7 +573,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .part>pre{margin:0;padding:8px 9px;white-space:pre-wrap;word-break:break-word;font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.5;color:var(--ink)}
 .turn{border:1px dashed var(--line);border-radius:8px;padding:6px 9px;margin-bottom:5px;font-size:12px}
 .turn .r{font:600 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:1px}
-.turn.assistant{background:var(--surface)}.turn.user{background:#F2F5F7}
+.turn.assistant{background:var(--surface)}.turn.user{background:var(--wash)}
 .empty-turns{font-size:11.5px;color:var(--muted);font-style:italic}
 
 /* Question authoring (admin panel) */
@@ -587,7 +608,7 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .q.dirty{border-color:var(--turn);box-shadow:0 0 0 3px rgba(182,122,46,.1)}
 .q .qtype{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex:none}
 .q .qsection{font:600 9.5px Inter;color:var(--seal);background:var(--seal-soft);border-radius:99px;padding:2px 8px;flex:none;white-space:nowrap}
-.q .qsection.qsection-none{color:var(--muted);background:#F2F5F7}
+.q .qsection.qsection-none{color:var(--muted);background:var(--wash)}
 .q .req{font:600 9px Inter;letter-spacing:.04em;text-transform:uppercase;color:var(--turn);flex:none}
 .sec button,.mem button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
 .sec button.danger{color:var(--red);border-color:var(--red-soft)}
@@ -637,7 +658,7 @@ nav .setup .rail-toggle{display:inline-flex}
 .msg-group{max-width:95%}
 .kanban{grid-template-columns:1fr 1fr}
 }
-@media(max-width:500px){.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
+@media(max-width:500px){body{zoom:1}.kanban{grid-template-columns:1fr}.msg-group{max-width:98%}.wrap{padding:0 10px}}
 </style>
 </head>
 <body>
@@ -834,6 +855,7 @@ nav .setup .rail-toggle{display:inline-flex}
       <button id="railToggleBtn" class="icon-btn rail-toggle" title="Your answers &amp; supporting docs"><i class="ph ph-list-checks"></i></button>
       <button id="submissionBtn" class="icon-btn" title="View my submission" style="display:none"><i class="ph ph-clipboard-text"></i></button>
       <button id="resetBtn" class="icon-btn" title="Start over"><i class="ph ph-arrow-counter-clockwise"></i></button>
+      <button id="pwBtn" class="icon-btn" title="Change password" style="display:none"><i class="ph ph-key"></i></button>
       <button id="logoutBtn" class="icon-btn" title="Switch account"><i class="ph ph-sign-out"></i></button>
       <span class="setup-admin hidden" id="navAdmin">
         <select id="modelSel" title="Model backend"><option value="echo" selected>Demo</option><option value="webllm">Qwen2.5 0.5B (smallest)</option><option value="ollama">Ollama</option></select>
@@ -949,6 +971,32 @@ nav .setup .rail-toggle{display:inline-flex}
     <button class="cancel" id="qWizCancel">Cancel</button>
     <button id="qWizBack">← Back</button>
     <button class="primary" id="qWizNext">Next →</button>
+  </div>
+</div></div>
+
+<!-- Change this account's password. The new password is downloaded as a
+     small file the moment the change succeeds: most homeservers, matrix.org
+     included, have no password reset, so a password nobody wrote down is an
+     account (and every answer in it) lost. Nothing is stored in the browser
+     — see saveSilentAccount's note on why a password is never persisted
+     here. The file is the record. -->
+<div class="inline-editor" id="pwModal"><div class="modal">
+  <h3>Change password</h3>
+  <p class="field-path" id="pwWho"></p>
+  <div class="pw-group">
+    <label for="pwCurrent">Current password</label>
+    <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="••••••••">
+  </div>
+  <div class="pw-group">
+    <label for="pwNew">New password</label>
+    <input id="pwNew" type="text" autocomplete="new-password" spellcheck="false">
+    <button type="button" class="pw-gen" id="pwGenerate">Generate a strong one</button>
+  </div>
+  <p class="pw-note">Saving downloads a small text file with the new password in it. Keep that file somewhere safe: this homeserver most likely has no password reset, so if the password is lost, so is the account and everything in it.</p>
+  <p class="field-path" id="pwError" style="color:var(--red);display:none"></p>
+  <div class="btns">
+    <button class="cancel" id="pwCancel">Cancel</button>
+    <button class="primary" id="pwSave">Change it &amp; download</button>
   </div>
 </div></div>
 
@@ -1350,6 +1398,10 @@ const SCHEMA = {
       label: "Your family's story",
       type: "text",
       required: false,
+      // See Steer.readAttempt / Intake._probeReply: this question is asking
+      // for an account, so two words back is the start of a conversation to
+      // continue, not an answer to store and move on from.
+      narrative: true,
       // No length cap, on purpose — see NARRATIVE_FOLLOWUPS above. This
       // answer becomes core content in the letter, so the prompt invites
       // as much detail as the person has rather than steering them toward
@@ -1386,6 +1438,7 @@ const SCHEMA = {
       label: "What DCS did or failed to do",
       type: "text",
       required: true,
+      narrative: true,
       prompt: "Now the main part. In your own words, what did DCS do, or fail to do, that you believe was wrong? Please include dates you remember, and the names of any caseworkers or supervisors involved.",
       promptEs: "Ahora la parte principal. En tus propias palabras, ¿qué hizo DCS, o qué dejó de hacer, que crees que estuvo mal? Por favor incluye las fechas que recuerdes, y los nombres de cualquier trabajador social o supervisor involucrado.",
       help: "Take your time. Specific details help, like what was said, what was promised, and what actually happened, but general is fine too if that's what you remember.",
@@ -1408,6 +1461,7 @@ const SCHEMA = {
       label: "How this has affected your child",
       type: "text",
       required: false,
+      narrative: true,
       prompt: "How has all of this affected your child? You can describe emotional, physical, or educational harm, or how things have changed for them since entering DCS custody.",
       promptEs: "¿Cómo ha afectado todo esto a tu hijo o hija? Puedes describir daño emocional, físico o educativo, o cómo han cambiado las cosas para él o ella desde que entró bajo la custodia de DCS.",
       help: "For example, changes in mood or behavior, missed school, medication changes, or new diagnoses. Only share what you're comfortable sharing.",
@@ -1951,6 +2005,16 @@ const COVERAGE_FRAMEWORKS = {
   },
 };
 
+// How many times one question may ask again before it takes what it's given.
+// An open question is a back-and-forth (see Intake._probeReply): an answer
+// that isn't usable yet gets a specific, pre-written question back rather
+// than being stored as the family's own account. That has to end, and end
+// early: a parent describing what happened to their child is not a form to
+// be argued with, and a person who has said all they can say must never be
+// held at one question. After this many asks their words stand exactly as
+// written, whatever this file thinks of them.
+const MAX_PROBES = 2;
+
 // Both messages below are required, exact wording (per the project's
 // intake instructions), not phrasing the model or Steer's generic table
 // gets to pick — the interview must continue after the deadline warning,
@@ -2401,7 +2465,10 @@ class DemoStore extends BaseStore {
 }
 
 class MatrixStore extends BaseStore {
-  constructor(client) { super(); this.client = client; this.user = client.getUserId(); }
+  // requireEncryption defaults on here as well as in open(), so a store that
+  // somehow emits before it is opened fails closed rather than sending in
+  // the clear on an undefined flag.
+  constructor(client) { super(); this.client = client; this.user = client.getUserId(); this.requireEncryption = true; }
 
   // Note the initClientCrypto() call: without it this built a client with no
   // crypto backend at all, so every send would have gone to Synapse in the
@@ -2432,7 +2499,21 @@ class MatrixStore extends BaseStore {
     return new MatrixStore(client);
   }
 
-  async open(roomId) {
+  // `encrypted: false` is for the shared question set and nothing else (see
+  // ensureConfigRoom, which creates that room deliberately unencrypted so any
+  // applicant can resolve its alias and read the questions they're about to
+  // be asked). Every room holding something a person told us keeps the
+  // default, and _assertEncrypted stays the last gate before plaintext could
+  // reach the operator's disk — so this is opt-in per call site and never
+  // inferred from the room's own state, where an answers room quietly losing
+  // its encryption would start reading as permission to send in the clear.
+  //
+  // Until this existed the gate was unconditional, so every write to the
+  // config room failed: seeding it writes one event per question, which gave
+  // the admin a wall of identical "couldn't securely save that" warnings on
+  // every page load, and meant no question edit ever reached the server.
+  async open(roomId, { encrypted = true } = {}) {
+    this.requireEncryption = encrypted;
     this.roomId = roomId;
     const room = this.client.getRoom(roomId);
     if (room) {
@@ -2491,7 +2572,7 @@ class MatrixStore extends BaseStore {
 
   async _send(ev, op, payload) {
     try {
-      await this._assertEncrypted();
+      if (this.requireEncryption) await this._assertEncrypted();
       await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
       ev._pending = false;
     } catch (e) {
@@ -2504,10 +2585,68 @@ class MatrixStore extends BaseStore {
   }
 
   static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
-  static foldRoomEvents(client, roomId) {
+  static foldRoomEvents(client, roomId) { return MatrixStore.readRoom(client, roomId).events; }
+
+  // Reads one room's intake events AND reports what it could not read.
+  //
+  // An encrypted event this device holds no Megolm key for comes back from
+  // the SDK with its type still m.room.encrypted, and one that simply hasn't
+  // finished decrypting yet looks identical. A plain `getType() === ours`
+  // filter drops both without a word, so a room full of answers renders as
+  // an empty submission — which reads to the office as "this family never
+  // filled anything in," the most damaging thing this app could get wrong.
+  //
+  // So: anything still encrypted is counted rather than skipped, and events
+  // that are merely waiting are nudged along (the SDK fires Event.decrypted
+  // when they land, which re-renders — see watchMatrixForLiveUpdates).
+  static readRoom(client, roomId) {
     const room = client.getRoom(roomId);
-    if (!room) return [];
-    return room.getLiveTimeline().getEvents().filter((e) => e.getType() === EVENT_TYPE).map(decodeMxEvent);
+    if (!room) return { events: [], undecryptable: 0, pending: 0 };
+    const events = [];
+    let undecryptable = 0, pending = 0;
+    for (const e of room.getLiveTimeline().getEvents()) {
+      if (e.getType() === EVENT_TYPE) { events.push(decodeMxEvent(e)); continue; }
+      if (!e.isEncrypted?.()) continue;
+      if (e.isDecryptionFailure?.()) { undecryptable++; continue; }
+      if (e.isBeingDecrypted?.() || e.getType() === "m.room.encrypted") {
+        pending++;
+        client.decryptEventIfNeeded?.(e)?.catch?.(() => {});
+      }
+    }
+    return { events, undecryptable, pending };
+  }
+
+  // Across every room this account can see. Used by the admin surfaces to
+  // say plainly how much they're not showing.
+  static readTally(client) {
+    let undecryptable = 0, pending = 0, rooms = 0;
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      const r = MatrixStore.readRoom(client, roomId);
+      undecryptable += r.undecryptable;
+      pending += r.pending;
+      if (r.undecryptable) rooms++;
+    }
+    return { undecryptable, pending, rooms };
+  }
+
+  // The live timeline holds only what the last sync happened to bring down.
+  // One long interview is dozens of events, so the earliest answers — name,
+  // child, custody dates — are exactly the ones that fall off the end. Pages
+  // backwards through every room once, when an admin surface opens, so the
+  // office sees whole submissions instead of their last few answers.
+  static async backfill(client, { pagesPerRoom = 6, limit = 200 } = {}) {
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      const room = client.getRoom(roomId);
+      if (!room) continue;
+      for (let page = 0; page < pagesPerRoom; page++) {
+        const timeline = room.getLiveTimeline();
+        if (!timeline.getPaginationToken?.("b")) break;
+        let more = false;
+        try { more = await client.paginateEventTimeline(timeline, { backwards: true, limit }); }
+        catch (e) { console.warn("[MatrixStore] backfill stopped for", roomId, e); break; }
+        if (!more) break;
+      }
+    }
   }
 }
 
@@ -3575,6 +3714,8 @@ class Intake {
     this.steer = Steer.createState();
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
+    this._probes = Object.create(null);  // field path -> times asked again (see _probeReply)
+    this._drafts = Object.create(null);  // field path -> earlier partial answers to that same question
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
     this._listeners = new Set();
   }
@@ -3863,9 +4004,13 @@ class Intake {
       if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang, f);
       const err = validate(f, parsed.extracted, this.lang);
       if (err) { thinking.text = err; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
+      // Valid by shape, but not yet an answer to THIS question — ask again
+      // rather than confirming a stray keystroke into a legal complaint.
+      const probe = this._probeReply(f, parsed.extracted);
+      if (probe) { thinking.text = probe; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
       this.pending = {
         field: f,
-        value: parsed.extracted,
+        value: this._withDrafts(f, parsed.extracted),
         // The raw submitted text is kept verbatim — the value may be a
         // normalized/typed-corrected version of it, and the audit chain
         // must be able to compare the stored value against what the person
@@ -3874,7 +4019,9 @@ class Intake {
         inputKind: meta.inputKind === "voice" ? "voice" : "typed",
         voiceClipId: meta.voiceClipId || null,
       };
-      thinking.text = this._reply("confirming", { meta: { value: parsed.extracted } }); thinking.streaming = false; thinking.support = false;
+      // Confirms the whole value being stored, which after a back-and-forth
+      // is everything the person said across those turns, not just the last.
+      thinking.text = this._reply("confirming", { meta: { value: this.pending.value } }); thinking.streaming = false; thinking.support = false;
       this._emit("message", thinking);
       this._emit("pending", this.pending);
       return;
@@ -3921,9 +4068,67 @@ class Intake {
     // _parseClassification, which only ever populates it for exactly this
     // kind of field. Still never the stored answer itself: this only ever
     // reaches the "not ready yet" branch, never the confirm/store path above.
-    thinking.text = parsed.followup || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
+    // Order of preference for "not an answer yet": the model's own grounded
+    // question about what's missing, then the fixed ladder for text that
+    // couldn't be read at all or is too short to be an account, and only
+    // then the generic "take your time" — which says nothing about how to
+    // succeed on the next try.
+    thinking.text = parsed.followup
+      || this._probeReply(f, text)
+      || this._reply("supporting", { tier: typeof tier === "number" ? tier : 0 });
     thinking.streaming = false; thinking.support = true;
     this._emit("message", thinking);
+  }
+
+  // The one place a question gets asked twice. Returns the line to send back
+  // instead of the confirm step, or null to go ahead and take the answer.
+  //
+  // Deliberately model-independent, and checked on the ready path as well as
+  // the not-ready one: a small local model marking a stray keystroke "ready"
+  // is the same failure as EchoModel's validate() doing it, and neither is
+  // worth a second implementation. What the person reads is still a fixed,
+  // reviewed line from Steer's table (or, with a real backend, the model's
+  // own grounded `followup` — see _classifyAndReply), never invented here.
+  //
+  // Three things end the asking, permanently, on purpose:
+  //   — MAX_PROBES, so nobody is ever held at one question;
+  //   — an explicit decline on an optional field ("N/A", "I don't have one"),
+  //     which is a complete answer to a question that says so itself;
+  //   — the person simply saying the same thing again, which after the cap
+  //     is stored as written.
+  _probeReply(field, text) {
+    const read = Steer.readAttempt(text, field);
+    if (read.kind === "answer") return null;
+    if (!field.required && Steer.classifyIntent(text, this.lang).skip) return null;
+    const asked = this._probes[field.path] || 0;
+    if (asked >= MAX_PROBES) return null;
+    this._probes[field.path] = asked + 1;
+    // A short-but-real answer is kept and carried into the next turn, so
+    // "he was moved twice" followed by "in March, without telling me" is
+    // stored as one account instead of the second sentence alone. Keyboard
+    // noise is never carried forward — there's nothing in it to keep.
+    if (read.kind === "bare") {
+      (this._drafts[field.path] || (this._drafts[field.path] = [])).push(text.trim());
+    }
+    return this._reply("probing", { meta: { kind: read.kind, n: asked } });
+  }
+
+  // Folds anything kept by an earlier turn of the same question into the
+  // value about to be confirmed, so the person confirms the whole account
+  // they gave rather than only its last sentence.
+  _withDrafts(field, value) {
+    const parts = this._drafts[field.path];
+    if (!parts || !parts.length) return value;
+    delete this._drafts[field.path];
+    // Joined as separate sentences, because that's what they were — two
+    // turns of a conversation, not one interrupted sentence. Anything that
+    // already ends in its own punctuation keeps it.
+    const joined = [...parts, value].reduce((acc, part) => {
+      const piece = part.toString().trim();
+      if (!acc) return piece;
+      return /[.!?…]$/.test(acc) ? `${acc} ${piece}` : `${acc}. ${piece}`;
+    }, "");
+    return Steer.tidyText(joined, this.lang, field);
   }
 
   // A structured control (buttons, a dropdown, checkboxes) already IS the
@@ -3976,6 +4181,7 @@ class Intake {
       source: source ?? null, inputKind: inputKind ?? "typed", voiceClipId: voiceClipId ?? null,
     });
     this.pending = null;
+    delete this._drafts[field.path];
     this.epoch++;
     // Rotate through the vetted acknowledgement variants (keyed by how many
     // answers this session has stored) so thirty saves don't read as the
@@ -4687,6 +4893,8 @@ function initAdminView({ onClose }) {
     const submissions = collectSubmissions(ctx);
     const docs = submissions.flatMap((s) => s.docs.map((d) => ({ ...d, applicantName: s.applicantName })));
     body.innerHTML = "";
+    const unreadable = unreadableNotice(ctx);
+    if (unreadable) body.appendChild(unreadable);
 
     const searchBar = document.createElement("div");
     searchBar.style.cssText = "margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
@@ -5123,7 +5331,7 @@ function initAdminView({ onClose }) {
   function renderSingleSubmission(wrap, pl) {
     // ── Audit summary bar ──
     const auditBar = $e("div");
-    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:#F2F5F7;border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
+    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--wash);border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
     const typedCount = pl.answers.filter((a) => a.inputKind === "typed").length;
     const voiceCount = pl.answers.filter((a) => a.inputKind === "voice").length;
     const editedCount = pl.answers.filter((a) => a.inputKind === "edited").length;
@@ -5158,7 +5366,7 @@ function initAdminView({ onClose }) {
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:4px";
       const badge = $e("span", "mono", isVoice ? "🎙 voice" : "⌨ typed");
-      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "#F2F5F7"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
+      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "var(--wash)"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
       item.appendChild(badge);
       const sourceText = $e("div", null, a.source);
       sourceText.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
@@ -5210,7 +5418,7 @@ function initAdminView({ onClose }) {
 
     // Column 3: Parsed answer — model's extraction, editable
     const colReview = $e("div");
-    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:#F2F5F7;padding:10px;display:flex;flex-direction:column;gap:6px";
+    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:var(--wash);padding:10px;display:flex;flex-direction:column;gap:6px";
     const reviewHead = $e("div");
     reviewHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
     reviewHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#5C6B72;border-radius:4px;padding:1px 5px;font-weight:600">review</span><span style="font-size:11.5px;font-weight:600">Parsed answer</span>`;
@@ -5659,7 +5867,7 @@ function initAdminView({ onClose }) {
     for (const o of options) {
       const chip = $e("button", "mono", `{{${o.path}}}`);
       chip.title = o.label;
-      chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:#F2F5F7;font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
+      chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--wash);font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
       chip.onclick = () => {
         const at = bodyInput.selectionStart ?? bodyInput.value.length;
         const token = `{{${o.path}}}`;
@@ -5739,8 +5947,75 @@ function initAdminView({ onClose }) {
       searchQuery = "";
       who.textContent = ctx.storeKind === "matrix" ? ctx.currentUserId : "Demo · this device (every room opened here)";
       renderActive();
+      if (ctx.storeKind === "matrix" && ctx.client) {
+        // Pull in the older half of every submission, then redraw with it.
+        MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+        watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
+      }
     },
+    // Called by the live-update watcher below. Rendering the admin surface is
+    // a full rebuild of the tab, so it only ever runs while someone is
+    // actually looking at it.
+    refresh() { if (ctx && isAdminViewOpen()) renderActive(); },
   };
+}
+
+// "Nothing here" and "here, but this device can't read it" are opposite
+// facts and used to look identical: both rendered as an empty table. For an
+// office deciding whether a family has responded, that difference is the
+// whole thing, so it gets said out loud, with the reason and the way out.
+//
+// The reason is almost always a device that arrived after the fact. Answers
+// are encrypted to the devices in the room when they were sent; a browser
+// whose site data has been cleared, or a fresh sign-in on another machine,
+// is a new device with none of those keys, and past messages are never
+// re-shared to it.
+function unreadableNotice(ctx) {
+  if (!ctx || ctx.storeKind !== "matrix" || !ctx.client) return null;
+  const { undecryptable, rooms } = MatrixStore.readTally(ctx.client);
+  if (!undecryptable) return null;
+  const box = document.createElement("div");
+  box.style.cssText = "margin-bottom:14px;padding:11px 13px;border:1px solid var(--turn);border-left-width:3px;border-radius:9px;background:var(--turn-soft);font-size:12.5px;line-height:1.55;color:var(--ink)";
+  const head = document.createElement("b");
+  head.textContent = `${undecryptable} item${undecryptable === 1 ? "" : "s"} in ${rooms} submission${rooms === 1 ? "" : "s"} can't be read on this device.`;
+  box.appendChild(head);
+  box.appendChild(document.createTextNode(
+    " They were encrypted for the office device that was signed in when they were sent, and encrypted history is never re-sent to a new one."
+    + " Open this dashboard on that device — and don't clear this site's data there, since that discards the keys."
+    + " Anything that arrives from now on will be readable here."
+  ));
+  return box;
+}
+
+function isAdminViewOpen() {
+  const view = document.getElementById("adminView");
+  return !!view && !view.classList.contains("hidden");
+}
+
+// Answers arriving from the homeserver used to change nothing on screen: the
+// admin surfaces rendered once, on open, and every collector read from a
+// snapshot of the timeline taken at that moment. An office watching a family
+// fill the form in saw an empty dashboard the whole way through, and had to
+// reload to find out anything had happened at all.
+//
+// Three signals matter, and all three arrive minutes apart in practice:
+// the event itself (Room.timeline), the moment it becomes readable
+// (Event.decrypted — an encrypted event is useless to us until then), and
+// the admin's own membership landing in a room they were invited to
+// (Room.myMembership, via autoJoinInvitesForAdmin). Coalesced, because a
+// burst of answers is one redraw.
+let _liveUpdateWatch = null;
+function watchMatrixForLiveUpdates(client, onChange) {
+  if (_liveUpdateWatch === client) return;
+  _liveUpdateWatch = client;
+  let timer = null;
+  const ping = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { try { onChange(); } catch (e) { console.error("[live] refresh failed:", e); } }, 300);
+  };
+  client.on("Room.timeline", ping);
+  client.on("Event.decrypted", ping);
+  client.on("Room.myMembership", ping);
 }
 
 
@@ -5754,14 +6029,48 @@ let flowMode = false; // true = no-model step wizard, false = chat with a model
 let firstBoot = !localStorage.getItem("intake:welcomeDismissed");
 
 // ── Toast notifications ──
+const TOAST_MS = 2500;
+const TOAST_ICONS = { success: "✓", error: "✗", warn: "!" };
+
+// Identical messages coalesce into one line with a count instead of
+// stacking. One failure that happens forty times in a burst is one thing
+// the person needs to know, not forty copies of it overflowing the screen:
+// seeding the config room writes one event per question (see seedConfig),
+// so a homeserver that can't take those writes used to produce a wall of
+// the same "couldn't securely save that" warning on every single page load.
+//
+// The message goes in as text, never as markup — some callers pass an
+// exception's own message through (a model loader, a homeserver's error),
+// and none of that has any business being parsed as HTML.
 function toast(msg, kind = "success") {
   const c = $("toastContainer");
-  const t = document.createElement("div");
-  t.className = "toast " + kind;
-  const icon = { success: "✓", error: "✗", warn: "!" };
-  t.innerHTML = `<span class="toast-icon">${icon[kind] || "i"}</span>${msg}`;
+  const text = (msg ?? "").toString();
+  const key = kind + " " + text;
+  const dismiss = (node) => {
+    node.style.animation = "toastOut .25s ease forwards";
+    setTimeout(() => node.remove(), 300);
+  };
+
+  for (const open of c.children) {
+    if (open._toastKey !== key) continue;
+    open._toastCount++;
+    const count = open.querySelector(".toast-count");
+    count.textContent = " ×" + open._toastCount;
+    // The burst is still going, so keep the one line up while it lasts
+    // rather than letting it expire mid-storm and reappear.
+    clearTimeout(open._toastTimer);
+    open._toastTimer = setTimeout(() => dismiss(open), TOAST_MS);
+    return;
+  }
+
+  const t = el("div", "toast " + kind);
+  t.appendChild(el("span", "toast-icon", TOAST_ICONS[kind] || "i"));
+  t.appendChild(document.createTextNode(text));
+  t.appendChild(el("span", "toast-count", ""));
+  t._toastKey = key;
+  t._toastCount = 1;
   c.appendChild(t);
-  setTimeout(() => { t.style.animation = "toastOut .25s ease forwards"; setTimeout(() => t.remove(), 300); }, 2500);
+  t._toastTimer = setTimeout(() => dismiss(t), TOAST_MS);
 }
 
 // ── Welcome overlay ──
@@ -6029,7 +6338,7 @@ function buildFieldInput(field, currentValue) {
   }
   if (field.type === "date") {
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "field-input";
+    inp.type = "date"; inp.className = "field-input"; boundDateInput(inp);
     if (currentValue) { try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {} }
     return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
   }
@@ -6039,12 +6348,14 @@ function buildFieldInput(field, currentValue) {
     const inp = document.createElement("input");
     inp.className = "field-input";
     inp.type = monthOnly ? "month" : "date";
+    boundDateInput(inp);
     inp.value = currentValue || "";
     const toggle = el("button", "addr-toggle", monthOnly ? "I know the exact day" : "I only know the month");
     toggle.type = "button";
     toggle.onclick = () => {
       monthOnly = !monthOnly;
       inp.type = monthOnly ? "month" : "date";
+      boundDateInput(inp);
       inp.value = "";
       toggle.textContent = monthOnly ? "I know the exact day" : "I only know the month";
     };
@@ -6262,12 +6573,13 @@ function renderQuickAnswer(field) {
     const row = el("div", "qa-row");
     let monthOnly = false;
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select";
+    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
     const toggle = el("button", "qa-btn", es ? "Solo sé el mes" : "I only know the month");
     toggle.type = "button";
     toggle.onclick = () => {
       monthOnly = !monthOnly;
       inp.type = monthOnly ? "month" : "date";
+      boundDateInput(inp);
       inp.value = "";
       toggle.textContent = monthOnly ? (es ? "Sé el día exacto" : "I know the exact day") : (es ? "Solo sé el mes" : "I only know the month");
     };
@@ -6280,7 +6592,7 @@ function renderQuickAnswer(field) {
   } else if (field.type === "date") {
     const row = el("div", "qa-row");
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select";
+    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
     const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
     go.type = "button";
     go.onclick = () => { if (inp.value) choose(inp.value); };
@@ -6565,6 +6877,18 @@ function renderSide() {
   prog.filter((f) => !SECTIONS.some((s) => s.key === f.section)).forEach(renderRow);
 }
 
+// Pins a native date/month control to the same window Steer.validate()
+// enforces, so the picker can't offer a year the validator is about to
+// refuse — and a mistyped one ("0023") can't be committed by pressing Enter.
+// Called again whenever a control flips between date and month, since the
+// bounds differ in shape.
+function boundDateInput(inp) {
+  const b = Steer.dateBounds(inp.type === "month" ? "month" : "date");
+  inp.min = b.min;
+  inp.max = b.max;
+  return inp;
+}
+
 // The section stepper above the chat — see SECTIONS and
 // Intake.sectionProgress(). Rebuilt on every renderSide() call (field
 // answered, edited, or the interview completing) rather than patched in
@@ -6828,9 +7152,12 @@ function wizardCompleteUI(shouldCelebrate) {
 // placeholder mid-character on narrow screens, leaving a stray sliver of its
 // second line poking through the overflow — an autosize call after every
 // reset avoids that.
+// Kept in step with .compose textarea's own max-height in CSS: a spoken
+// answer is a paragraph, and the box has to be able to show one.
+const COMPOSE_MAX_H = 180;
 function autosizeInput(input) {
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  input.style.height = Math.min(input.scrollHeight, COMPOSE_MAX_H) + "px";
 }
 function wireCompose() {
   const input = $("input");
@@ -7016,7 +7343,11 @@ function voiceCopy(key) {
     consent: es
       ? "Si usas el micrófono, tu grabación se guarda de forma segura para poder verificar que la transcripción sea correcta."
       : "If you use the microphone, your recording is saved securely so we can double-check the transcript is accurate.",
-    recording: es ? "Grabando… toca de nuevo para detener." : "Recording… tap again to stop.",
+    // Says what actually happens now: stopping is the pause at the end of a
+    // sentence, and the button is only there for anyone who'd rather use it.
+    recording: es
+      ? "Escuchando… tus palabras aparecen abajo. Cuando termines de hablar, me detengo solo."
+      : "Listening… your words appear below. When you stop talking, I'll stop on my own.",
     downloading: es ? "Preparando el modelo de voz (descarga única)…" : "Preparing the speech model (one-time download)…",
     transcribing: es ? "Transcribiendo…" : "Transcribing…",
     micDenied: es ? "Se necesita permiso del micrófono para hablar tu respuesta." : "Microphone permission is needed to speak an answer.",
@@ -7148,12 +7479,15 @@ function wireVoice() {
           btn.classList.toggle("busy", s === "transcribing");
           btn.disabled = s === "transcribing";
           input.classList.toggle("streaming", s === "recording");
-          // While recording, the waveform replaces the textarea in the same
-          // flex slot — the live partial transcript (onPartial below) still
-          // lands in the textarea's value underneath, so nothing is lost
-          // the moment recording stops and the textarea reappears.
+          // The waveform sits BESIDE the box now, not in place of it. It used
+          // to replace the textarea in the same flex slot, which meant the
+          // live transcript was landing in a hidden element: someone speaking
+          // watched a waveform and saw none of their own words until they
+          // stopped. Worse, a hidden textarea has no scrollHeight, so the
+          // auto-grow that runs on every change did nothing while it was
+          // away and the box came back one line tall with a paragraph
+          // scrolled out of sight inside it.
           if (wave) wave.classList.toggle("hidden", s !== "recording");
-          input.classList.toggle("hidden", s === "recording");
           if (s === "recording") { setVoiceNote(voiceCopy("recording")); startWaveform(voiceInstance && voiceInstance.stream); }
           else {
             stopWaveform();
@@ -7174,27 +7508,48 @@ function wireVoice() {
           if (!voiceInstance || voiceInstance.state !== "recording") return;
           input.value = voicePreText ? (text ? voicePreText + " " + text : voicePreText) : text;
           input.dispatchEvent(new Event("input"));
+          // Grow with what's been heard so far, and keep the newest words in
+          // view — a transcript that has scrolled out of the top of a
+          // one-line box is the same as no transcript at all.
+          autosizeInput(input);
+          input.scrollTop = input.scrollHeight;
         },
+        // Finishing a sentence is how a person says they're done; reaching
+        // for a button afterwards is not something to require of someone
+        // describing what happened to their child.
+        onSilence: () => { finishRecording(); },
       });
       try { await voiceInstance.start(); }
       catch (e) { setVoiceNote(voiceCopy(e && e.name === "NotAllowedError" ? "micDenied" : "micFailed")); }
       return;
     }
-    if (voiceInstance.state === "recording") {
-      try {
-        const { text, blob } = await voiceInstance.stop();
-        setVoiceNote(voiceCopy("consent"));
-        if (text) {
-          input.value = voicePreText ? voicePreText + " " + text : text;
-          input.dispatchEvent(new Event("input"));
-        }
-        input.focus();
-        if (blob) await saveVoiceClip(blob, text);
-      } catch (e) {
-        setVoiceNote(voiceCopy("micFailed"));
-      }
-    }
+    if (voiceInstance.state === "recording") await finishRecording();
   };
+
+  // Ends the take and lands the authoritative transcript. Reached two ways —
+  // the person tapping the mic again, or the recording going quiet for long
+  // enough (see voice.js's onSilence) — and guarded so those two can't both
+  // run it for the same take.
+  let finishing = false;
+  async function finishRecording() {
+    if (finishing || !voiceInstance || voiceInstance.state !== "recording") return;
+    finishing = true;
+    try {
+      const { text, blob } = await voiceInstance.stop();
+      setVoiceNote(voiceCopy("consent"));
+      if (text) {
+        input.value = voicePreText ? voicePreText + " " + text : text;
+        input.dispatchEvent(new Event("input"));
+      }
+      autosizeInput(input);
+      input.focus();
+      if (blob) await saveVoiceClip(blob, text);
+    } catch (e) {
+      setVoiceNote(voiceCopy("micFailed"));
+    } finally {
+      finishing = false;
+    }
+  }
 
   input.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && voiceInstance && voiceInstance.state === "recording") {
@@ -7473,6 +7828,35 @@ function hideLangGate() { document.getElementById("langGate").classList.add("hid
 function showEntryLoader(text) { document.getElementById("entryLoaderText").textContent = text; document.getElementById("entryLoader").classList.remove("hidden"); }
 function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
 
+// Set for exactly one load by "Switch account", read and cleared by
+// initEntry. sessionStorage, not localStorage: a tab that was sent to the
+// sign-in screen once should not keep landing there tomorrow.
+const FORCE_LOGIN_KEY = "ab.forceLogin";
+function requestLoginScreen() {
+  try { sessionStorage.setItem(FORCE_LOGIN_KEY, "1"); } catch {}
+}
+// Three ways to say "I want the sign-in screen, not the interview": the
+// ?staff=1 / #staff address staff can bookmark, and the one-shot flag the
+// Switch account button sets before reloading. Without this, the only door
+// to staff sign-in was the language gate, which is skipped the moment a
+// session exists on the device — so reaching it meant clearing site data.
+function wantsLoginScreen() {
+  try {
+    if (new URLSearchParams(location.search).get("staff") === "1") return true;
+    if ((location.hash || "").toLowerCase() === "#staff") {
+      // Dropped from the address bar straight away: a refresh on the sign-in
+      // screen should go back to normal, not pin the tab there.
+      history.replaceState(null, "", location.pathname + location.search);
+      return true;
+    }
+    if (sessionStorage.getItem(FORCE_LOGIN_KEY) === "1") {
+      sessionStorage.removeItem(FORCE_LOGIN_KEY);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 async function initEntry() {
   // Form preview: opened from the admin dashboard's "Preview the form" link
   // (see wireNewNav) in a fresh tab, so it never touches the admin's real
@@ -7493,6 +7877,13 @@ async function initEntry() {
     openAdmin();
     const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
     if (pipelineTab) pipelineTab.click();
+    return;
+  }
+  // Checked before the saved-session resume below, which otherwise carries
+  // straight on into the interview and never shows a door out of it.
+  if (wantsLoginScreen()) {
+    hideLangGate();
+    showLogin();
     return;
   }
   const saved = loadSilentAccount();
@@ -8149,17 +8540,149 @@ function suCredentialsText(data) {
   ].join("\n");
 }
 
-function suDownloadCredentials() {
-  const text = suCredentialsText(suRegisteredData);
-  const blob = new Blob([text], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
+// Hands the browser a text file to save. The one way an account credential
+// leaves this page on purpose — see the password-change flow and the signup
+// wizard, both of which exist because a password nobody wrote down is an
+// account nobody can get back into.
+function downloadTextFile(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `matrix-account-${suRegisteredData.user_id.replace(/[^a-z0-9]/gi, "_")}.txt`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function credentialFilename(prefix, userId) {
+  return `${prefix}-${userId.replace(/[^a-z0-9]/gi, "_")}.txt`;
+}
+
+function suDownloadCredentials() {
+  downloadTextFile(credentialFilename("matrix-account", suRegisteredData.user_id), suCredentialsText(suRegisteredData));
+}
+
+// ── Changing this account's password ────────────────────────────────────────
+//
+// The change itself is one call to the homeserver, but it is wrapped in the
+// user-interactive auth dance because that's what a homeserver asks for: the
+// first POST comes back 401 with the flows it will accept, and the current
+// password is replayed into a second POST carrying that challenge's session.
+//
+// logout_devices stays false on purpose. Someone may well do this in the
+// middle of an interview, and signing every device out from under them would
+// take this browser's own session — the one holding their answers — with it.
+async function changeAccountPassword({ client, userId, current, next }) {
+  const base = (client.baseUrl || "").replace(/\/+$/, "");
+  const token = client.getAccessToken();
+  const post = (extra) => fetch(`${base}/_matrix/client/v3/account/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ new_password: next, logout_devices: false, ...extra }),
+  });
+
+  let res = await post({});
+  if (res.status === 401) {
+    const challenge = await res.json().catch(() => ({}));
+    const stages = (challenge.flows || []).flatMap((f) => f.stages || []);
+    if (!stages.includes("m.login.password")) {
+      throw new Error("This provider wants a sign-in step this page can't do. Change the password from your provider's own site instead.");
+    }
+    if (!current) throw new Error("Your current password is needed to change it.");
+    res = await post({
+      auth: {
+        type: "m.login.password",
+        session: challenge.session,
+        user: userId,
+        identifier: { type: "m.id.user", user: userId },
+        password: current,
+      },
+    });
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `The provider refused the change (${res.status}).`);
+  }
+}
+
+function passwordRecordText({ userId, homeserver, password }) {
+  return [
+    "Feedback Platform — account password",
+    "",
+    `User ID:    ${userId}`,
+    `Password:   ${password}`,
+    `Homeserver: ${homeserver}`,
+    "",
+    "Changed " + new Date().toString(),
+    "Keep this somewhere safe. Most homeservers have no password reset, so",
+    "losing this password means losing the account and everything in it.",
+  ].join("\n");
+}
+
+function openPasswordModal() {
+  const client = loginState?.client;
+  if (!client) return;
+  document.getElementById("pwWho").textContent = loginState.userId || client.getUserId() || "";
+  document.getElementById("pwCurrent").value = "";
+  // Pre-filled with the same generator the silent-registration path uses, so
+  // the easy path is a strong password; it's a plain text input, so anyone
+  // who would rather pick their own just types over it.
+  document.getElementById("pwNew").value = randomStrongPassword();
+  const err = document.getElementById("pwError");
+  err.style.display = "none"; err.textContent = "";
+  document.getElementById("pwModal").classList.add("on");
+  document.getElementById("pwCurrent").focus();
+}
+
+function closePasswordModal() { document.getElementById("pwModal").classList.remove("on"); }
+
+async function submitPasswordChange() {
+  const client = loginState?.client;
+  const btn = document.getElementById("pwSave");
+  const err = document.getElementById("pwError");
+  const next = document.getElementById("pwNew").value.trim();
+  const current = document.getElementById("pwCurrent").value;
+  const userId = loginState?.userId || client?.getUserId();
+  const fail = (msg) => { err.textContent = msg; err.style.display = "block"; };
+
+  err.style.display = "none";
+  if (!client || !userId) return fail("You're not signed in to an account that has a password.");
+  if (next.length < 8) return fail("Please use at least 8 characters.");
+
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Changing…";
+  try {
+    await changeAccountPassword({ client, userId, current, next });
+    // Downloaded before anything else can go wrong, and before the modal
+    // closes: this file is now the only record of the password that exists
+    // anywhere outside the person's own memory.
+    downloadTextFile(
+      credentialFilename("account-password", userId),
+      passwordRecordText({ userId, homeserver: client.baseUrl, password: next }),
+    );
+    closePasswordModal();
+    toast("Password changed — check your downloads for the file with it in.");
+  } catch (e) {
+    console.error("[password] change failed:", e);
+    fail(e?.message || "The password couldn't be changed.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+function wirePasswordModal() {
+  document.getElementById("pwBtn").onclick = openPasswordModal;
+  document.getElementById("pwCancel").onclick = closePasswordModal;
+  document.getElementById("pwGenerate").onclick = () => {
+    document.getElementById("pwNew").value = randomStrongPassword();
+  };
+  document.getElementById("pwSave").onclick = submitPasswordChange;
+  document.getElementById("pwModal").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("pwModal")) closePasswordModal();
+  });
 }
 
 async function suCopyField(kind, btn) {
@@ -8412,6 +8935,7 @@ function wireLogin() {
   document.getElementById("demoBarSignin").onclick = () => {
     loginState = null;
     if (store?.client) try { store.client.stopClient(); } catch {}
+    requestLoginScreen();  // same reason as the Switch account button below
     location.reload();
   };
   document.getElementById("demoBarClose").onclick = () => {
@@ -8422,6 +8946,11 @@ function wireLogin() {
     if (confirm("Switch accounts?")) {
       loginState = null;
       if (store?.client) try { store.client.stopClient(); } catch {}
+      // Without this the reload finds the saved session and resumes it, so
+      // "Switch account" landed the person back in the same interview they
+      // just asked to leave. The saved session itself is left alone — this
+      // load shows the sign-in screen; nothing is signed out or deleted.
+      requestLoginScreen();
       location.reload();
     }
   };
@@ -8433,6 +8962,9 @@ async function boot() {
 
   document.getElementById("submissionBtn").style.display = "none";
   currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";
+  // Only a real account has a password to change; a demo session has no
+  // account behind it at all.
+  document.getElementById("pwBtn").style.display = currentStoreKind === "matrix" ? "" : "none";
 
   let demoBarDismissed = false;
   try { demoBarDismissed = sessionStorage.getItem("eo.demoBarDismissed") === "1"; } catch {}
@@ -8444,7 +8976,7 @@ async function boot() {
       if (userId === ADMIN_USER_ID) autoJoinInvitesForAdmin(client);
       const configRoomId = await ensureConfigRoom(client);
       const answersRoom = await ensureAnswerRoom(client);
-      configStore = await new MatrixStore(client).open(configRoomId);
+      configStore = await new MatrixStore(client).open(configRoomId, { encrypted: false });
       store = await new MatrixStore(client).open(answersRoom);
     } catch (e) { console.error(e); doDemoLogin(); return; }
   } else {
@@ -8980,6 +9512,7 @@ function closeQuestionWizard() {
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
+  wirePasswordModal();
   wireCompose();
   wireBulk();
   wireVoice();
