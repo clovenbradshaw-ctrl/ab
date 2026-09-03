@@ -2577,10 +2577,68 @@ class MatrixStore extends BaseStore {
   }
 
   static joinedRoomIds(client) { return client.getRooms().map((r) => r.roomId); }
-  static foldRoomEvents(client, roomId) {
+  static foldRoomEvents(client, roomId) { return MatrixStore.readRoom(client, roomId).events; }
+
+  // Reads one room's intake events AND reports what it could not read.
+  //
+  // An encrypted event this device holds no Megolm key for comes back from
+  // the SDK with its type still m.room.encrypted, and one that simply hasn't
+  // finished decrypting yet looks identical. A plain `getType() === ours`
+  // filter drops both without a word, so a room full of answers renders as
+  // an empty submission — which reads to the office as "this family never
+  // filled anything in," the most damaging thing this app could get wrong.
+  //
+  // So: anything still encrypted is counted rather than skipped, and events
+  // that are merely waiting are nudged along (the SDK fires Event.decrypted
+  // when they land, which re-renders — see watchMatrixForLiveUpdates).
+  static readRoom(client, roomId) {
     const room = client.getRoom(roomId);
-    if (!room) return [];
-    return room.getLiveTimeline().getEvents().filter((e) => e.getType() === EVENT_TYPE).map(decodeMxEvent);
+    if (!room) return { events: [], undecryptable: 0, pending: 0 };
+    const events = [];
+    let undecryptable = 0, pending = 0;
+    for (const e of room.getLiveTimeline().getEvents()) {
+      if (e.getType() === EVENT_TYPE) { events.push(decodeMxEvent(e)); continue; }
+      if (!e.isEncrypted?.()) continue;
+      if (e.isDecryptionFailure?.()) { undecryptable++; continue; }
+      if (e.isBeingDecrypted?.() || e.getType() === "m.room.encrypted") {
+        pending++;
+        client.decryptEventIfNeeded?.(e)?.catch?.(() => {});
+      }
+    }
+    return { events, undecryptable, pending };
+  }
+
+  // Across every room this account can see. Used by the admin surfaces to
+  // say plainly how much they're not showing.
+  static readTally(client) {
+    let undecryptable = 0, pending = 0, rooms = 0;
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      const r = MatrixStore.readRoom(client, roomId);
+      undecryptable += r.undecryptable;
+      pending += r.pending;
+      if (r.undecryptable) rooms++;
+    }
+    return { undecryptable, pending, rooms };
+  }
+
+  // The live timeline holds only what the last sync happened to bring down.
+  // One long interview is dozens of events, so the earliest answers — name,
+  // child, custody dates — are exactly the ones that fall off the end. Pages
+  // backwards through every room once, when an admin surface opens, so the
+  // office sees whole submissions instead of their last few answers.
+  static async backfill(client, { pagesPerRoom = 6, limit = 200 } = {}) {
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      const room = client.getRoom(roomId);
+      if (!room) continue;
+      for (let page = 0; page < pagesPerRoom; page++) {
+        const timeline = room.getLiveTimeline();
+        if (!timeline.getPaginationToken?.("b")) break;
+        let more = false;
+        try { more = await client.paginateEventTimeline(timeline, { backwards: true, limit }); }
+        catch (e) { console.warn("[MatrixStore] backfill stopped for", roomId, e); break; }
+        if (!more) break;
+      }
+    }
   }
 }
 
@@ -4827,6 +4885,8 @@ function initAdminView({ onClose }) {
     const submissions = collectSubmissions(ctx);
     const docs = submissions.flatMap((s) => s.docs.map((d) => ({ ...d, applicantName: s.applicantName })));
     body.innerHTML = "";
+    const unreadable = unreadableNotice(ctx);
+    if (unreadable) body.appendChild(unreadable);
 
     const searchBar = document.createElement("div");
     searchBar.style.cssText = "margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
@@ -5879,8 +5939,75 @@ function initAdminView({ onClose }) {
       searchQuery = "";
       who.textContent = ctx.storeKind === "matrix" ? ctx.currentUserId : "Demo · this device (every room opened here)";
       renderActive();
+      if (ctx.storeKind === "matrix" && ctx.client) {
+        // Pull in the older half of every submission, then redraw with it.
+        MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+        watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
+      }
     },
+    // Called by the live-update watcher below. Rendering the admin surface is
+    // a full rebuild of the tab, so it only ever runs while someone is
+    // actually looking at it.
+    refresh() { if (ctx && isAdminViewOpen()) renderActive(); },
   };
+}
+
+// "Nothing here" and "here, but this device can't read it" are opposite
+// facts and used to look identical: both rendered as an empty table. For an
+// office deciding whether a family has responded, that difference is the
+// whole thing, so it gets said out loud, with the reason and the way out.
+//
+// The reason is almost always a device that arrived after the fact. Answers
+// are encrypted to the devices in the room when they were sent; a browser
+// whose site data has been cleared, or a fresh sign-in on another machine,
+// is a new device with none of those keys, and past messages are never
+// re-shared to it.
+function unreadableNotice(ctx) {
+  if (!ctx || ctx.storeKind !== "matrix" || !ctx.client) return null;
+  const { undecryptable, rooms } = MatrixStore.readTally(ctx.client);
+  if (!undecryptable) return null;
+  const box = document.createElement("div");
+  box.style.cssText = "margin-bottom:14px;padding:11px 13px;border:1px solid var(--turn);border-left-width:3px;border-radius:9px;background:var(--turn-soft);font-size:12.5px;line-height:1.55;color:var(--ink)";
+  const head = document.createElement("b");
+  head.textContent = `${undecryptable} item${undecryptable === 1 ? "" : "s"} in ${rooms} submission${rooms === 1 ? "" : "s"} can't be read on this device.`;
+  box.appendChild(head);
+  box.appendChild(document.createTextNode(
+    " They were encrypted for the office device that was signed in when they were sent, and encrypted history is never re-sent to a new one."
+    + " Open this dashboard on that device — and don't clear this site's data there, since that discards the keys."
+    + " Anything that arrives from now on will be readable here."
+  ));
+  return box;
+}
+
+function isAdminViewOpen() {
+  const view = document.getElementById("adminView");
+  return !!view && !view.classList.contains("hidden");
+}
+
+// Answers arriving from the homeserver used to change nothing on screen: the
+// admin surfaces rendered once, on open, and every collector read from a
+// snapshot of the timeline taken at that moment. An office watching a family
+// fill the form in saw an empty dashboard the whole way through, and had to
+// reload to find out anything had happened at all.
+//
+// Three signals matter, and all three arrive minutes apart in practice:
+// the event itself (Room.timeline), the moment it becomes readable
+// (Event.decrypted — an encrypted event is useless to us until then), and
+// the admin's own membership landing in a room they were invited to
+// (Room.myMembership, via autoJoinInvitesForAdmin). Coalesced, because a
+// burst of answers is one redraw.
+let _liveUpdateWatch = null;
+function watchMatrixForLiveUpdates(client, onChange) {
+  if (_liveUpdateWatch === client) return;
+  _liveUpdateWatch = client;
+  let timer = null;
+  const ping = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { try { onChange(); } catch (e) { console.error("[live] refresh failed:", e); } }, 300);
+  };
+  client.on("Room.timeline", ping);
+  client.on("Event.decrypted", ping);
+  client.on("Room.myMembership", ping);
 }
 
 
