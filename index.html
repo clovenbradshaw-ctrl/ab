@@ -44,6 +44,9 @@
 <script src="vendor/steer.js"></script>
 <script src="vendor/eoreader6.js"></script>
 <script src="vendor/voice.js"></script>
+<!-- The recovery-key codec: the string an office writes down when history
+     backup is set up, and types back to restore it on a new device. -->
+<script src="vendor/recovery-key.js"></script>
 <!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
      load, which put Google-controlled JS in the same origin as every
      plaintext answer, for every visitor — including the constituent flow,
@@ -1121,7 +1124,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Access log</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -5411,12 +5414,111 @@ function initAdminView({ onClose }) {
     return ipLocations.get(ip);
   }
 
+  // The backup panel, above the device list — the device list is the evidence
+  // for why it matters (one row per sign-in, each blind to what came before).
+  function renderBackupPanel() {
+    const box = $e("div");
+    box.style.cssText = "margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)";
+    const head = $e("div", null, "History backup");
+    head.style.cssText = "font:600 13px Inter;margin-bottom:4px";
+    box.appendChild(head);
+
+    const explain = $e("div");
+    explain.style.cssText = "font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:10px";
+    explain.textContent = "Submissions are encrypted to the devices in the room when they arrive, and the server can never re-send them to a device that came later. Backup is the only way around that: the device that can read the history uploads its keys, encrypted with a recovery key the server never sees, and any later device holding that key can pull them back.";
+    box.appendChild(explain);
+
+    const state = $e("div", "mono");
+    state.style.cssText = "font-size:11.5px;color:var(--ink);line-height:1.6;margin-bottom:10px";
+    state.textContent = "Checking…";
+    box.appendChild(state);
+
+    const actions = $e("div");
+    actions.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+    box.appendChild(actions);
+
+    const paint = (status) => {
+      if (!status.available) { state.textContent = status.reason; return; }
+      const lines = [
+        `Backup on the server: ${status.serverVersion ? `version ${status.serverVersion}` : "none yet"}`,
+        `Keys held by the server: ${status.keyCount == null ? "unknown" : status.keyCount}`,
+        `This device is uploading to: ${status.activeHere ? `version ${status.activeHere}` : "nothing"}`,
+        `Recovery key set up: ${status.secretStorage ? "yes" : "no"}`,
+      ];
+      if (status.error) lines.push(`Last error: ${status.error}`);
+      state.textContent = lines.join("\n");
+    };
+
+    keyBackupStatus(ctx.client).then(paint).catch((e) => { state.textContent = "Couldn't read the backup state: " + (e?.message || e); });
+
+    const setup = $e("button", "aview", "Set up backup from this device");
+    setup.onclick = async () => {
+      // Worth one deliberate pause: doing this on a device that cannot read
+      // the old submissions produces a backup that cannot either, and it
+      // replaces any existing recovery key.
+      const ok = confirm(
+        "Set up history backup from THIS device?\n\n"
+        + "Backup can only contain what this device can already read. If older submissions show as unreadable here, run this on the device that can read them instead.\n\n"
+        + "This replaces any existing recovery key for the account. You'll get the new key as a download — it cannot be recovered if lost."
+      );
+      if (!ok) return;
+      setup.disabled = true;
+      setup.textContent = "Setting up…";
+      try {
+        const { recoveryKey, status } = await setUpKeyBackup(ctx.client);
+        downloadRecoveryKey(recoveryKey, ctx.currentUserId);
+        paint(status);
+        // Shown as well as downloaded: a download that silently failed is
+        // otherwise indistinguishable from one that worked.
+        alert("Backup is set up. Your recovery key has been downloaded — keep it somewhere that isn't this computer:\n\n" + recoveryKey);
+        toast(status.serverVersion ? "History backup is on" : "Backup ran, but the server reports no version — check the state above", status.serverVersion ? "success" : "warn");
+      } catch (e) {
+        console.error("[backup] setup failed:", e);
+        toast("Couldn't set up backup: " + (e?.message || e), "error");
+        keyBackupStatus(ctx.client).then(paint).catch(() => {});
+      } finally {
+        setup.disabled = false;
+        setup.textContent = "Set up backup from this device";
+      }
+    };
+    actions.appendChild(setup);
+
+    const keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.placeholder = "Paste a recovery key to restore history here";
+    keyInput.style.cssText = "flex:1;min-width:240px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)";
+    actions.appendChild(keyInput);
+
+    const restore = $e("button", "aview", "Restore history on this device");
+    restore.onclick = async () => {
+      restore.disabled = true;
+      restore.textContent = "Restoring…";
+      try {
+        const { imported, total, status } = await restoreFromRecoveryKey(ctx.client, keyInput.value);
+        paint(status);
+        keyInput.value = "";
+        toast(`Restored ${imported} of ${total} keys — reopen a submission to see what's readable now`, imported ? "success" : "warn");
+        renderActive();
+      } catch (e) {
+        console.error("[backup] restore failed:", e);
+        toast(e?.message || String(e), "error");
+      } finally {
+        restore.disabled = false;
+        restore.textContent = "Restore history on this device";
+      }
+    };
+    actions.appendChild(restore);
+
+    return box;
+  }
+
   function renderAccessLog() {
     const wrap = $e("div");
     if (ctx.storeKind !== "matrix" || !ctx.client) {
-      wrap.appendChild($e("div", "aempty", "Sign in with the office account to see its access log."));
+      wrap.appendChild($e("div", "aempty", "Sign in with the office account to see its devices and backup."));
       return wrap;
     }
+    wrap.appendChild(renderBackupPanel());
 
     const note = $e("div");
     note.style.cssText = "margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.55";
@@ -8579,6 +8681,134 @@ async function nameThisDevice(client) {
   } catch (e) {
     console.warn("[access] couldn't name this device:", e);
   }
+}
+
+// ── History backup ─────────────────────────────────────────────────────────
+// The problem this exists for: encrypted history is never re-sent to a device
+// that wasn't in the room when it arrived. Every office sign-in mints a
+// device, and each new one is blind to everything sent before it existed —
+// which is how 211 items across 13 submissions became unreadable on the
+// machine the office was actually using.
+//
+// Key backup is the only cure Matrix offers. The device that CAN read the
+// history uploads its room keys to the server, encrypted with a key the
+// server never sees; any later device that holds the recovery key can pull
+// them back down. Two things follow, and both are said plainly in the panel:
+// backup can only ever contain what the device setting it up could already
+// read, and the recovery key is not recoverable — lose it and the backup is
+// as unreadable as the history was.
+//
+// Every status line below is read back from the server and the crypto store
+// rather than inferred from "the call didn't throw", because the failure this
+// feature must never produce is an office believing history is protected when
+// it isn't.
+
+async function keyBackupStatus(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) return { available: false, reason: "Encryption isn't set up in this browser." };
+  const status = { available: true, serverVersion: null, keyCount: null, activeHere: null, trusted: false, secretStorage: false };
+  try {
+    const check = await crypto.checkKeyBackupAndEnable();
+    status.serverVersion = check?.backupInfo?.version ?? null;
+    status.keyCount = check?.backupInfo?.count ?? null;
+    status.trusted = !!check?.trustInfo?.trusted;
+  } catch (e) {
+    console.warn("[backup] couldn't read the backup on the server:", e);
+    status.error = e?.message || String(e);
+  }
+  try { status.activeHere = await crypto.getActiveSessionBackupVersion(); }
+  catch (e) { console.warn("[backup] couldn't read this device's backup version:", e); }
+  try { status.secretStorage = await crypto.isSecretStorageReady(); }
+  catch (e) { console.warn("[backup] couldn't read secret storage state:", e); }
+  return status;
+}
+
+// Sets up backup FROM THIS DEVICE, and hands back the recovery key. What it
+// can protect is whatever this device can read: run it on the machine that
+// still has the history, not on a fresh one.
+async function setUpKeyBackup(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
+  const generated = await crypto.createRecoveryKeyFromPassphrase();
+  await crypto.bootstrapSecretStorage({
+    createSecretStorageKey: async () => generated,
+    setupNewKeyBackup: true,
+    setupNewSecretStorage: true,
+  });
+  // The SDK usually hands back the printable form; where it doesn't, the
+  // codec in vendor/recovery-key.js produces the identical string (same
+  // prefix, parity and base58 the SDK itself uses).
+  const encoded = generated.encodedPrivateKey || RecoveryKey.encode(generated.privateKey);
+  // Read the state back rather than trusting that no exception means success.
+  const status = await keyBackupStatus(client);
+  return { recoveryKey: encoded, status };
+}
+
+// Restores history keys on a device that has none of them, using the written
+// recovery key. Throws with something a person can act on.
+async function restoreFromRecoveryKey(client, text) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
+  const key = RecoveryKey.decode(text); // throws with a readable message
+
+  // The recovery key unlocks secret storage; the backup's own decryption key
+  // lives inside it. Handing the SDK a callback is how it asks for the one to
+  // get at the other.
+  const previous = client.cryptoCallbacks?.getSecretStorageKey;
+  client.cryptoCallbacks = client.cryptoCallbacks || {};
+  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
+    const keyId = Object.keys(keys || {})[0];
+    return keyId ? [keyId, key] : null;
+  };
+
+  try {
+    const check = await crypto.checkKeyBackupAndEnable();
+    if (!check?.backupInfo?.version) {
+      throw new Error("This account has no history backup on the server yet — set one up from a device that can read the history.");
+    }
+    const result = await crypto.restoreKeyBackup();
+    const status = await keyBackupStatus(client);
+    return { imported: result?.imported ?? 0, total: result?.total ?? 0, status };
+  } finally {
+    // Leave the client as it was found: the key stays in memory only for the
+    // restore itself.
+    if (previous) client.cryptoCallbacks.getSecretStorageKey = previous;
+    else delete client.cryptoCallbacks.getSecretStorageKey;
+  }
+}
+
+// The recovery key is worth nothing in a chat log and everything on paper.
+// Same shape as the password file: what it is, what it unlocks, and what
+// nobody can do for you if it's lost.
+function downloadRecoveryKey(recoveryKey, userId) {
+  const body = [
+    "OCR intake — office history recovery key",
+    "",
+    `Account: ${userId}`,
+    `Saved:   ${new Date().toString()}`,
+    "",
+    "RECOVERY KEY:",
+    recoveryKey,
+    "",
+    "What this is for:",
+    "  Submissions are encrypted. A newly signed-in device cannot read anything",
+    "  that arrived before it existed. This key restores that history onto a new",
+    "  device: sign in, open the office dashboard, and paste it into 'Restore",
+    "  history on this device'.",
+    "",
+    "Keep it somewhere that is not this computer. Nobody — not this app, not the",
+    "server, not Anthropic — can recover it or reset it for you. Without it, a",
+    "future device cannot read older submissions.",
+    "",
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ocr-intake-recovery-key-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 // ── Entry: language gate → straight into the conversation ──
