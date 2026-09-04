@@ -479,3 +479,16 @@ test("dateBounds matches what validate() will accept, for both control shapes", 
   assert.equal(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, m.min, "en"), null);
   assert.equal(Steer.validate({ ...DATE_FIELD, type: "date_flex" }, m.max, "en"), null);
 });
+
+test("initialsOf: how a complaint names a child whose name the office keeps on file", () => {
+  assert.equal(Steer.initialsOf("Maria Lopez"), "M.L.");
+  assert.equal(Steer.initialsOf("frank j smith"), "F.J.S.");
+  // A hyphenated first name contributes both halves, the way it's written.
+  assert.equal(Steer.initialsOf("Ana-Sofia Ruiz"), "A.S.R.");
+  // Particles aren't initials.
+  assert.equal(Steer.initialsOf("Maria de la Cruz Lopez"), "M.C.L.");
+  assert.equal(Steer.initialsOf("O'Brien Kelly"), "O.K.");
+  // Nothing to work with is not an error — the field is simply left empty.
+  assert.equal(Steer.initialsOf("   "), "");
+  assert.equal(Steer.initialsOf(null), "");
+});

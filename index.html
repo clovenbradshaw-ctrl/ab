@@ -29,7 +29,7 @@
   media-src 'self' blob:;
   frame-src 'self' blob: https://www.google.com;
   worker-src 'self' blob:;
-  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com;
+  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com https://ipwho.is;
 ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,6 +44,9 @@
 <script src="vendor/steer.js"></script>
 <script src="vendor/eoreader6.js"></script>
 <script src="vendor/voice.js"></script>
+<!-- The recovery-key codec: the string an office writes down when history
+     backup is set up, and types back to restore it on a new device. -->
+<script src="vendor/recovery-key.js"></script>
 <!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
      load, which put Google-controlled JS in the same origin as every
      plaintext answer, for every visitor — including the constituent flow,
@@ -499,6 +502,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 #pwModal input:focus{outline:2px solid var(--seal);outline-offset:1px;border-color:transparent}
 #pwModal .pw-gen{background:none;border:none;color:var(--seal);font:600 12px Inter;cursor:pointer;padding:5px 0 0}
 #pwModal .pw-note{font-size:12px;color:var(--muted);line-height:1.5;margin:12px 0 0}
+.inline-editor .modal.review-modal{width:min(560px,94vw)}
+#reviewModal .review-sub{font-size:12.5px;color:var(--muted);line-height:1.5;margin:2px 0 12px}
+#reviewModal .review-rows{max-height:min(52vh,420px);overflow-y:auto;margin-bottom:14px;scrollbar-width:thin}
+#reviewModal .rrow{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-bottom:1px solid var(--line)}
+#reviewModal .rrow:last-child{border-bottom:none}
+#reviewModal .rrow .rlabel{flex:0 0 38%;font:600 11.5px Inter;color:var(--muted);line-height:1.4}
+#reviewModal .rrow .rvalue{flex:1;font-size:13px;color:var(--ink);line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+#reviewModal .rrow .redit{flex:none;background:none;border:none;color:var(--seal);font:600 11.5px Inter;cursor:pointer;padding:1px 2px;text-decoration:underline;text-underline-offset:2px}
+#reviewModal .rrow .redit:hover{color:var(--ink)}
 .inline-editor .btns button{font:inherit;font-size:12.5px;padding:6px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .inline-editor .btns button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
 .inline-editor .btns button.cancel:hover{background:var(--wash)}
@@ -993,6 +1005,19 @@ nav .setup .rail-toggle{display:inline-flex}
   </div>
 </div></div>
 
+<!-- Section review. Shown when a stretch of the interview is finished: what
+     was captured, in the person's own words, editable in place. This is the
+     only place the app asks "does this look right?" — see Intake._openReview
+     for why it is per section and not per answer. -->
+<div class="inline-editor" id="reviewModal"><div class="modal review-modal">
+  <h3 id="reviewTitle">Let's review</h3>
+  <p class="review-sub" id="reviewSub"></p>
+  <div class="review-rows" id="reviewRows"></div>
+  <div class="btns">
+    <button class="primary" id="reviewOk">Looks right →</button>
+  </div>
+</div></div>
+
 <!-- Change this account's password. The new password is downloaded as a
      small file the moment the change succeeds: most homeservers, matrix.org
      included, have no password reset, so a password nobody wrote down is an
@@ -1099,7 +1124,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="table">Documents</button><button class="atab" data-view="answers">All Answers</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="pipeline">Pipeline</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -1646,19 +1671,42 @@ function childRoundFields(n) {
   const ordinalEs = n === 1 ? "primer" : n === 2 ? "segundo" : n === 3 ? "tercer" : `${n}.º`;
   return [
     {
+      path: `child_${n}_name`,
+      section: "about",
+      label: `Child ${n} — name`,
+      type: "text",
+      nameCase: true,
+      required: n === 1,
+      prompt: n === 1
+        ? "Now let's talk about your child. What's their name?"
+        : `What's the ${ordinal} child's name?`,
+      promptEs: n === 1
+        ? "Ahora hablemos de tu hijo o hija. ¿Cómo se llama?"
+        : `¿Cómo se llama el ${ordinalEs} niño o niña?`,
+      // Says what happens to it, because a parent has every reason to ask
+      // before typing their child's name into a government complaint.
+      help: "The office needs their name to work the case. The complaint itself only uses their initials, which we'll fill in for you.",
+      helpEs: "La oficina necesita su nombre para trabajar el caso. La queja en sí solo usa sus iniciales, que completaremos por ti.",
+    },
+    {
       path: `child_${n}_initials`,
       section: "about",
       label: `Child ${n} — initials`,
       type: "text",
-      required: n === 1,
-      prompt: n === 1
-        ? "Now let's talk about your child. To help protect their privacy, please give just their initials, not their full name."
-        : `What are the ${ordinal} child's initials?`,
-      promptEs: n === 1
-        ? "Ahora hablemos de tu hijo o hija. Para proteger su privacidad, por favor da solo sus iniciales, no su nombre completo."
-        : `¿Cuáles son las iniciales del ${ordinalEs} niño o niña?`,
-      help: "For example, if their name is Maria Lopez, you'd enter M.L.",
-      helpEs: "Por ejemplo, si su nombre es Maria Lopez, escribirías M.L.",
+      required: false,
+      // Never asked: worked out from the name above (see Intake._deriveFrom).
+      // Asking for initials AND a name is asking the same question twice, and
+      // asking only for initials cost the office the name it needs to work
+      // the case. Still a stored field of its own, because the complaint is
+      // written with initials and the audit trail has to show what was filed.
+      derived: true,
+      derivedFrom: `child_${n}_name`,
+      derivedAs: "initials",
+      label_note: "filled in from the name",
+      prompt: `What are the ${ordinal} child's initials?`,
+      promptEs: `¿Cuáles son las iniciales del ${ordinalEs} niño o niña?`,
+      help: "For example, if their name is Maria Lopez, this is M.L.",
+      helpEs: "Por ejemplo, si su nombre es Maria Lopez, esto es M.L.",
     },
     {
       path: `child_${n}_dob`,
@@ -2236,12 +2284,26 @@ function expandOtherPicks(raw, otherValue) {
     .join(", ");
 }
 
-function buildComplaintLetter(answers, provenance = {}) {
+// `child` names one round from childRoundNumbers() to write the complaint
+// about; omitted, the draft covers every child at once (the original shape,
+// kept because a family with one child is the common case and a single
+// combined complaint is still sometimes what the office wants).
+//
+// Per-child drafts are PROJECTIONS of one set of answers, never copies of
+// it. Everything except section 2 — who the complainant is, the family's
+// account, what DCS did, the placements, the remedies already tried — is
+// shared, so a parent correcting their phone number corrects it for every
+// child's complaint at once, with nothing to keep in step. That is why the
+// split lives here, at the point the document is written, and not in the
+// data: one family answers one interview, however many complaints come out
+// of it.
+function buildComplaintLetter(answers, provenance = {}, { child = null } = {}) {
   const today = new Date().toLocaleDateString([], { year: "numeric", month: "long", day: "numeric" });
   const v = (p) => { const s = answers[p]; return s == null ? "" : String(s).trim(); };
   const sec = (title, body) => `\n${title}\n${"-".repeat(title.length)}\n${body || "(not provided)"}`;
   const missing = LETTER_REQUIRED_FIELDS.filter((f) => !v(f.path));
-  const childRounds = childRoundNumbers(answers);
+  const allRounds = childRoundNumbers(answers);
+  const childRounds = child == null ? allRounds : allRounds.filter((n) => n === child);
   const childPaths = childRounds.flatMap((n) => [
     `child_${n}_initials`, `child_${n}_dob`, `child_${n}_race_ethnicity`, `child_${n}_race_ethnicity_other`,
     `child_${n}_disability_has`, `child_${n}_disability_explain`,
@@ -2284,7 +2346,9 @@ function buildComplaintLetter(answers, provenance = {}) {
     "Office for Civil Rights (OCR)",
     "U.S. Department of Health and Human Services",
     "",
-    "Re: Complaint against the Tennessee Department of Children's Services (DCS)",
+    child == null
+      ? "Re: Complaint against the Tennessee Department of Children's Services (DCS)"
+      : `Re: Complaint against the Tennessee Department of Children's Services (DCS), on behalf of ${(answers[`child_${child}_initials`] || "").toString().trim() || "the child named below"}`,
     "",
     "To the Office for Civil Rights,",
     "",
@@ -3873,6 +3937,8 @@ class Intake {
     this.history = [];          // chat transcript for the UI
     this.pending = null;        // { field, value } awaiting confirmation
     this._probes = Object.create(null);  // field path -> times asked again (see _probeReply)
+    this.awaitingReview = null;          // section key whose review is open, if any
+    this._reviewed = new Set();          // sections already looked over
     this._drafts = Object.create(null);  // field path -> earlier partial answers to that same question
     this.epoch = 0;             // increments on every store; the live prompt window is the current epoch
     this._listeners = new Set();
@@ -3928,12 +3994,15 @@ class Intake {
   // disorienting.
   nextField() {
     const a = this.answers();
-    return this._visibleFields(a).find((f) => a[f.path] == null || a[f.path] === "");
+    // A derived field is filled in from another answer (see _deriveFrom), so
+    // it is never put to the person — it still exists, is still stored, and
+    // still shows up in the review and the checklist like any other answer.
+    return this._visibleFields(a).find((f) => !f.derived && (a[f.path] == null || a[f.path] === ""));
   }
 
   isComplete() {
     const a = this.answers();
-    return this._visibleFields(a).every((f) => !f.required || a[f.path]);
+    return this._visibleFields(a).every((f) => f.derived || !f.required || a[f.path]);
   }
 
   // One entry per SECTIONS key, in that order — done/total counted only over
@@ -3990,6 +4059,10 @@ class Intake {
     this.pending = null;
     const f = this.nextField();
     if (!f) {
+      // The last section never crosses a boundary, so its review happens here
+      // instead — nobody should reach "thank you, we're done" without having
+      // seen the final stretch of what they said.
+      if (this._lastSection !== undefined && this._openReview(this._lastSection)) return;
       // The mandatory Rep. Behn's-office closing only applies to the OCR
       // intake this schema was built for — a differently-repurposed schema
       // (via the admin's "Author questions" panel) falls back to Steer's
@@ -4002,6 +4075,15 @@ class Intake {
       this._emit("complete", this.answers());
       return;
     }
+    const sec = f.section || null;
+    // Leaving a section is the moment to look back at it. Everything in it is
+    // already stored — answers are no longer held hostage to a yes after each
+    // one — so this is a review, not a gate: read it over, fix anything, keep
+    // going. Asking "does that look right?" thirty-six times taught people to
+    // say yes without reading; asking three times, about a page of their own
+    // words at once, is a question someone can actually answer.
+    if (this._lastSection !== undefined && sec !== this._lastSection && this._openReview(this._lastSection)) return;
+
     this._emit("field", f);
     this._emitContext();  // the fold changed with the field — refresh any open inspector
     // Crossing into a new section gets its one hand-written transition line
@@ -4009,7 +4091,6 @@ class Intake {
     // flat list. The FIRST section of a session is seated silently: the
     // opening blurb/overview already covers "here's how this starts", and a
     // resumed session shouldn't re-announce the part it's already in.
-    const sec = f.section || null;
     if (this._lastSection === undefined) this._lastSection = sec;
     else if (sec && sec !== this._lastSection) {
       const intro = SECTION_INTROS[sec];
@@ -4017,6 +4098,56 @@ class Intake {
       this._lastSection = sec;
     }
     this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
+  }
+
+  // Everything answered in one section, in the order it was asked — what the
+  // review shows, and what the letter will be built from.
+  reviewRows(sectionKey) {
+    const a = this.answers();
+    return this._visibleFields(a)
+      .filter((f) => (f.section || null) === sectionKey)
+      .map((f) => ({ path: f.path, label: f.label, value: a[f.path] ?? "", field: f }))
+      .filter((r) => r.value !== "" && r.value != null);
+  }
+
+  // Opens the review for a finished section, if there is anything in it and
+  // it hasn't already been reviewed. Returns true when the interview should
+  // pause here and wait for the person to approve it.
+  _openReview(sectionKey) {
+    if (!sectionKey || this._reviewed.has(sectionKey)) return false;
+    const rows = this.reviewRows(sectionKey);
+    if (!rows.length) { this._reviewed.add(sectionKey); return false; }
+    const section = SECTIONS.find((s) => s.key === sectionKey);
+    const title = (this.lang === "es" && section?.labelEs) || section?.label || "";
+    this.awaitingReview = sectionKey;
+    this._say("assistant", this._reply("reviewing", { meta: { section: title } }), { support: true });
+    this._emit("review", { section: sectionKey, title, rows });
+    return true;
+  }
+
+  // The person said the section reads right (from the review panel, or by
+  // simply saying so in the chat). Nothing is stored here — it already was —
+  // this only releases the interview to carry on into the next section.
+  async approveReview() {
+    if (!this.awaitingReview) return;
+    this._reviewed.add(this.awaitingReview);
+    this._lastSection = this.awaitingReview;
+    this.awaitingReview = null;
+    this._emit("reviewClosed", {});
+    return this._askNext();
+  }
+
+  // Re-opens the review the person is currently in — used after an edit, so
+  // the panel shows what they just changed.
+  refreshReview() {
+    if (!this.awaitingReview) return;
+    const sectionKey = this.awaitingReview;
+    const section = SECTIONS.find((s) => s.key === sectionKey);
+    this._emit("review", {
+      section: sectionKey,
+      title: (this.lang === "es" && section?.labelEs) || section?.label || "",
+      rows: this.reviewRows(sectionKey),
+    });
   }
 
   // The person sent a message. This is where the physics-steered,
@@ -4050,6 +4181,17 @@ class Intake {
     if (intent.distress) {
       Steer.applyForce(this.steer, { distress: true });
       this._say("assistant", this._reply("safety"), { support: true });
+      return;
+    }
+
+    // While a section review is open the interview is paused on purpose: the
+    // next question is not asked until the person has looked over the last
+    // stretch. Saying "yes" here is the same as pressing the button on the
+    // panel; anything else gets pointed back at it, since a typed correction
+    // has no field to land in.
+    if (this.awaitingReview) {
+      if (intent.yes) return this.approveReview();
+      this._say("assistant", this._reply("reviewHelp"), { support: true });
       return;
     }
 
@@ -4177,12 +4319,13 @@ class Intake {
         inputKind: meta.inputKind === "voice" ? "voice" : "typed",
         voiceClipId: meta.voiceClipId || null,
       };
-      // Confirms the whole value being stored, which after a back-and-forth
-      // is everything the person said across those turns, not just the last.
-      thinking.text = this._reply("confirming", { meta: { value: this.pending.value } }); thinking.streaming = false; thinking.support = false;
-      this._emit("message", thinking);
-      this._emit("pending", this.pending);
-      return;
+      // Stored on the spot. The old "You said: … does that look right?" ran
+      // after every single answer — thirty-six yes/no round trips to get
+      // through one interview, which is both exhausting and self-defeating:
+      // asked that many times, people stop reading and just say yes. What
+      // they get instead is one look back over each section (see _openReview),
+      // where a page of their own words is something they can actually check.
+      return this._confirm({ ackInto: thinking });
     }
 
     // The person attempted an answer but it didn't validate (e.g. free text
@@ -4332,7 +4475,7 @@ class Intake {
   // The DEF payload carries the full audit provenance (raw source text,
   // typed vs voice-transcribed, and the encrypted recording id) so the
   // assembled letter can trace every line back to what was said.
-  async _confirm() {
+  async _confirm({ ackInto = null } = {}) {
     const { field, value, source, inputKind, voiceClipId } = this.pending;
     const ev = this.store.emit(OP.DEF, {
       anchor: this.anchor, path: field.path, value,
@@ -4344,9 +4487,18 @@ class Intake {
     // Rotate through the vetted acknowledgement variants (keyed by how many
     // answers this session has stored) so thirty saves don't read as the
     // same sentence thirty times — still only ever lines from the table.
-    this._say("assistant", this._reply("confirmed", { meta: { n: this.epoch - 1 } }));
+    const ack = this._reply("confirmed", { meta: { n: this.epoch - 1 } });
+    if (ackInto) {
+      // Reuse the "thinking" bubble already on screen rather than leaving an
+      // empty one behind and adding a second.
+      ackInto.text = ack; ackInto.streaming = false; ackInto.support = false;
+      this._emit("message", ackInto);
+    } else {
+      this._say("assistant", ack);
+    }
     this._sayMilestone();
     this._emit("stored", { field, value, event: ev });
+    this._deriveFrom(field, value);
     this._checkFilingDeadline(field, value);
     await this._maybeInjectFollowups(field, value);
     await this._maybeInjectCoverageFollowup(field, value);
@@ -4537,6 +4689,29 @@ class Intake {
       helpEs: nextSlot.followup.helpEs,
       _coverageSlotKey: nextSlot.key,
     });
+  }
+
+  // Fills in whatever the just-stored answer is the source for. Only one
+  // derivation exists today — a child's initials from their name — and it is
+  // declared as plain data on the field (derivedFrom/derivedAs) so it
+  // survives the JSON round trip through the admin's question editor, the
+  // same reasoning as skipUnless.
+  //
+  // Stored as its own DEF carrying the text it came from, so the audit trail
+  // shows the complaint's "M.L." tracing back to the name a parent typed. An
+  // office that corrects the initials by hand keeps that correction: only a
+  // change to the name itself derives them again.
+  _deriveFrom(field, value) {
+    for (const f of this.schema.fields) {
+      if (!f.derived || f.derivedFrom !== field.path || f.derivedAs !== "initials") continue;
+      const next = Steer.initialsOf(value);
+      if (!next || this.answers()[f.path] === next) continue;
+      const ev = this.store.emit(OP.DEF, {
+        anchor: this.anchor, path: f.path, value: next,
+        source: String(value ?? ""), inputKind: "derived", voiceClipId: null,
+      });
+      this._emit("stored", { field: f, value: next, event: ev });
+    }
   }
 
   // "If someone uses the tool and the incident is past 180 days, the
@@ -4734,6 +4909,11 @@ function afterCutoff(at) {
 // an applicant's own session: a family resuming an interview they started
 // last week must still see everything they told us.
 function officeRoomEvents(storeKind, client, roomId) {
+  // The shared question set lives in a room of its own, and it is not a
+  // family. Left in, it renders as a submission with no name, no phone and
+  // no answers — an empty row the office has to learn to ignore. Skipping it
+  // here covers every surface at once, since they all read through this.
+  if (configStore && configStore.roomId && roomId === configStore.roomId) return [];
   const events = storeKind === "matrix"
     ? MatrixStore.foldRoomEvents(client, roomId)
     : DemoStore.loadEvents(roomId);
@@ -4941,7 +5121,17 @@ function collectPipelineData({ storeKind, client }) {
 
     const caseStatus = folded.anchors?.case?.status?.value || "new";
 
-    pipelines.push({ roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus });
+    const valueOf = (path) => (answers.find((a) => a.path === path) || {}).value || "";
+    // "Can this device read it" belongs on the row, not only in a banner at
+    // the top: a submission that shows two answers because the rest can't be
+    // decrypted must not look like a family who only answered twice.
+    const unreadable = storeKind === "matrix" ? MatrixStore.readRoom(client, roomId).undecryptable : 0;
+    pipelines.push({
+      roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus,
+      phone: valueOf("complainant_phone"),
+      email: valueOf("complainant_email"),
+      unreadable,
+    });
   }
   return pipelines.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
 }
@@ -4968,12 +5158,18 @@ function sendGuardedOrWarn(ctx, roomId, op, payload) {
   });
 }
 
-function saveLetter(ctx, roomId, text, template = null) {
+// `about` names the child this draft is for ({ childRound, childInitials,
+// childName }), so a family's drafts can be told apart, filed separately,
+// and traced back to the one interview they were all written from.
+function saveLetter(ctx, roomId, text, template = null, about = {}) {
   const payload = {
     entity: "letter",
     id: newId("letter"),
     attrs: {
       text, generatedAt: nowIso(), generatedBy: ctx.currentUserId, status: "draft",
+      childRound: about.childRound ?? null,
+      childInitials: about.childInitials || "",
+      childName: about.childName || "",
       // Which template produced this draft — "Regenerate" and the audit
       // trail rebuild from the same one instead of assuming the built-in.
       templateId: template?.id || BUILTIN_TEMPLATE_ID,
@@ -5039,7 +5235,7 @@ function initAdminView({ onClose }) {
   const body = document.getElementById("adminBody");
   const who = document.getElementById("adminWho");
   const tabs = Array.from(root.querySelectorAll(".atab"));
-  let active = "table";
+  let active = "answers";  // the submissions list — what an office opens this for
   let ctx = null;
   let searchQuery = "";
   let searchTimer = null;
@@ -5050,18 +5246,26 @@ function initAdminView({ onClose }) {
   // so state stored on it never survives the re-render its own click
   // handlers trigger.
   let pipelineViewing = null;
+  // Which column the case table is sorted by, and which way. Held here, not
+  // on the table, because renderActive() throws the table away and rebuilds
+  // it on every refresh (including the live ones a new answer triggers).
+  let caseSort = { key: "updated", dir: "desc" };
   // Which of the three kanban boards (submissions / documents / letters)
   // the Kanban tab is showing. Submissions is the default: it's the queue
   // of whole cases, which is what "processing" mostly means here.
   let kanbanBoard = "submissions";
 
-  tabs.forEach((btn) => {
-    btn.onclick = () => {
-      active = btn.dataset.view;
-      tabs.forEach((b) => b.classList.toggle("on", b === btn));
-      renderActive();
-    };
-  });
+  // Switching tabs from a click, or from code (opening a family from the
+  // case table lands on the tab that reviews one submission).
+  function showTab(key) {
+    const btn = tabs.find((b) => b.dataset.view === key);
+    if (!btn) return;
+    active = key;
+    tabs.forEach((b) => b.classList.toggle("on", b === btn));
+    renderActive();
+  }
+
+  tabs.forEach((btn) => { btn.onclick = () => showTab(btn.dataset.view); });
   document.getElementById("adminClose").onclick = onClose;
 
   function matchesQuery(text, q) {
@@ -5098,9 +5302,28 @@ function initAdminView({ onClose }) {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
       body.appendChild(renderTable(filtered));
     } else if (active === "answers") {
-      const allAnswers = collectAllAnswers(ctx);
-      const filtered = allAnswers.filter((a) => matchesQuery(`${a.applicantName} ${a.path} ${a.value}`, q));
-      body.appendChild(renderAnswersTable(filtered));
+      // One list of families, and the full review of whichever one is open —
+      // the same single-submission view the queue used, rendered here so
+      // opening a family doesn't move the reviewer to another tab.
+      const all = collectPipelineData(ctx);
+      const viewing = pipelineViewing ? all.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
+      if (viewing) {
+        const bar = $e("div");
+        bar.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px";
+        const back = document.createElement("button");
+        back.textContent = "← All submissions";
+        back.className = "aclose";
+        back.onclick = () => { pipelineViewing = null; renderActive(); };
+        bar.appendChild(back);
+        bar.appendChild($e("div", "acell-name", viewing.applicantName));
+        bar.appendChild(caseStatusSelect(viewing));
+        body.appendChild(bar);
+        renderSingleSubmission(body, viewing);
+      } else {
+        body.appendChild(renderCaseTable(
+          all.filter((p) => matchesQuery(`${p.applicantName} ${p.phone} ${p.email} ${p.caseStatus}`, q)),
+        ));
+      }
     } else if (active === "kanban") {
       body.appendChild(kanbanSwitcher());
       if (kanbanBoard === "documents") {
@@ -5119,6 +5342,8 @@ function initAdminView({ onClose }) {
       body.appendChild(renderLetters(filtered));
     } else if (active === "eval") {
       body.appendChild(renderEval());
+    } else if (active === "access") {
+      body.appendChild(renderAccessLog());
     } else if (active === "pipeline") {
       const pipelineData = collectPipelineData(ctx);
       body.appendChild(renderPipeline(pipelineData));
@@ -5142,6 +5367,219 @@ function initAdminView({ onClose }) {
       row.appendChild(tags);
     }
     return row;
+  }
+
+  // ── Access log ────────────────────────────────────────────────────────────
+  // Who has opened this dashboard, from where, and on what. The homeserver
+  // already keeps the authoritative record — every sign-in is a device, and
+  // it stamps each one with the last IP and time it was seen — so this reads
+  // that rather than keeping a second log of its own that could disagree
+  // with it.
+  //
+  // Location is an estimate from the IP, looked up only when this tab is
+  // opened, cached for the session, and clearly labelled as approximate. It
+  // is a city-level guess from an address block, not where anybody was: a
+  // phone on mobile data can place its owner in the wrong state entirely.
+  // Note the trade being made — the lookup sends office IP addresses to a
+  // third party (ipwho.is). No answer, name, or room id ever goes with them.
+  // Keyed by IP and holding the PROMISE, not the result: several devices
+  // usually share one office IP, and caching the in-flight lookup means they
+  // all get the answer instead of the first one getting it and the rest
+  // getting the placeholder it left behind.
+  const ipLocations = new Map();
+  const IP_LOOKUP_TIMEOUT_MS = 5000;
+
+  async function lookupIp(ip) {
+    // A lookup that never answers must not leave a row reading "looking up…"
+    // for the rest of the session — the device list is the point, the
+    // estimate beside it is a courtesy.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), IP_LOOKUP_TIMEOUT_MS);
+    try {
+      const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: abort.signal });
+      const d = await r.json();
+      if (!d || d.success === false) return null;
+      return [d.city, d.region, d.country].filter(Boolean).join(", ") || null;
+    } catch (e) {
+      console.warn("[access] IP lookup failed for", ip, e);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function locateIp(ip) {
+    if (!ip) return Promise.resolve(null);
+    if (!ipLocations.has(ip)) ipLocations.set(ip, lookupIp(ip));
+    return ipLocations.get(ip);
+  }
+
+  // The backup panel, above the device list — the device list is the evidence
+  // for why it matters (one row per sign-in, each blind to what came before).
+  function renderBackupPanel() {
+    const box = $e("div");
+    box.style.cssText = "margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)";
+    const head = $e("div", null, "History backup");
+    head.style.cssText = "font:600 13px Inter;margin-bottom:4px";
+    box.appendChild(head);
+
+    const explain = $e("div");
+    explain.style.cssText = "font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:10px";
+    explain.textContent = "Submissions are encrypted to the devices in the room when they arrive, and the server can never re-send them to a device that came later. Backup is the only way around that: the device that can read the history uploads its keys, encrypted with a recovery key the server never sees, and any later device holding that key can pull them back.";
+    box.appendChild(explain);
+
+    const state = $e("div", "mono");
+    state.style.cssText = "font-size:11.5px;color:var(--ink);line-height:1.6;margin-bottom:10px";
+    state.textContent = "Checking…";
+    box.appendChild(state);
+
+    const actions = $e("div");
+    actions.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+    box.appendChild(actions);
+
+    const paint = (status) => {
+      if (!status.available) { state.textContent = status.reason; return; }
+      const lines = [
+        `Backup on the server: ${status.serverVersion ? `version ${status.serverVersion}` : "none yet"}`,
+        `Keys held by the server: ${status.keyCount == null ? "unknown" : status.keyCount}`,
+        `This device is uploading to: ${status.activeHere ? `version ${status.activeHere}` : "nothing"}`,
+        `Recovery key set up: ${status.secretStorage ? "yes" : "no"}`,
+      ];
+      if (status.error) lines.push(`Last error: ${status.error}`);
+      state.textContent = lines.join("\n");
+    };
+
+    keyBackupStatus(ctx.client).then(paint).catch((e) => { state.textContent = "Couldn't read the backup state: " + (e?.message || e); });
+
+    const setup = $e("button", "aview", "Set up backup from this device");
+    setup.onclick = async () => {
+      // Worth one deliberate pause: doing this on a device that cannot read
+      // the old submissions produces a backup that cannot either, and it
+      // replaces any existing recovery key.
+      const ok = confirm(
+        "Set up history backup from THIS device?\n\n"
+        + "Backup can only contain what this device can already read. If older submissions show as unreadable here, run this on the device that can read them instead.\n\n"
+        + "This replaces any existing recovery key for the account. You'll get the new key as a download — it cannot be recovered if lost."
+      );
+      if (!ok) return;
+      setup.disabled = true;
+      setup.textContent = "Setting up…";
+      try {
+        const { recoveryKey, status } = await setUpKeyBackup(ctx.client);
+        downloadRecoveryKey(recoveryKey, ctx.currentUserId);
+        paint(status);
+        // Shown as well as downloaded: a download that silently failed is
+        // otherwise indistinguishable from one that worked.
+        alert("Backup is set up. Your recovery key has been downloaded — keep it somewhere that isn't this computer:\n\n" + recoveryKey);
+        toast(status.serverVersion ? "History backup is on" : "Backup ran, but the server reports no version — check the state above", status.serverVersion ? "success" : "warn");
+      } catch (e) {
+        console.error("[backup] setup failed:", e);
+        toast("Couldn't set up backup: " + (e?.message || e), "error");
+        keyBackupStatus(ctx.client).then(paint).catch(() => {});
+      } finally {
+        setup.disabled = false;
+        setup.textContent = "Set up backup from this device";
+      }
+    };
+    actions.appendChild(setup);
+
+    const keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.placeholder = "Paste a recovery key to restore history here";
+    keyInput.style.cssText = "flex:1;min-width:240px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)";
+    actions.appendChild(keyInput);
+
+    const restore = $e("button", "aview", "Restore history on this device");
+    restore.onclick = async () => {
+      restore.disabled = true;
+      restore.textContent = "Restoring…";
+      try {
+        const { imported, total, status } = await restoreFromRecoveryKey(ctx.client, keyInput.value);
+        paint(status);
+        keyInput.value = "";
+        toast(`Restored ${imported} of ${total} keys — reopen a submission to see what's readable now`, imported ? "success" : "warn");
+        renderActive();
+      } catch (e) {
+        console.error("[backup] restore failed:", e);
+        toast(e?.message || String(e), "error");
+      } finally {
+        restore.disabled = false;
+        restore.textContent = "Restore history on this device";
+      }
+    };
+    actions.appendChild(restore);
+
+    return box;
+  }
+
+  function renderAccessLog() {
+    const wrap = $e("div");
+    if (ctx.storeKind !== "matrix" || !ctx.client) {
+      wrap.appendChild($e("div", "aempty", "Sign in with the office account to see its devices and backup."));
+      return wrap;
+    }
+    wrap.appendChild(renderBackupPanel());
+
+    const note = $e("div");
+    note.style.cssText = "margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.55";
+    note.textContent = "Every sign-in to this account is a device below. Times and IP addresses come from the homeserver; the location is an approximate lookup of the IP and can be well off, especially on mobile networks. Signing out a device elsewhere makes anything only that device could read unreadable, so treat this as a record, not a control panel.";
+    wrap.appendChild(note);
+
+    const table = $e("div", "atable-wrap");
+    const t = document.createElement("table");
+    t.className = "atable";
+    t.innerHTML = "<thead><tr><th>Device</th><th>Name</th><th>Last seen</th><th>IP address</th><th>Approx. location</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    tbody.appendChild((() => {
+      const tr = document.createElement("tr");
+      const td = $e("td", "acell-val", "Reading the account's devices…");
+      td.colSpan = 5;
+      tr.appendChild(td);
+      return tr;
+    })());
+    t.appendChild(tbody);
+    table.appendChild(t);
+    wrap.appendChild(table);
+
+    ctx.client.getDevices().then(async (res) => {
+      const devices = (res?.devices || []).slice().sort((a, b) => (b.last_seen_ts || 0) - (a.last_seen_ts || 0));
+      const thisDevice = ctx.client.getDeviceId();
+      tbody.innerHTML = "";
+      if (!devices.length) {
+        const tr = document.createElement("tr");
+        const td = $e("td", "acell-val", "The homeserver reported no devices for this account.");
+        td.colSpan = 5; tr.appendChild(td); tbody.appendChild(tr);
+        return;
+      }
+      const cells = [];
+      for (const d of devices) {
+        const tr = document.createElement("tr");
+        const id = $e("td", "acell-mime mono", d.device_id + (d.device_id === thisDevice ? " (this one)" : ""));
+        if (d.device_id === thisDevice) id.style.fontWeight = "600";
+        tr.appendChild(id);
+        tr.appendChild($e("td", "acell-val", d.display_name || "—"));
+        tr.appendChild($e("td", "acell-date mono", d.last_seen_ts ? fmtDate(new Date(d.last_seen_ts).toISOString()) : "never"));
+        tr.appendChild($e("td", "acell-mime mono", d.last_seen_ip || "—"));
+        const place = $e("td", "acell-val", d.last_seen_ip ? "looking up…" : "—");
+        tr.appendChild(place);
+        tbody.appendChild(tr);
+        if (d.last_seen_ip) cells.push([d.last_seen_ip, place]);
+      }
+      // Filled in after the table is already readable, and all at once —
+      // repeated IPs share one lookup, so this is usually one request.
+      await Promise.all(cells.map(async ([ip, cell]) => {
+        const place = await locateIp(ip);
+        cell.textContent = place || "unknown";
+      }));
+    }).catch((e) => {
+      console.error("[access] couldn't read the account's devices:", e);
+      tbody.innerHTML = "";
+      const tr = document.createElement("tr");
+      const td = $e("td", "acell-val", "Couldn't read the account's devices from the homeserver.");
+      td.colSpan = 5; tr.appendChild(td); tbody.appendChild(tr);
+    });
+
+    return wrap;
   }
 
   function renderEval() {
@@ -5246,34 +5684,94 @@ function initAdminView({ onClose }) {
     return wrap;
   }
 
-  function renderAnswersTable(answers) {
-    if (!answers.length) return $e("div", "aempty", answers.length === 0 && !searchQuery ? "No answers recorded yet." : "No answers match your search.");
+  // One row per family, not one row per answer. The old grid listed every
+  // stored value on its own line — thousands of rows of "applicant / field /
+  // value" that answered no question an office actually has. What they need
+  // on sight is who this is, how to reach them, whether the submission can
+  // be read here, and how far along it is.
+  function renderCaseTable(cases) {
+    if (!cases.length) {
+      return $e("div", "aempty", searchQuery ? "No submissions match your search." : "No submissions yet — they appear here as constituents answer questions.");
+    }
+
+    const columns = [
+      { key: "name", label: "Applicant", get: (c) => c.applicantName || "" },
+      { key: "phone", label: "Phone", get: (c) => c.phone || "" },
+      { key: "answers", label: "Answers", get: (c) => c.answers.length, numeric: true },
+      { key: "readable", label: "Readable here", get: (c) => c.unreadable },
+      { key: "letters", label: "Drafts", get: (c) => c.letters.length, numeric: true },
+      { key: "updated", label: "Last activity", get: (c) => c.lastActivity || "" },
+      { key: "status", label: "Status", get: (c) => c.caseStatus || "" },
+    ];
+
+    const col = columns.find((c) => c.key === caseSort.key) || columns[0];
+    const dir = caseSort.dir === "asc" ? 1 : -1;
+    const rows = [...cases].sort((a, b) => {
+      const x = col.get(a), y = col.get(b);
+      if (col.numeric || typeof x === "number") return ((x || 0) - (y || 0)) * dir;
+      return String(x).localeCompare(String(y), undefined, { sensitivity: "base" }) * dir;
+    });
+
     const wrap = $e("div", "atable-wrap");
-    const table = document.createElement("table"); table.className = "atable";
-    table.innerHTML = "<thead><tr><th>Applicant</th><th>Field</th><th>Value</th><th>Input</th><th>Updated</th><th>By</th><th></th></tr></thead>";
+    const table = document.createElement("table");
+    table.className = "atable";
+
+    const thead = document.createElement("thead");
+    const htr = document.createElement("tr");
+    for (const c of columns) {
+      const th = document.createElement("th");
+      th.textContent = c.label + (caseSort.key === c.key ? (caseSort.dir === "asc" ? " ↑" : " ↓") : "");
+      th.style.cursor = "pointer";
+      th.title = "Sort by " + c.label.toLowerCase();
+      th.onclick = () => {
+        // Clicking the sorted column flips it; clicking another starts on the
+        // order that column is most useful in — newest first for a date, A-Z
+        // for a name.
+        caseSort = caseSort.key === c.key
+          ? { key: c.key, dir: caseSort.dir === "asc" ? "desc" : "asc" }
+          : { key: c.key, dir: c.key === "updated" || c.numeric ? "desc" : "asc" };
+        renderActive();
+      };
+      htr.appendChild(th);
+    }
+    htr.appendChild(document.createElement("th"));
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
     const tbody = document.createElement("tbody");
-    for (const a of answers) {
+    for (const c of rows) {
       const tr = document.createElement("tr");
-      tr.appendChild($e("td", "acell-name", a.applicantName));
-      tr.appendChild($e("td", "acell-field", a.path));
-      tr.appendChild($e("td", "acell-val", String(a.value).slice(0, 200)));
-      tr.appendChild($e("td", "acell-mime mono", a.inputKind));
-      tr.appendChild($e("td", "acell-date mono", fmtDate(a.at)));
-      tr.appendChild($e("td", "acell-by mono", a.by));
-      // Voice-answered fields get a play button right beside the transcript
-      // it produced — the reviewer can check the transcription against
-      // exactly what was said without leaving this table.
-      const audioTd = document.createElement("td");
-      if (a.voiceClip) {
-        const play = $e("button", "aview", "▶ Play");
-        play.title = "Play the original recording this transcript came from";
-        play.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
-        audioTd.appendChild(play);
+      tr.style.cursor = "pointer";
+      tr.onclick = () => { pipelineViewing = c; renderActive(); };
+      tr.appendChild($e("td", "acell-name", c.applicantName || "(no name yet)"));
+      tr.appendChild($e("td", "acell-val", c.phone || "—"));
+      tr.appendChild($e("td", "acell-mime mono", String(c.answers.length)));
+
+      const readable = document.createElement("td");
+      readable.className = "acell-mime mono";
+      if (c.unreadable) {
+        readable.textContent = `${c.unreadable} unreadable`;
+        readable.style.color = "var(--turn)";
+        readable.title = "Encrypted for an office device that isn't this one — open on that device.";
+      } else {
+        readable.textContent = "yes";
+        readable.style.color = "var(--muted)";
       }
-      tr.appendChild(audioTd);
+      tr.appendChild(readable);
+
+      tr.appendChild($e("td", "acell-mime mono", String(c.letters.length)));
+      tr.appendChild($e("td", "acell-date mono", c.lastActivity ? fmtDate(c.lastActivity) : "—"));
+      tr.appendChild($e("td", "acell-mime mono", c.caseStatus || "new"));
+
+      const open = document.createElement("td");
+      const btn = $e("button", "aview", "Open →");
+      btn.onclick = (e) => { e.stopPropagation(); pipelineViewing = c; renderActive(); };
+      open.appendChild(btn);
+      tr.appendChild(open);
       tbody.appendChild(tr);
     }
-    table.appendChild(tbody); wrap.appendChild(table);
+    table.appendChild(tbody);
+    wrap.appendChild(table);
     return wrap;
   }
 
@@ -5628,17 +6126,36 @@ function initAdminView({ onClose }) {
     if (pl.answers.length > 0) {
       const genItem = $e("div", "mem");
       genItem.style.cssText = "padding:8px;background:var(--surface);border:2px dashed var(--seal);border-radius:8px;text-align:center";
+      // A family with more than one child gets one complaint each: OCR
+      // complaints are per child, and the office files and tracks them
+      // separately. They stay linked by living in this family's own room and
+      // being written from the one set of answers — see buildComplaintLetter's
+      // note on why the split happens here and not in the data.
+      const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
+      const rounds = childRoundNumbers(answersOf(fold(events), "applicant"));
+      const perChild = rounds.length > 1;
+
       const genBtn = document.createElement("button");
-      genBtn.textContent = "✎ Generate complaint letter from current answers";
+      genBtn.textContent = perChild
+        ? `✎ Generate ${rounds.length} complaint letters — one per child`
+        : "✎ Generate complaint letter from current answers";
       genBtn.style.cssText = "border:1px solid var(--seal);border-radius:6px;background:var(--seal);color:#fff;font:600 11px Inter;padding:6px 12px;cursor:pointer;width:100%";
       genBtn.onclick = () => {
-        const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
-        const folded = fold(events);
+        const folded = fold(ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId));
         const ans = answersOf(folded, "applicant");
         const prov = provenanceOf(folded, "applicant");
-        const { letter } = buildComplaintLetter(ans, prov);
-        saveLetter(ctx, pl.roomId, letter);
-        toast(`Letter generated for ${pl.applicantName} — status: draft`, "success");
+        const targets = perChild ? rounds : [null];
+        for (const round of targets) {
+          const { letter } = buildComplaintLetter(ans, prov, { child: round });
+          saveLetter(ctx, pl.roomId, letter, null, {
+            childRound: round,
+            childInitials: round == null ? "" : (ans[`child_${round}_initials`] || ""),
+            childName: round == null ? "" : (ans[`child_${round}_name`] || ""),
+          });
+        }
+        toast(perChild
+          ? `${targets.length} letters generated for ${pl.applicantName} — one per child`
+          : `Letter generated for ${pl.applicantName} — status: draft`, "success");
         setTimeout(() => renderActive(), 400);
       };
       genItem.appendChild(genBtn);
@@ -5649,6 +6166,13 @@ function initAdminView({ onClose }) {
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px";
       item.appendChild($e("span", "pill pill-" + l.status, LETTER_STATUSES.find((s) => s.key === l.status)?.label || l.status));
+      // Which child this draft is for, when a family has more than one — the
+      // drafts are otherwise near-identical and impossible to tell apart.
+      if (l.childInitials || l.childName) {
+        const who = $e("span", "mono", ` for ${l.childName || l.childInitials}`);
+        who.style.cssText = "font-size:10px;color:var(--muted);margin-left:6px";
+        item.appendChild(who);
+      }
       const preview = $e("div", null, (l.text || "").slice(0, 280));
       preview.style.cssText = "margin-top:4px;white-space:pre-wrap;font-size:11px;color:var(--ink);line-height:1.45";
       item.appendChild(preview);
@@ -6713,15 +7237,73 @@ function onIntake(kind, data) {
   } else if (kind === "token") {
     if (streamingNode) updateStreamingText(streamingNode, data.text);
   } else if (kind === "stored") {
-    flashLedger(data.event); toast("Answer saved");
+    // No toast per answer any more: with the confirmation step gone, every
+    // answer stores, and a popup for each one is thirty-six popups. The
+    // checklist ticking over and the acknowledgement in the conversation
+    // already say it.
+    flashLedger(data.event);
   } else if (kind === "field") {
     renderSide();
     renderQuickAnswer(data);
   } else if (kind === "context") {
     renderFold(data);
+  } else if (kind === "review") {
+    renderSectionReview(data);
+  } else if (kind === "reviewClosed") {
+    closeSectionReview();
   } else if (kind === "complete") {
     renderSide(); renderQuickAnswer(null); celebrate(); toast("All questions answered!", "success");
   }
+}
+
+// The one "does this look right?" moment in the interview — a section's worth
+// of answers, in the person's own words, each editable where it sits. Rebuilt
+// from scratch each time it opens (and after every edit), because the answers
+// behind it are the live fold, not a copy this panel is holding.
+function renderSectionReview({ title, rows }) {
+  const es = intake?.lang === "es";
+  $("reviewTitle").textContent = es ? `Repasemos: ${title}` : `Let's review: ${title}`;
+  $("reviewSub").textContent = es
+    ? "Esto es lo que tengo hasta ahora. Si algo no está bien, edítalo aquí — nada se envía todavía."
+    : "Here's what I have so far. If anything isn't right, edit it here — nothing is sent yet.";
+  const box = $("reviewRows");
+  box.innerHTML = "";
+  for (const row of rows) {
+    const r = el("div", "rrow");
+    r.appendChild(el("div", "rlabel", row.label));
+    r.appendChild(el("div", "rvalue", String(row.value)));
+    const edit = el("button", "redit", es ? "Cambiar" : "Change");
+    edit.type = "button";
+    edit.onclick = async () => {
+      const next = await openInlineEditor(row.field, row.value);
+      if (next == null) return;
+      const res = intake.editField(row.path, next);
+      if (!res.ok) { toast(res.error, "error"); return; }
+      // Re-read from the store rather than patching this row, so what the
+      // person sees is what was actually stored.
+      intake.refreshReview();
+    };
+    r.appendChild(edit);
+    box.appendChild(r);
+  }
+  $("reviewOk").textContent = es ? "Está bien →" : "Looks right →";
+  $("reviewModal").classList.add("on");
+}
+
+function closeSectionReview() { $("reviewModal").classList.remove("on"); }
+
+function wireSectionReview() {
+  $("reviewOk").onclick = () => {
+    closeSectionReview();
+    intake?.approveReview();
+  };
+  // Clicking the backdrop closes the panel but does NOT approve the section:
+  // the interview stays paused, and the chat says how to reopen it.
+  $("reviewModal").addEventListener("click", (e) => {
+    if (e.target !== $("reviewModal")) return;
+    closeSectionReview();
+    toast(intake?.lang === "es" ? "Di sí cuando el resumen esté bien." : "Say yes when the summary looks right.");
+  });
 }
 
 // A structured control for the current field, shown just above the free-text
@@ -8067,6 +8649,168 @@ async function tryResumeSilentAccount(saved) {
   }
 }
 
+// A device id tells an office nothing about which laptop that was. The
+// homeserver keeps whatever display name a client sets, so every sign-in
+// stamps one: the browser and platform, and the date it started. That is
+// what makes the access log legible — "Chrome on macOS, since 3 Sep" rather
+// than eleven rows of BTJNWMFZDD. Best-effort: a homeserver that refuses it
+// costs nothing but a nameless row.
+function describeThisDevice() {
+  const ua = navigator.userAgent || "";
+  const browser = /Edg\//.test(ua) ? "Edge"
+    : /OPR\//.test(ua) ? "Opera"
+    : /Chrome\//.test(ua) ? "Chrome"
+    : /Safari\//.test(ua) ? "Safari"
+    : /Firefox\//.test(ua) ? "Firefox"
+    : "browser";
+  const os = /Windows/.test(ua) ? "Windows"
+    : /Mac OS X|Macintosh/.test(ua) ? "macOS"
+    : /Android/.test(ua) ? "Android"
+    : /iPhone|iPad|iOS/.test(ua) ? "iOS"
+    : /Linux/.test(ua) ? "Linux"
+    : "unknown OS";
+  const when = new Date().toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  return `${browser} on ${os}, since ${when}`;
+}
+
+async function nameThisDevice(client) {
+  try {
+    const deviceId = client.getDeviceId?.();
+    if (!deviceId) return;
+    await client.setDeviceDetails(deviceId, { display_name: describeThisDevice() });
+  } catch (e) {
+    console.warn("[access] couldn't name this device:", e);
+  }
+}
+
+// ── History backup ─────────────────────────────────────────────────────────
+// The problem this exists for: encrypted history is never re-sent to a device
+// that wasn't in the room when it arrived. Every office sign-in mints a
+// device, and each new one is blind to everything sent before it existed —
+// which is how 211 items across 13 submissions became unreadable on the
+// machine the office was actually using.
+//
+// Key backup is the only cure Matrix offers. The device that CAN read the
+// history uploads its room keys to the server, encrypted with a key the
+// server never sees; any later device that holds the recovery key can pull
+// them back down. Two things follow, and both are said plainly in the panel:
+// backup can only ever contain what the device setting it up could already
+// read, and the recovery key is not recoverable — lose it and the backup is
+// as unreadable as the history was.
+//
+// Every status line below is read back from the server and the crypto store
+// rather than inferred from "the call didn't throw", because the failure this
+// feature must never produce is an office believing history is protected when
+// it isn't.
+
+async function keyBackupStatus(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) return { available: false, reason: "Encryption isn't set up in this browser." };
+  const status = { available: true, serverVersion: null, keyCount: null, activeHere: null, trusted: false, secretStorage: false };
+  try {
+    const check = await crypto.checkKeyBackupAndEnable();
+    status.serverVersion = check?.backupInfo?.version ?? null;
+    status.keyCount = check?.backupInfo?.count ?? null;
+    status.trusted = !!check?.trustInfo?.trusted;
+  } catch (e) {
+    console.warn("[backup] couldn't read the backup on the server:", e);
+    status.error = e?.message || String(e);
+  }
+  try { status.activeHere = await crypto.getActiveSessionBackupVersion(); }
+  catch (e) { console.warn("[backup] couldn't read this device's backup version:", e); }
+  try { status.secretStorage = await crypto.isSecretStorageReady(); }
+  catch (e) { console.warn("[backup] couldn't read secret storage state:", e); }
+  return status;
+}
+
+// Sets up backup FROM THIS DEVICE, and hands back the recovery key. What it
+// can protect is whatever this device can read: run it on the machine that
+// still has the history, not on a fresh one.
+async function setUpKeyBackup(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
+  const generated = await crypto.createRecoveryKeyFromPassphrase();
+  await crypto.bootstrapSecretStorage({
+    createSecretStorageKey: async () => generated,
+    setupNewKeyBackup: true,
+    setupNewSecretStorage: true,
+  });
+  // The SDK usually hands back the printable form; where it doesn't, the
+  // codec in vendor/recovery-key.js produces the identical string (same
+  // prefix, parity and base58 the SDK itself uses).
+  const encoded = generated.encodedPrivateKey || RecoveryKey.encode(generated.privateKey);
+  // Read the state back rather than trusting that no exception means success.
+  const status = await keyBackupStatus(client);
+  return { recoveryKey: encoded, status };
+}
+
+// Restores history keys on a device that has none of them, using the written
+// recovery key. Throws with something a person can act on.
+async function restoreFromRecoveryKey(client, text) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
+  const key = RecoveryKey.decode(text); // throws with a readable message
+
+  // The recovery key unlocks secret storage; the backup's own decryption key
+  // lives inside it. Handing the SDK a callback is how it asks for the one to
+  // get at the other.
+  const previous = client.cryptoCallbacks?.getSecretStorageKey;
+  client.cryptoCallbacks = client.cryptoCallbacks || {};
+  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
+    const keyId = Object.keys(keys || {})[0];
+    return keyId ? [keyId, key] : null;
+  };
+
+  try {
+    const check = await crypto.checkKeyBackupAndEnable();
+    if (!check?.backupInfo?.version) {
+      throw new Error("This account has no history backup on the server yet — set one up from a device that can read the history.");
+    }
+    const result = await crypto.restoreKeyBackup();
+    const status = await keyBackupStatus(client);
+    return { imported: result?.imported ?? 0, total: result?.total ?? 0, status };
+  } finally {
+    // Leave the client as it was found: the key stays in memory only for the
+    // restore itself.
+    if (previous) client.cryptoCallbacks.getSecretStorageKey = previous;
+    else delete client.cryptoCallbacks.getSecretStorageKey;
+  }
+}
+
+// The recovery key is worth nothing in a chat log and everything on paper.
+// Same shape as the password file: what it is, what it unlocks, and what
+// nobody can do for you if it's lost.
+function downloadRecoveryKey(recoveryKey, userId) {
+  const body = [
+    "OCR intake — office history recovery key",
+    "",
+    `Account: ${userId}`,
+    `Saved:   ${new Date().toString()}`,
+    "",
+    "RECOVERY KEY:",
+    recoveryKey,
+    "",
+    "What this is for:",
+    "  Submissions are encrypted. A newly signed-in device cannot read anything",
+    "  that arrived before it existed. This key restores that history onto a new",
+    "  device: sign in, open the office dashboard, and paste it into 'Restore",
+    "  history on this device'.",
+    "",
+    "Keep it somewhere that is not this computer. Nobody — not this app, not the",
+    "server, not Anthropic — can recover it or reset it for you. Without it, a",
+    "future device cannot read older submissions.",
+    "",
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ocr-intake-recovery-key-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 // ── Entry: language gate → straight into the conversation ──
 //
 // Replaces showLogin() as the cold-boot default. Staff still reach the
@@ -8123,8 +8867,10 @@ async function initEntry() {
     hideLogin();
     await boot();
     openAdmin();
-    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
-    if (pipelineTab) pipelineTab.click();
+    // Submissions is where an office starts; it is also the default tab, so
+    // this only matters when a previous view was left open.
+    const submissionsTab = document.querySelector('.atab[data-view="answers"]');
+    if (submissionsTab) submissionsTab.click();
     return;
   }
   // Checked before the saved-session resume below, which otherwise carries
@@ -9144,6 +9890,7 @@ async function resumeInsteadOfNewDevice(userId) {
   const client = await tryResumeSilentAccount(saved).catch(() => null);
   if (!client) return false;
   loginState = { kind: "matrix", client, userId: saved.userId };
+  nameThisDevice(client);
   hideLogin();
   boot();
   return true;
@@ -9170,6 +9917,7 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
       client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
     });
     loginState = { kind: "matrix", client, userId };
+    nameThisDevice(client);
     hideLogin();
     boot();
   } catch (e) {
@@ -9322,7 +10070,18 @@ async function boot() {
       const answersRoom = await ensureAnswerRoom(client);
       configStore = await new MatrixStore(client).open(configRoomId, { encrypted: false });
       store = await new MatrixStore(client).open(answersRoom);
-    } catch (e) { console.error(e); doDemoLogin(); return; }
+    } catch (e) {
+      // Falling back to demo storage here is right — better a working
+      // interview held on the device than a dead end — but it used to happen
+      // in total silence, which is indistinguishable from working. A
+      // homeserver rate limit during boot could drop the office into a demo
+      // session and nothing said so; the office would sit in front of an
+      // empty dashboard concluding that nobody had submitted anything.
+      console.error("[boot] couldn't open this account's rooms — falling back to this device only:", e);
+      toast("Couldn't reach your account just now — this session is saved on this device only.", "warn");
+      doDemoLogin();
+      return;
+    }
   } else {
     configStore = await new DemoStore("@admin:local").open("!intake-config:local");
     store = await new DemoStore(loginState.userId).open("!intake-answers-demo:local");
@@ -9350,8 +10109,10 @@ async function boot() {
     renderDocs();
     renderLedgerFromTimeline();
     openAdmin();
-    const pipelineTab = document.querySelector('.atab[data-view="pipeline"]');
-    if (pipelineTab) pipelineTab.click();
+    // Submissions is where an office starts; it is also the default tab, so
+    // this only matters when a previous view was left open.
+    const submissionsTab = document.querySelector('.atab[data-view="answers"]');
+    if (submissionsTab) submissionsTab.click();
     return;
   }
 
@@ -9866,6 +10627,7 @@ document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
   wirePasswordModal();
+  wireSectionReview();
   wireCompose();
   wireBulk();
   wireVoice();
