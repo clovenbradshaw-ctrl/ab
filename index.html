@@ -5468,7 +5468,7 @@ function initAdminView({ onClose }) {
 
     const others = $e("button", "aview", "Sign out all other devices");
     others.onclick = () => busy(others, "Signing out…", async (password) => {
-      if (!confirm("Sign out every other device on this account?\n\nAny other browser signed in as the office will be signed out. History stays readable here, and on any device that signs in again with the password once history backup is on.")) return;
+      if (!(await confirmInPage("Sign out every other device on this account?\n\nAny other browser signed in as the office is signed out, and this can't be undone. History stays readable here, and on any device that signs in again with the password once history backup is on.", { confirmLabel: "Sign them out" }))) return;
       const n = await signOutOtherDevices(ctx.client, password);
       toast(n ? `Signed out ${n} other device${n === 1 ? "" : "s"}.` : "No other devices were signed in.", "success");
       renderActive();
@@ -10051,14 +10051,50 @@ async function startFreshAndRetry(homeserver, userId, password, btn, theirs) {
 // would belong to a device that no longer exists, and the next sign-in would
 // dead-end on it. Those keys are the only copy of anything this device alone
 // could read, so a device that isn't backing up says so before it goes.
+// An in-page yes/no instead of window.confirm, which some browsers and
+// embedded views suppress — there it answers "no" on its own and the button
+// seems to do nothing. Clicking outside or Escape is always "no".
+function confirmInPage(message, { confirmLabel = "Continue", cancelLabel = "Cancel" } = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "inline-editor on";
+    const box = document.createElement("div");
+    box.className = "modal";
+    box.setAttribute("role", "alertdialog");
+    const text = document.createElement("p");
+    text.style.cssText = "white-space:pre-line;margin:0 0 14px;font-size:13.5px;line-height:1.5;color:var(--ink)";
+    text.textContent = message;
+    const btns = document.createElement("div");
+    btns.className = "btns";
+    const cancel = document.createElement("button");
+    cancel.className = "cancel";
+    cancel.textContent = cancelLabel;
+    const ok = document.createElement("button");
+    ok.className = "primary";
+    ok.textContent = confirmLabel;
+    btns.append(cancel, ok);
+    box.append(text, btns);
+    wrap.appendChild(box);
+    const done = (answer) => { document.removeEventListener("keydown", onKey); wrap.remove(); resolve(answer); };
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    cancel.onclick = () => done(false);
+    ok.onclick = () => done(true);
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) done(false); });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(wrap);
+    cancel.focus();
+  });
+}
+
 async function signOutOfThisBrowser() {
   const client = loginState?.kind === "matrix" ? (loginState.client || store?.client) : null;
   if (client) {
     let backingUp = false;
     try { backingUp = !!(await keyBackupStatus(client)).activeHere; } catch {}
-    const ok = confirm(backingUp
-      ? "Sign out of this browser?\n\nThis device's keys are being backed up, so a later sign-in can restore the history with the recovery key."
-      : "Sign out of this browser?\n\nThis browser's encryption keys are not backed up. Signing out discards them, and anything only this device could read becomes unreadable everywhere. To keep it, cancel and set up backup under Devices & backup first.\n\nSign out anyway?");
+    const ok = await confirmInPage(backingUp
+      ? "Sign out of this browser?\n\nThis device's keys are in the office's history backup, so signing in again with the office password brings everything back."
+      : "Sign out of this browser?\n\nThis browser hasn't put its keys in the history backup yet. Signing out discards them, and anything only this device can read becomes unreadable everywhere.\n\nTo keep it, cancel and unlock history under Devices & backup first.",
+      { confirmLabel: backingUp ? "Sign out" : "Sign out anyway" });
     if (!ok) return;
     await endSession(client);
     try { await wipeCryptoStore(); }
@@ -10149,8 +10185,8 @@ function wireLogin() {
     document.getElementById("demoBar").classList.add("hidden");
     try { sessionStorage.setItem("eo.demoBarDismissed", "1"); } catch {}
   };
-  document.getElementById("logoutBtn").onclick = () => {
-    if (confirm("Switch accounts?")) {
+  document.getElementById("logoutBtn").onclick = async () => {
+    if (await confirmInPage("Switch accounts?\n\nYour answers stay saved in this account; you can come back to it.", { confirmLabel: "Switch" })) {
       loginState = null;
       if (store?.client) try { store.client.stopClient(); } catch {}
       // Without this the reload finds the saved session and resumes it, so
