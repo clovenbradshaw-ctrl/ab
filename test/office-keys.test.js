@@ -28,24 +28,38 @@ function loadOfficeKeys() {
 
 // A scripted stand-in for the client: records every SDK call, and treats a
 // secret-storage key as correct when it equals `storedKey`.
-function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", backupSecret = "AQIDBA" } = {}) {
+function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", backupSecret = "AQIDBA", identityReady = true, backupMatches = true, masterSigned = false } = {}) {
   const calls = [];
   const same = (a, b) => a && b && a.length === b.length && a.every((x, i) => x === b[i]);
+  let ready = identityReady;
+  const backupInfo = backupVersion && {
+    version: backupVersion, algorithm: "m.megolm_backup.v1.curve25519-aes-sha2",
+    auth_data: { public_key: "PK", signatures: { [USER]: masterSigned ? { "ed25519:MASTER": "old" } : { "ed25519:OTHERDEVICE": "d" } } },
+  };
   const crypto = {
     bootstrapCrossSigning: async () => { calls.push("bootstrapCrossSigning"); },
     bootstrapSecretStorage: async (opts) => { calls.push({ bootstrapSecretStorage: opts, generated: await opts.createSecretStorageKey() }); },
-    checkKeyBackupAndEnable: async () => { calls.push("checkKeyBackupAndEnable"); return backupVersion ? { backupInfo: { version: backupVersion } } : null; },
+    checkKeyBackupAndEnable: async () => { calls.push("checkKeyBackupAndEnable"); return backupInfo ? { backupInfo } : null; },
     resetKeyBackup: async () => { calls.push("resetKeyBackup"); },
     storeSessionBackupPrivateKey: async (key, version) => { calls.push({ storeSessionBackupPrivateKey: [...key], version }); },
+    isCrossSigningReady: async () => ready,
+    userHasCrossSigningKeys: async () => true,
+    crossSignDevice: async (id) => { calls.push("crossSignDevice:" + id); },
+    getCrossSigningKeyId: async () => "MASTER",
+    isKeyBackupTrusted: async () => ({ matchesDecryptionKey: backupMatches, trusted: false }),
+    signObject: async (obj) => { obj.signatures = { [USER]: { "ed25519:MASTER": "new", "ed25519:THISDEVICE": "d2" } }; },
+    olmMachine: { importCrossSigningKeys: async (...keys) => { calls.push({ importCrossSigningKeys: keys }); ready = true; } },
   };
   const client = {
     getUserId: () => USER,
+    getDeviceId: () => "THISDEVICE",
     getCrypto: () => crypto,
     secretStorage: {
       getKey: async () => storage,
       checkKey: async (key) => same([...key], storedKey && [...storedKey]),
-      get: async (name) => { calls.push("get:" + name); return backupSecret; },
+      get: async (name) => { calls.push("get:" + name); return name === "m.megolm_backup.v1" ? backupSecret : "secret:" + name; },
     },
+    http: { authedRequest: async (method, path, query, body) => { calls.push({ [method]: path, body }); return {}; } },
     restoreKeyBackupWithCache: async () => { calls.push("restore"); return { imported: 5, total: 6 }; },
   };
   return { calls, client };
@@ -117,6 +131,46 @@ test("the right password opens storage, caches the backup key, and restores", as
   assert.ok(calls.includes("restore"));
   const handed = await keys.CRYPTO_CALLBACKS.getSecretStorageKey({ keys: { KEY: info } });
   assert.equal(handed[0], "KEY", "the SDK gets the key when it asks for it");
+});
+
+test("unlocking puts the office identity's signature on a backup whose key matches storage", async () => {
+  const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
+  const storedKey = nodeCrypto.pbkdf2Sync("pw", info.passphrase.salt, 1000, 32, "sha512");
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey });
+  await keys.setUpOfficeHistory(client, "pw");
+  const put = calls.find((c) => c.PUT);
+  assert.equal(put.PUT, "/room_keys/version/4");
+  const sigs = put.body.auth_data.signatures[USER];
+  assert.equal(sigs["ed25519:MASTER"], "new", "signed by the office identity");
+  assert.equal(sigs["ed25519:OTHERDEVICE"], "d", "the creating device's signature is kept");
+  assert.equal(put.body.auth_data.public_key, "PK");
+});
+
+test("a backup whose key doesn't match storage is never signed", async () => {
+  const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
+  const storedKey = nodeCrypto.pbkdf2Sync("pw", info.passphrase.salt, 1000, 32, "sha512");
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey, backupMatches: false });
+  await keys.setUpOfficeHistory(client, "pw");
+  assert.ok(!calls.some((c) => c.PUT), "nothing was uploaded");
+});
+
+test("a device holding an older identity takes the office's current one from storage", async () => {
+  const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
+  const storedKey = nodeCrypto.pbkdf2Sync("pw", info.passphrase.salt, 1000, 32, "sha512");
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey, identityReady: false });
+  await keys.setUpOfficeHistory(client, "pw");
+  const imported = calls.find((c) => c.importCrossSigningKeys);
+  assert.deepEqual(imported.importCrossSigningKeys, ["secret:m.cross_signing.master", "secret:m.cross_signing.self_signing", "secret:m.cross_signing.user_signing"]);
+  assert.ok(calls.includes("crossSignDevice:THISDEVICE"));
+});
+
+test("a device that already has the current identity doesn't re-import it", async () => {
+  const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
+  const storedKey = nodeCrypto.pbkdf2Sync("pw", info.passphrase.salt, 1000, 32, "sha512");
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey, masterSigned: true });
+  await keys.setUpOfficeHistory(client, "pw");
+  assert.ok(!calls.some((c) => c.importCrossSigningKeys));
+  assert.ok(!calls.some((c) => c.PUT), "already signed by the office — left as is");
 });
 
 test("unpadded and URL-safe base64 both decode", () => {

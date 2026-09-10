@@ -5468,7 +5468,7 @@ function initAdminView({ onClose }) {
 
     const others = $e("button", "aview", "Sign out all other devices");
     others.onclick = () => busy(others, "Signing out…", async (password) => {
-      if (!confirm("Sign out every other device on this account?\n\nAny other browser signed in as the office will be signed out. History stays readable here, and on any device that signs in again with the password once history backup is on.")) return;
+      if (!(await confirmInPage("Sign out every other device on this account?\n\nAny other browser signed in as the office is signed out, and this can't be undone. History stays readable here, and on any device that signs in again with the password once history backup is on.", { confirmLabel: "Sign them out" }))) return;
       const n = await signOutOtherDevices(ctx.client, password);
       toast(n ? `Signed out ${n} other device${n === 1 ? "" : "s"}.` : "No other devices were signed in.", "success");
       renderActive();
@@ -8651,6 +8651,8 @@ async function setUpOfficeHistory(client, password) {
     const passphrase = { algorithm: "m.pbkdf2", iterations: 500000, salt: randomSalt(32) };
     const generated = { keyInfo: { passphrase }, privateKey: await passphraseStorageKey(password, passphrase) };
     await crypto.bootstrapSecretStorage({ createSecretStorageKey: async () => generated, setupNewSecretStorage: true, setupNewKeyBackup: true });
+    const created = (await crypto.checkKeyBackupAndEnable())?.backupInfo;
+    if (created?.version) await signBackupAsOffice(client, created);
     await crypto.checkKeyBackupAndEnable();
     return { ok: true, created: true, restored: 0 };
   }
@@ -8660,6 +8662,10 @@ async function setUpOfficeHistory(client, password) {
     return { ok: false, reason: "The office's history backup was locked with something other than this password." };
   }
   await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys: auth });
+  // A device holding an older office identity's keys (another sign-in reset
+  // it before storage existed) keeps them through bootstrapCrossSigning, and
+  // then trusts nothing the current identity signed — including the backup.
+  if (!(await crypto.isCrossSigningReady())) await adoptOfficeIdentity(client);
   let backupInfo = (await crypto.checkKeyBackupAndEnable())?.backupInfo;
   if (!backupInfo?.version) {
     await crypto.resetKeyBackup();
@@ -8668,9 +8674,61 @@ async function setUpOfficeHistory(client, password) {
   const backupKey = await client.secretStorage.get("m.megolm_backup.v1");
   if (!backupKey || !backupInfo?.version) return { ok: false, reason: "Secret storage opened, but it holds no history-backup key." };
   await crypto.storeSessionBackupPrivateKey(bytesOfBase64(backupKey), backupInfo.version);
+  await signBackupAsOffice(client, backupInfo);
   await crypto.checkKeyBackupAndEnable();
   const result = await client.restoreKeyBackupWithCache(undefined, undefined, backupInfo);
   return { ok: true, created: false, restored: result?.imported ?? 0, total: result?.total ?? 0 };
+}
+
+// Replaces this device's cross-signing keys with the ones in secret storage
+// and signs the device with them. Reaches into the Rust OlmMachine because
+// the SDK's own bootstrap leaves keys alone once a device has any.
+async function adoptOfficeIdentity(client) {
+  const crypto = client.getCrypto();
+  if (!crypto.olmMachine?.importCrossSigningKeys) return false;
+  const [master, selfSigning, userSigning] = await Promise.all(
+    ["m.cross_signing.master", "m.cross_signing.self_signing", "m.cross_signing.user_signing"].map((name) => client.secretStorage.get(name)),
+  );
+  if (!master || !selfSigning || !userSigning) return false;
+  await crypto.userHasCrossSigningKeys?.(client.getUserId(), true);
+  await crypto.olmMachine.importCrossSigningKeys(master, selfSigning, userSigning);
+  await crypto.crossSignDevice(client.getDeviceId());
+  return crypto.isCrossSigningReady();
+}
+
+// Puts the office identity's own signature on the backup, so every device
+// that trusts the office trusts the backup — rather than trusting it only
+// through whichever device created it, which "sign out all other devices"
+// can remove. Signs only a backup whose key matches the one in the
+// password-locked storage, so a backup the server swapped in never gets it.
+async function signBackupAsOffice(client, backupInfo) {
+  const crypto = client.getCrypto();
+  const userId = client.getUserId();
+  const masterId = await crypto.getCrossSigningKeyId?.();
+  if (!masterId || !backupInfo?.auth_data) return false;
+  const existing = backupInfo.auth_data.signatures?.[userId] || {};
+  if (existing["ed25519:" + masterId]) return true;
+  if (!(await crypto.isKeyBackupTrusted(backupInfo))?.matchesDecryptionKey) return false;
+  const { signatures, ...unsigned } = backupInfo.auth_data;
+  await crypto.signObject(unsigned);
+  const mine = unsigned.signatures?.[userId] || {};
+  if (!mine["ed25519:" + masterId]) return false;
+  delete unsigned.signatures;
+  const authData = { ...unsigned, signatures: { ...(signatures || {}), [userId]: { ...existing, ...mine } } };
+  await client.http.authedRequest("PUT", `/room_keys/version/${encodeURIComponent(backupInfo.version)}`, undefined,
+    { algorithm: backupInfo.algorithm, auth_data: authData, version: backupInfo.version });
+  return true;
+}
+
+// Opening the dashboard pulls in whatever other office devices have backed
+// up since, using the backup key this device already holds — no password.
+async function refreshOfficeHistory(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto || !(await crypto.getSessionBackupPrivateKey().catch(() => null))) return;
+  const backupInfo = (await crypto.checkKeyBackupAndEnable())?.backupInfo;
+  if (!backupInfo?.version) return;
+  await client.restoreKeyBackupWithCache(undefined, undefined, backupInfo);
+  if (isAdminViewOpen()) adminCtl?.refresh?.();
 }
 
 function reportOfficeHistory(result) {
@@ -9993,14 +10051,50 @@ async function startFreshAndRetry(homeserver, userId, password, btn, theirs) {
 // would belong to a device that no longer exists, and the next sign-in would
 // dead-end on it. Those keys are the only copy of anything this device alone
 // could read, so a device that isn't backing up says so before it goes.
+// An in-page yes/no instead of window.confirm, which some browsers and
+// embedded views suppress — there it answers "no" on its own and the button
+// seems to do nothing. Clicking outside or Escape is always "no".
+function confirmInPage(message, { confirmLabel = "Continue", cancelLabel = "Cancel" } = {}) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement("div");
+    wrap.className = "inline-editor on";
+    const box = document.createElement("div");
+    box.className = "modal";
+    box.setAttribute("role", "alertdialog");
+    const text = document.createElement("p");
+    text.style.cssText = "white-space:pre-line;margin:0 0 14px;font-size:13.5px;line-height:1.5;color:var(--ink)";
+    text.textContent = message;
+    const btns = document.createElement("div");
+    btns.className = "btns";
+    const cancel = document.createElement("button");
+    cancel.className = "cancel";
+    cancel.textContent = cancelLabel;
+    const ok = document.createElement("button");
+    ok.className = "primary";
+    ok.textContent = confirmLabel;
+    btns.append(cancel, ok);
+    box.append(text, btns);
+    wrap.appendChild(box);
+    const done = (answer) => { document.removeEventListener("keydown", onKey); wrap.remove(); resolve(answer); };
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    cancel.onclick = () => done(false);
+    ok.onclick = () => done(true);
+    wrap.addEventListener("click", (e) => { if (e.target === wrap) done(false); });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(wrap);
+    cancel.focus();
+  });
+}
+
 async function signOutOfThisBrowser() {
   const client = loginState?.kind === "matrix" ? (loginState.client || store?.client) : null;
   if (client) {
     let backingUp = false;
     try { backingUp = !!(await keyBackupStatus(client)).activeHere; } catch {}
-    const ok = confirm(backingUp
-      ? "Sign out of this browser?\n\nThis device's keys are being backed up, so a later sign-in can restore the history with the recovery key."
-      : "Sign out of this browser?\n\nThis browser's encryption keys are not backed up. Signing out discards them, and anything only this device could read becomes unreadable everywhere. To keep it, cancel and set up backup under Devices & backup first.\n\nSign out anyway?");
+    const ok = await confirmInPage(backingUp
+      ? "Sign out of this browser?\n\nThis device's keys are in the office's history backup, so signing in again with the office password brings everything back."
+      : "Sign out of this browser?\n\nThis browser hasn't put its keys in the history backup yet. Signing out discards them, and anything only this device can read becomes unreadable everywhere.\n\nTo keep it, cancel and unlock history under Devices & backup first.",
+      { confirmLabel: backingUp ? "Sign out" : "Sign out anyway" });
     if (!ok) return;
     await endSession(client);
     try { await wipeCryptoStore(); }
@@ -10091,8 +10185,8 @@ function wireLogin() {
     document.getElementById("demoBar").classList.add("hidden");
     try { sessionStorage.setItem("eo.demoBarDismissed", "1"); } catch {}
   };
-  document.getElementById("logoutBtn").onclick = () => {
-    if (confirm("Switch accounts?")) {
+  document.getElementById("logoutBtn").onclick = async () => {
+    if (await confirmInPage("Switch accounts?\n\nYour answers stay saved in this account; you can come back to it.", { confirmLabel: "Switch" })) {
       loginState = null;
       if (store?.client) try { store.client.stopClient(); } catch {}
       // Without this the reload finds the saved session and resumes it, so
@@ -10188,6 +10282,9 @@ async function boot() {
       ensureSeeded(configStore, DEFAULT_CONFIG, { write: true })
         .then((cfg) => { knowledge = KnowledgeStore.fromJSON(cfg.knowledge); })
         .catch((e) => console.error("[config] seeding the shared question set failed:", e));
+    }
+    if (loginState.kind === "matrix") {
+      refreshOfficeHistory(loginState.client).catch((e) => console.warn("[office] couldn't pull newer history from the backup:", e));
     }
     return;
   }
