@@ -211,7 +211,7 @@ test("180-day filing deadline: a recent incident date does not trigger the warni
   assert.equal(sawWarning, false);
 });
 
-test("closing block uses the exact mandatory Rep. Behn's-office wording, rendered as a banner", async () => {
+test("closing block tells the family not to send it to the state, and names Rep. Behn's office, as a banner", async () => {
   const engine = loadEngine();
   const fields = engine.SCHEMA.fields;
   const lines = [];
@@ -220,7 +220,8 @@ test("closing block uses the exact mandatory Rep. Behn's-office wording, rendere
   const last = intake.history[intake.history.length - 1];
   assert.equal(last.text, engine.CLOSING_MESSAGE_EN);
   assert.equal(last.banner, true);
-  assert.match(last.text, /REPRESENTATIVE BEHN'S OFFICE/);
+  assert.match(last.text, /DO NOT SEND THIS TO THE STATE GOVERNMENT/);
+  assert.match(last.text, /Representative Behn's office/);
 });
 
 test("every single reply across a long, typo-heavy conversation is a literal line from the mechanical table (or schema-authored text)", async () => {
