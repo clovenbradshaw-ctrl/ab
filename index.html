@@ -560,6 +560,18 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .achip{font:600 10px Inter;border-radius:999px;padding:2px 8px;background:var(--wash);color:var(--muted);border:1px solid var(--line)}
 .achip.audio{background:var(--seal-soft);color:var(--seal);border-color:#C9E0D5}
 .achip.office{background:var(--turn-soft);color:var(--turn);border-color:#EBD3B0}
+.achip.files{background:#EEF1FB;color:#3A4E8C;border-color:#CFD7F0}
+.acard-files{display:flex;flex-direction:column;gap:5px}
+.acard-files .lbl{font:600 9.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:#3A4E8C}
+.afiles{margin-top:12px;padding:12px 14px;border:1px solid #CFD7F0;border-radius:12px;background:#F6F8FD;display:flex;flex-direction:column;gap:10px}
+.afiles-head{font:600 13px Inter;color:var(--ink)}
+.afiles-group{display:flex;flex-direction:column;gap:5px}
+.afiles-q{font:600 11.5px Inter;color:var(--muted)}
+.afile{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px;min-width:0}
+.afile-icon{font-size:16px;flex:none}
+.afile-main{flex:1;min-width:0}
+.afile-name{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.afile-meta{font-size:10.5px;color:var(--muted)}
 .acard-answer{display:flex;flex-direction:column;gap:8px;min-width:0}
 .acard-final{display:flex;gap:8px;align-items:flex-start}
 .acard-final .v{flex:1;min-width:0;font-size:15px;line-height:1.45;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -5097,6 +5109,16 @@ function collectPipelineData({ storeKind, client }) {
       });
     }
     const submittedAt = defs.filter((d) => d.payload.path === SUBMITTED_FLAG_PATH && d.payload.value).map((d) => d.at).pop() || null;
+    // Everything this family uploaded, each tied to the question that was on
+    // screen when it arrived (fieldPath), or to none for the catch-all.
+    const docs = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "document")
+      .map(([id, r]) => ({
+        id, roomId, applicantName, ...r.attrs,
+        status: folded.anchors?.[id]?.status?.value || r.attrs.status || "new",
+        uploadedAt: r.at,
+      }))
+      .sort((x, y) => (x.uploadedAt || "").localeCompare(y.uploadedAt || ""));
 
     const letters = Object.entries(folded.records)
       .filter(([, r]) => r.entity === "letter")
@@ -5108,7 +5130,7 @@ function collectPipelineData({ storeKind, client }) {
 
     const valueOf = (path) => (answers.find((a) => a.path === path) || {}).value || "";
     pipelines.push({
-      roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus, submittedAt,
+      roomId, applicantName, answers, letters, voiceClips, docs, lastActivity, caseStatus, submittedAt,
       phone: valueOf("complainant_phone"),
       email: valueOf("complainant_email"),
       unreadable,
@@ -5665,6 +5687,7 @@ function initAdminView({ onClose }) {
       { key: "name", label: "Applicant", get: (c) => c.applicantName || "" },
       { key: "phone", label: "Phone", get: (c) => c.phone || "" },
       { key: "answers", label: "Answers", get: (c) => c.answers.length, numeric: true },
+      { key: "files", label: "Files", get: (c) => c.docs.length, numeric: true },
       { key: "readable", label: "Readable here", get: (c) => c.unreadable },
       { key: "letters", label: "Drafts", get: (c) => c.letters.length, numeric: true },
       { key: "updated", label: "Last activity", get: (c) => c.lastActivity || "" },
@@ -5714,6 +5737,7 @@ function initAdminView({ onClose }) {
       tr.appendChild($e("td", "acell-name", c.applicantName || "(no name yet)"));
       tr.appendChild($e("td", "acell-val", c.phone || "—"));
       tr.appendChild($e("td", "acell-mime mono", String(c.answers.length)));
+      tr.appendChild($e("td", "acell-mime mono", c.docs.length ? `📎 ${c.docs.length}` : "—"));
 
       const readable = document.createElement("td");
       readable.className = "acell-mime mono";
@@ -5986,31 +6010,76 @@ function initAdminView({ onClose }) {
   // made of it. An edit, by anyone, is a new step; nothing earlier is erased.
   function renderSingleSubmission(wrap, pl) {
     const labels = answerLabels();
-    const facts = pl.answers.map((a) => ({ a, ...answerFacts(a) }));
+    const docsByPath = new Map();
+    for (const d of pl.docs || []) {
+      const key = d.fieldPath || "";
+      if (!docsByPath.has(key)) docsByPath.set(key, []);
+      docsByPath.get(key).push(d);
+    }
+    const facts = pl.answers.map((a) => ({ a, ...answerFacts(a), files: docsByPath.get(a.path) || [] }));
     const withAudio = facts.filter((x) => x.hasAudio).length;
     const changed = facts.filter((x) => x.familyChanged || x.officeChanged).length;
 
     const summary = $e("div", "asum");
     summary.appendChild($e("b", null, pl.submittedAt ? "Submitted for review " : "Still in progress"));
     summary.appendChild(document.createTextNode(pl.submittedAt ? fmtDate(pl.submittedAt) : " — not submitted yet"));
-    summary.appendChild(document.createTextNode(` · ${pl.answers.length} answers · ${withAudio} with a recording · ${changed} changed after they were first given`));
+    summary.appendChild(document.createTextNode(` · ${pl.answers.length} answers · ${(pl.docs || []).length} attachments · ${withAudio} with a recording · ${changed} changed after they were first given`));
     wrap.appendChild(summary);
 
+    if ((pl.docs || []).length) wrap.appendChild(attachmentsPanel(docsByPath, labels));
+
     const bar = $e("div", "afilter");
-    for (const [key, label] of [["all", "All answers"], ["audio", "🎙 Has a recording"], ["changed", "✎ Changed"]]) {
+    for (const [key, label] of [["all", "All answers"], ["files", "📎 Has attachments"], ["audio", "🎙 Has a recording"], ["changed", "✎ Changed"]]) {
       const b = $e("button", "atab" + (cardFilter === key ? " on" : ""), label);
       b.onclick = () => { cardFilter = key; renderActive(); };
       bar.appendChild(b);
     }
     wrap.appendChild(bar);
 
-    const shown = facts.filter((x) => cardFilter === "all" || (cardFilter === "audio" ? x.hasAudio : x.familyChanged || x.officeChanged));
+    const matches = { all: () => true, files: (x) => x.files.length, audio: (x) => x.hasAudio, changed: (x) => x.familyChanged || x.officeChanged };
+    const shown = facts.filter(matches[cardFilter] || matches.all);
     const cards = $e("div", "acards");
     for (const x of shown) cards.appendChild(answerCard(pl, x.a, labels, x));
     if (!shown.length) cards.appendChild(pipelineEmpty(pl.answers.length ? "No answers match this filter." : "No answers yet."));
     wrap.appendChild(cards);
 
     wrap.appendChild(letterPanel(pl));
+  }
+
+  // Every file this family sent, in one place, grouped by the question that
+  // was on screen when it arrived; files sent with no question open come last.
+  function attachmentsPanel(docsByPath, labelFor) {
+    const panel = $e("div", "afiles");
+    const total = [...docsByPath.values()].reduce((n, list) => n + list.length, 0);
+    panel.appendChild($e("div", "afiles-head", `📎 Attachments (${total})`));
+    const groups = [...docsByPath.entries()].sort(([a], [b]) => (a === "") - (b === ""));
+    for (const [path, list] of groups) {
+      const group = $e("div", "afiles-group");
+      group.appendChild($e("div", "afiles-q", path ? labelFor(path) : "Other documents (not tied to a question)"));
+      for (const d of list) group.appendChild(fileRow(d));
+      panel.appendChild(group);
+    }
+    return panel;
+  }
+
+  function fileIcon(mime = "") {
+    if (mime.startsWith("image/")) return "🖼";
+    if (mime.includes("pdf")) return "📄";
+    if (mime.startsWith("audio/")) return "🎧";
+    if (mime.startsWith("video/")) return "🎞";
+    return "📎";
+  }
+
+  function fileRow(d, { compact = false } = {}) {
+    const row = $e("div", "afile");
+    row.appendChild($e("span", "afile-icon", fileIcon(d.mimetype)));
+    const main = $e("div", "afile-main");
+    main.appendChild($e("div", "afile-name", d.title || d.filename));
+    main.appendChild($e("div", "afile-meta", [d.title ? d.filename : null, fmtBytes(d.size), fmtDate(d.uploadedAt)].filter(Boolean).join(" · ")));
+    row.appendChild(main);
+    if (!compact) row.appendChild(statusSelect(d));
+    row.appendChild(viewBtn(d));
+    return row;
   }
 
   // Labels as the family saw them, from the office's own question set; a
@@ -6061,6 +6130,7 @@ function initAdminView({ onClose }) {
     q.title = a.path;
     head.appendChild(q);
     const chips = $e("div", "acard-chips");
+    if (facts.files?.length) chips.appendChild($e("span", "achip files", `📎 ${facts.files.length} attached`));
     if (facts.hasAudio) chips.appendChild($e("span", "achip audio", "🎙 Recording"));
     if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
     if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
@@ -6088,6 +6158,12 @@ function initAdminView({ onClose }) {
     editor.appendChild(btns);
     const answerCol = $e("div", "acard-answer");
     answerCol.append(finalRow, editor);
+    if (facts.files?.length) {
+      const attached = $e("div", "acard-files");
+      attached.appendChild($e("div", "lbl", "Attached with this answer"));
+      for (const d of facts.files) attached.appendChild(fileRow(d, { compact: true }));
+      answerCol.appendChild(attached);
+    }
     card.appendChild(answerCol);
     editBtn.onclick = () => { box.value = a.value ?? ""; editor.hidden = false; box.focus(); };
     cancel.onclick = () => { editor.hidden = true; };
