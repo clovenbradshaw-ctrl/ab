@@ -8,7 +8,7 @@
 <!-- Content-Security-Policy — the load-bearing control for "the homeserver
      operator can't read submissions".
      Client-side encryption only holds if nothing on this page can read
-     plaintext before encryptBytes()/Megolm run, or ship it somewhere. The
+     plaintext before putEncryptedMedia()/Megolm run, or ship it somewhere. The
      app is one big inline script block, so 'unsafe-inline' is unavoidable
      here and script-src is NOT the protection — connect-src is. Answers can
      ever be POSTed to the homeserver; there is no origin in this list that
@@ -1226,14 +1226,6 @@ async function sha256B64(buf) {
   return toB64(await crypto.subtle.digest("SHA-256", buf));
 }
 
-async function encryptBytes(plainBuf) {
-  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plainBuf);
-  const jwk = await crypto.subtle.exportKey("jwk", key);
-  return { ciphertext, key: jwk, iv: toB64(iv), hash: await sha256B64(ciphertext) };
-}
-
 async function decryptBytes(ciphertext, jwk, ivB64, expectHashB64) {
   if (expectHashB64) {
     const actual = await sha256B64(ciphertext);
@@ -1249,7 +1241,7 @@ async function decryptBytes(ciphertext, jwk, ivB64, expectHashB64) {
 // ensureRoomKey() persisted a raw exportable AES-256 JWK into localStorage,
 // so wiring it up would have handed the room key to any script on the page.
 // Text answers are protected by Megolm (see MatrixStore._assertEncrypted);
-// file and audio bytes by encryptBytes/decryptBytes above. Two layers, both
+// file and audio bytes by putEncryptedMedia/getDecryptedMedia. Two layers, both
 // live, is the whole story — leaving dead crypto around invites someone to
 // assume there is a third.
 
@@ -3488,6 +3480,72 @@ class MatrixMedia {
   }
 }
 
+// ── Chunked encrypted media ──
+// The homeserver refuses any single upload over its m.upload.size (25 MB on
+// hyphae.social), which a long recording or a phone video passes easily. So
+// a file goes up as pieces: one key for the file, a fresh IV per piece, and
+// each piece's position and the piece count bound into it as AES-GCM
+// additional data, so pieces can't be reordered or dropped without failing
+// to decrypt. The list of pieces (and each piece's hash) travels inside the
+// Megolm-encrypted record, out of the server's reach. A dropped connection
+// costs one piece, retried, not the whole file; and no more than one piece
+// is ever held encrypted in memory on the way up.
+//
+// A file that fits in one piece is stored exactly as before (url/iv/hash,
+// no additional data), so older records and older readers keep working.
+const MEDIA_CHUNK_BYTES = 8 * 1024 * 1024;
+
+function pieceLabel(index, count) { return new TextEncoder().encode(`ab-media/v1 ${index + 1}/${count}`); }
+
+// Rate limits say how long to wait; a transport failure gets a short backoff.
+async function withRetries(work, { waits = [1000, 3000, 8000] } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await work(); }
+    catch (e) {
+      const status = e?.httpStatus ?? e?.status;
+      const retriable = status == null || status === 429 || status >= 500 || e?.errcode === "M_LIMIT_EXCEEDED";
+      if (!retriable || attempt >= waits.length) throw e;
+      const wait = Number(e?.data?.retry_after_ms) || waits[attempt];
+      await new Promise((r) => setTimeout(r, Math.min(wait, 30000)));
+    }
+  }
+}
+
+async function putEncryptedMedia(blob, media, id, { chunkBytes = MEDIA_CHUNK_BYTES, onProgress = null } = {}) {
+  const count = Math.max(1, Math.ceil(blob.size / chunkBytes));
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const jwk = await crypto.subtle.exportKey("jwk", key);
+  const parts = [];
+  for (let i = 0; i < count; i++) {
+    const plain = await blob.slice(i * chunkBytes, (i + 1) * chunkBytes).arrayBuffer();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const params = count === 1 ? { name: "AES-GCM", iv } : { name: "AES-GCM", iv, additionalData: pieceLabel(i, count) };
+    const ciphertext = await crypto.subtle.encrypt(params, key, plain);
+    const url = await withRetries(() => media.put(count === 1 ? id : `${id}.${i}`, ciphertext));
+    parts.push({ url, iv: toB64(iv), hash: await sha256B64(ciphertext), size: plain.byteLength });
+    onProgress?.(i + 1, count);
+  }
+  return count === 1
+    ? { key: jwk, url: parts[0].url, iv: parts[0].iv, hash: parts[0].hash }
+    : { key: jwk, parts };
+}
+
+// Returns the decrypted file as an array of ArrayBuffers, ready for new Blob().
+async function getDecryptedMedia(rec, media, { onProgress = null } = {}) {
+  if (!rec.parts) return [await decryptBytes(await media.get(rec.url), rec.key, rec.iv, rec.hash)];
+  const key = await crypto.subtle.importKey("jwk", rec.key, { name: "AES-GCM" }, false, ["decrypt"]);
+  const count = rec.parts.length;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const p = rec.parts[i];
+    const ciphertext = await withRetries(() => media.get(p.url));
+    if (p.hash && (await sha256B64(ciphertext)) !== p.hash) throw new Error(`piece ${i + 1} of ${count} failed its integrity check`);
+    out.push(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(p.iv), additionalData: pieceLabel(i, count) }, key, ciphertext));
+    onProgress?.(i + 1, count);
+  }
+  return out;
+}
+
 
 // docview.js — shared "decrypt and show" modal for document records.
 //
@@ -3535,20 +3593,28 @@ async function previewDocument(doc, media) {
   scrim.classList.add("on");
 
   try {
-    const ciphertext = await media.get(doc.url);
-    const plainBuf = await decryptBytes(ciphertext, doc.key, doc.iv, doc.hash);
-    const blob = new Blob([plainBuf], { type: doc.mimetype || "application/octet-stream" });
+    const status = body.querySelector(".docstatus");
+    const pieces = await getDecryptedMedia(doc, media, {
+      onProgress: (n, total) => { if (status) status.textContent = `Fetching and decrypting in your browser… ${n} of ${total}`; },
+    });
+    const blob = new Blob(pieces, { type: doc.mimetype || "application/octet-stream" });
     if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
     const objUrl = URL.createObjectURL(blob);
     lastObjectUrl = objUrl;
 
     body.innerHTML = "";
-    if ((doc.mimetype || "").startsWith("image/")) {
+    const mime = doc.mimetype || "";
+    if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
       body.appendChild(img);
-    } else if (doc.mimetype === "application/pdf") {
+    } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
       body.appendChild(frame);
+    } else if (mime.startsWith("audio/") || mime.startsWith("video/")) {
+      const player = document.createElement(mime.startsWith("audio/") ? "audio" : "video");
+      player.controls = true; player.src = objUrl;
+      player.style.cssText = "width:100%;display:block;margin:4px 0 10px;max-height:60vh";
+      body.appendChild(player);
     } else {
       const p = document.createElement("p"); p.className = "docstatus"; p.textContent = "No inline preview for this file type — download it below.";
       body.appendChild(p);
@@ -3575,9 +3641,11 @@ async function playVoiceClip(clip, media) {
   scrim.classList.add("on");
 
   try {
-    const ciphertext = await media.get(clip.url);
-    const plainBuf = await decryptBytes(ciphertext, clip.key, clip.iv, clip.hash);
-    const blob = new Blob([plainBuf], { type: clip.mimetype || "audio/webm" });
+    const status = body.querySelector(".docstatus");
+    const pieces = await getDecryptedMedia(clip, media, {
+      onProgress: (n, total) => { if (status) status.textContent = `Fetching and decrypting the recording… ${n} of ${total}`; },
+    });
+    const blob = new Blob(pieces, { type: clip.mimetype || "audio/webm" });
     if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
     const objUrl = URL.createObjectURL(blob);
     lastObjectUrl = objUrl;
@@ -6758,7 +6826,10 @@ function watchMatrixForLiveUpdates(client, onChange) {
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
-const MAX_DOC_BYTES = 25 * 1024 * 1024;
+// Uploads go up in pieces (see putEncryptedMedia), so the homeserver's
+// per-upload limit no longer caps a file; this does, because opening one
+// reassembles it in the browser's memory.
+const MAX_DOC_BYTES = 300 * 1024 * 1024;
 
 let intake, store, configStore, knowledge, currentStoreKind = "demo";
 let flowMode = false; // true = no-model step wizard, false = chat with a model
@@ -7758,21 +7829,21 @@ async function handleFiles(fileList) {
   const field = intake?.nextField();
   const isCatchAll = !field || field.path === CATCH_ALL_DOC_FIELD;
   for (const file of Array.from(fileList)) {
-    if (file.size > MAX_DOC_BYTES) { toast(`"${file.name}" is over 25 MB.`, "error"); continue; }
+    if (file.size > MAX_DOC_BYTES) { toast(`"${file.name}" is over ${fmtBytes(MAX_DOC_BYTES)}.`, "error"); continue; }
     const row = el("li", "doc pending");
     row.appendChild(el("div", "drow1", file.name));
     const status = el("div", "docs-status", "Encrypting & uploading…");
     row.appendChild(status);
     $("docsList").prepend(row);
     try {
-      const buf = await file.arrayBuffer();
-      const { ciphertext, key, iv, hash } = await encryptBytes(buf);
       const id = newId("doc");
-      const url = await mediaBackend().put(id, ciphertext);
+      const stored = await putEncryptedMedia(file, mediaBackend(), id, {
+        onProgress: (n, total) => { if (total > 1) status.textContent = `Encrypting & uploading… ${Math.round((n / total) * 100)}%`; },
+      });
       store.emit(OP.INS, {
         entity: "document", id,
         attrs: {
-          filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, url, key, iv, hash, status: "new",
+          filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, ...stored, status: "new",
           fieldPath: isCatchAll ? null : field.path,
           fieldLabel: isCatchAll ? null : field.label,
           title: "",
@@ -8310,16 +8381,16 @@ async function saveVoiceClip(blob, transcript) {
   // to a race with their typing speed.
   lastVoiceClipId = id;
   try {
-    const buf = await blob.arrayBuffer();
-    const { ciphertext, key, iv, hash } = await encryptBytes(buf);
-    const url = await mediaBackend().put(id, ciphertext);
+    // Read before the upload: the question on screen when they spoke is the
+    // one this recording answers, however long a long recording takes to send.
     const field = intake.nextField();
+    const stored = await putEncryptedMedia(blob, mediaBackend(), id);
     store.emit(OP.INS, {
       entity: "voice_clip", id,
       attrs: {
         fieldPath: field ? field.path : null,
         transcript, mimetype: blob.type || "audio/webm", size: blob.size,
-        url, key, iv, hash, lang: intake.lang,
+        ...stored, lang: intake.lang,
       },
     });
     return id;
