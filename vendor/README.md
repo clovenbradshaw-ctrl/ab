@@ -40,3 +40,38 @@ plain JS and decodes/instantiates itself at runtime.
 Verified working (in a real browser, not jsdom): `window.matrixcs.createClient(...)`
 returns a client whose `.initRustCrypto()` resolves successfully and whose
 `.getCrypto()` returns a live crypto API object.
+
+## Local patch — reapply after every rebuild
+
+The SDK's `encodeBase64` falls back to `btoa` in the browser only for a
+`Uint8Array`, but secret storage hands it the `ArrayBuffer`s that WebCrypto
+returns. Without Node's `Buffer` that throws `No base64 impl found!`, and
+secret storage (so the office's password-unlocked history backup) can't store
+anything. The bundled copy is patched to wrap any buffer or view first:
+
+```js
+// before
+if(typeof btoa=="function"&&Q instanceof Uint8Array)return btoa(Q.reduce((A,g)=>A+String.fromCharCode(g),""));
+// after
+if(typeof btoa=="function"){var U=Q instanceof Uint8Array?Q:ArrayBuffer.isView(Q)?new Uint8Array(Q.buffer,Q.byteOffset,Q.byteLength):new Uint8Array(Q);return btoa(U.reduce((A,g)=>A+String.fromCharCode(g),""))}
+```
+
+Find it by the `No base64 impl found!` string (the encoder is the first of the
+two). A rebuilt bundle whose SDK already accepts `ArrayBuffer` there doesn't
+need it.
+
+Second patch, same reason: the Rust crypto backend's
+`getSessionBackupPrivateKey()` calls `Buffer.from(…, "base64")` with no
+fallback, which is on the path every history restore takes.
+
+```js
+// before
+g.decryptionKey?Buffer.from(g.decryptionKey.toBase64(),"base64"):null
+// after
+g.decryptionKey?Uint8Array.from(atob(g.decryptionKey.toBase64()),function(x){return x.charCodeAt(0)}):null
+```
+
+The other `Buffer` uses in the bundle belong to the legacy (non-Rust) crypto
+stack, device dehydration, QR verification and recovery-key formatting, none
+of which this app calls — which is also why `crypto.createRecoveryKeyFromPassphrase`
+isn't used.

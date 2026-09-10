@@ -44,9 +44,6 @@
 <script src="vendor/steer.js"></script>
 <script src="vendor/eoreader6.js"></script>
 <script src="vendor/voice.js"></script>
-<!-- The recovery-key codec: the string an office writes down when history
-     backup is set up, and types back to restore it on a new device. -->
-<script src="vendor/recovery-key.js"></script>
 <!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
      load, which put Google-controlled JS in the same origin as every
      plaintext answer, for every visitor — including the constituent flow,
@@ -432,6 +429,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .docs-list .drow2{display:flex;align-items:center;gap:5px;margin-top:4px}
 .docs-list .dcontext{font-size:11px;color:var(--muted);margin-top:2px}
 .docs-list .dtitle-input{width:100%;box-sizing:border-box;font:inherit;font-size:11px;padding:3px 6px;margin-top:3px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink)}
+.docs-list .dtitle-row{display:flex;gap:6px;align-items:center}
+.docs-list .dtitle-row .dview{margin-top:3px;flex:none}
+.docs-list .dtitle-row .dview[hidden]{display:none}
 .docs-list .docs-status{font-size:11px;color:var(--muted)}
 .docs-list .dview{font:inherit;font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
 .docs-list .dstatus{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;color:var(--muted);margin-left:auto;padding:1px 5px;border-radius:99px;background:var(--wash)}
@@ -548,6 +548,43 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .atab{font:600 11.5px Inter;padding:5px 12px;border:none;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;transition:all .15s ease}
 .atab.on{background:var(--ink);color:#fff}
 .aclose{font:inherit;font-size:11.5px;padding:5px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.asum{padding:10px 14px;background:var(--wash);border:1px solid var(--line);border-radius:9px;font-size:12px;color:var(--muted)}
+.asum b{color:var(--ink)}
+.afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,1.25fr) minmax(260px,2fr);gap:16px;align-items:start;box-shadow:var(--shadow)}
+@media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
+.acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
+.acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4}
+.acard-chips{display:flex;gap:4px;flex-wrap:wrap}
+.achip{font:600 10px Inter;border-radius:999px;padding:2px 8px;background:var(--wash);color:var(--muted);border:1px solid var(--line)}
+.achip.audio{background:var(--seal-soft);color:var(--seal);border-color:#C9E0D5}
+.achip.office{background:var(--turn-soft);color:var(--turn);border-color:#EBD3B0}
+.acard-answer{display:flex;flex-direction:column;gap:8px;min-width:0}
+.acard-final{display:flex;gap:8px;align-items:flex-start}
+.acard-final .v{flex:1;min-width:0;font-size:15px;line-height:1.45;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.acard-final .lbl{font:600 9.5px Inter;letter-spacing:.05em;text-transform:uppercase;color:var(--seal);margin-bottom:2px}
+.aedit{flex:none;border:1px solid var(--line);border-radius:6px;background:var(--surface);font:500 11px Inter;padding:3px 8px;cursor:pointer;color:var(--muted)}
+.aedit-area{display:flex;flex-direction:column;gap:6px}
+.aedit-area[hidden]{display:none}
+.aedit-area textarea{width:100%;min-height:64px;resize:vertical;margin:0}
+.aedit-btns{display:flex;gap:6px}
+.atl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:10px;min-width:0}
+.atl-step{position:relative;display:flex;flex-direction:column;gap:4px}
+.atl-step::before{content:"";position:absolute;left:-20px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--muted)}
+.atl-step.office::before{border-color:var(--turn)}
+.atl-line{font-size:12px;color:var(--ink);line-height:1.4}
+.atl-step.office .atl-line b{color:var(--turn)}
+.atl-when{color:var(--muted);font-size:11px}
+.atl-label{font:600 10px Inter;color:var(--muted);letter-spacing:.02em}
+.atl-quote{font-size:12.5px;line-height:1.45;color:var(--ink);background:var(--wash);border-radius:7px;padding:6px 9px;white-space:pre-wrap;overflow-wrap:anywhere}
+.atl-quote.transcript{background:var(--seal-soft)}
+.atl-play{align-self:flex-start}
+.atl-step.replaced .atl-line,.atl-step.replaced .atl-quote{opacity:.6}
+.atl-step.replaced .atl-quote{text-decoration:line-through;text-decoration-color:rgba(92,107,114,.5)}
+.aletters{margin-top:16px;padding:12px 14px;border:1px solid #C9E0D5;border-radius:12px;background:var(--seal-soft);display:flex;flex-direction:column;gap:8px}
+.aletters-head{font:600 13px Inter}
+.aletters-gen{align-self:flex-start;border:1px solid var(--seal);border-radius:7px;background:var(--seal);color:#fff;font:600 12px Inter;padding:7px 14px;cursor:pointer}
 .aempty{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:30px 18px;text-align:center;color:var(--muted);font-size:13px}
 .atable-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:auto;max-height:calc(100vh - 180px)}
 .atable{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -940,7 +977,6 @@ nav .setup .rail-toggle{display:inline-flex}
         <div class="voice-note hidden" id="voiceNote" role="status"></div>
         <div class="hint">
           <kbd>Enter</kbd> send · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>?</kbd> if stuck
-          · <a href="#" id="bulkOpen">prefer to write it all out at once?</a>
         </div>
       </section>
       <section class="wizard hidden" id="wizardPane">
@@ -1061,42 +1097,6 @@ nav .setup .rail-toggle{display:inline-flex}
   <div class="btns"><button class="primary" id="traceClose">Close</button></div>
 </div></div>
 
-<!-- End-user: "answer several at once" bulk entry, an alternative to the
-     one-field-at-a-time chat for someone who'd rather just write their
-     story once. Same schema, same validate() rules — see Intake.extractBulk. -->
-<div class="inline-editor" id="bulkModal"><div class="modal" id="bulkModalBox" style="width:min(560px,94vw)">
-  <h3>Answer several at once</h3>
-  <div id="bulkNeedNote" class="field-path" style="margin-bottom:8px"></div>
-
-  <div id="bulkComposeView">
-    <textarea id="bulkText" rows="8" placeholder="Write or paste as much as you'd like — your name, what happened, anything you'd normally answer one question at a time. We'll pull out whatever we can and ask you about the rest." style="width:100%;resize:vertical;font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)"></textarea>
-    <div class="btns" style="margin-top:12px">
-      <button class="cancel" id="bulkCancel">Cancel</button>
-      <button class="primary" id="bulkFind" disabled>Find my answers</button>
-    </div>
-  </div>
-
-  <div id="bulkLoadingView" class="hidden" style="text-align:center;padding:18px 0">
-    <div class="spin" style="margin:0 auto 12px"></div>
-    <p class="lnote" id="bulkLoadingNote">Reading through what you wrote…</p>
-  </div>
-
-  <div id="bulkReviewView" class="hidden">
-    <p class="lnote" id="bulkReviewNote" style="margin:0 0 10px"></p>
-    <div id="bulkReviewList" style="max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:8px"></div>
-    <div class="btns" style="margin-top:12px">
-      <button class="cancel" id="bulkBack">← Back</button>
-      <button class="primary" id="bulkSave">Save these answers</button>
-    </div>
-  </div>
-
-  <div id="bulkNoModelView" class="hidden">
-    <p class="lnote">Answering several questions at once needs a real language model to actually read what you wrote — right now you're in quick Demo mode, which can't do that safely.</p>
-    <p class="lnote">Switch the model dropdown above (Demo → the WebLLM or Ollama option) to use this, or keep going one question at a time below.</p>
-    <div class="btns" style="margin-top:12px"><button class="primary" id="bulkNoModelClose">Got it</button></div>
-  </div>
-</div></div>
-
 <!-- Context drawer -->
 <div class="scrim" id="ctxScrim"></div>
 <aside class="drawer" id="ctxDrawer" aria-label="Folded context" aria-hidden="true">
@@ -1126,8 +1126,9 @@ nav .setup .rail-toggle{display:inline-flex}
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
     <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
-    <button class="aclose" id="adminPreviewForm">Preview the form ↗</button>
+    <button class="aclose" id="adminPreviewForm" title="Opens the questions in a demo — nothing is saved or sent">Try the questions (demo) ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
+    <button class="aclose" id="adminSignOut">Sign out</button>
   </header>
   <div class="abody" id="adminBody"></div>
 </main>
@@ -1269,8 +1270,8 @@ const SCHEMA = {
   id: "ocr-complaint-tn-dcs",
   title: "OCR complaint intake — Tennessee DCS",
   titleEs: "Admisión para queja ante la OCR — DCS de Tennessee",
-  blurb: "We're going to ask about your family's experience with the Tennessee Department of Children's Services, one question at a time. Nothing is sent anywhere until you review it. You can stop and come back whenever you need to.",
-  blurbEs: "Vamos a preguntarte sobre la experiencia de tu familia con el Departamento de Servicios para Niños de Tennessee (DCS), una pregunta a la vez. Nada se envía a ningún lado hasta que tú lo revises. Puedes detenerte y volver cuando lo necesites.",
+  blurb: "We're going to ask about your family's experience with the Tennessee Department of Children's Services, one question at a time. Each answer is saved securely as you go, and the office helping you can see it. You can stop and come back whenever you need to.",
+  blurbEs: "Vamos a preguntarte sobre la experiencia de tu familia con el Departamento de Servicios para Niños de Tennessee (DCS), una pregunta a la vez. Cada respuesta se guarda de forma segura mientras avanzas, y la oficina que te ayuda puede verla. Puedes detenerte y volver cuando lo necesites.",
   fields: [
     {
       path: "complainant_name",
@@ -2085,14 +2086,14 @@ const MAX_PROBES = 2;
 // Both messages below are required, exact wording (per the project's
 // intake instructions), not phrasing the model or Steer's generic table
 // gets to pick — the interview must continue after the deadline warning,
-// never stop, and the closing message must always point back to
-// Representative Behn's office as the mandatory review step before anything
-// is filed. Rendered as a visually distinct banner, not a normal chat bubble
+// never stop, and the closing message must tell the family not to send this
+// to the state themselves — Representative Behn's office reviews it with them
+// first. Rendered as a visually distinct banner, not a normal chat bubble
 // (see renderMessage()'s `m.banner` handling).
 const DEADLINE_WARNING_EN = "OCR complaints can only be filed within 180 days of the last incident. This interview will continue, but this draft can not be filed as it is past the timeline restrictions.";
 const DEADLINE_WARNING_ES = "Las quejas ante la OCR solo pueden presentarse dentro de los 180 días posteriores al último incidente. Esta entrevista continuará, pero este borrador no podrá presentarse porque ya pasó el plazo permitido.";
-const CLOSING_MESSAGE_EN = "Thank you so much for completing this interview. PLEASE DO NOT SEND THIS DRAFT UNTIL IT HAS BEEN REVIEWED WITH REPRESENTATIVE BEHN'S OFFICE. We will contact you soon with next steps.";
-const CLOSING_MESSAGE_ES = "Muchas gracias por completar esta entrevista. POR FAVOR NO ENVÍES ESTE BORRADOR HASTA QUE HAYA SIDO REVISADO POR LA OFICINA DE LA REPRESENTANTE BEHN. Nos pondremos en contacto contigo pronto con los próximos pasos.";
+const CLOSING_MESSAGE_EN = "Thank you so much for completing this interview. PLEASE DO NOT SEND THIS TO THE STATE GOVERNMENT OR DCS YOURSELF — Representative Behn's office will review it with you first. We will contact you soon with next steps.";
+const CLOSING_MESSAGE_ES = "Muchas gracias por completar esta entrevista. POR FAVOR NO ENVÍES ESTO AL GOBIERNO ESTATAL NI A DCS POR TU CUENTA — la oficina de la Representante Behn lo revisará contigo primero. Nos pondremos en contacto contigo pronto con los próximos pasos.";
 
 // Shown once, up front, before the first question — a short walkthrough of
 // the shape of the whole interview so a long conversation never feels like
@@ -2616,7 +2617,11 @@ class MatrixStore extends BaseStore {
     }
     // Bound and kept so destroy() can remove this exact listener — an
     // inline arrow passed straight to .on() can never be .off()'d again.
-    this._onTimeline = (event, room) => {
+    // History paged in from the past arrives here too, flagged toStartOfTimeline.
+    // Appending it would replay old values after new ones and the fold would
+    // hand back a stale document; loadFullHistory() re-reads it in order instead.
+    this._onTimeline = (event, room, toStartOfTimeline) => {
+      if (toStartOfTimeline) return;
       if (room.roomId !== this.roomId) return;
       if (event.getType() !== EVENT_TYPE) return;
       const ev = this._decode(event);
@@ -2633,6 +2638,32 @@ class MatrixStore extends BaseStore {
   // outlives every individual MatrixStore built from it.
   destroy() {
     if (this._onTimeline) this.client.off("Room.timeline", this._onTimeline);
+  }
+
+  // The initial sync brings down only a room's last 50 events. For the shared
+  // question set that isn't a partial view, it's a different document: the
+  // `seeded` marker and half the questions are older than that, so every new
+  // office device concluded the room was empty and re-wrote the whole set on
+  // sign-in — rate-limited, one event every five seconds, with the dashboard
+  // waiting on it — and families were given the built-in questions because
+  // the office's looked incomplete. `historyComplete` stays false if the log
+  // couldn't be read back to the room's creation; nothing may write on a guess.
+  async loadFullHistory({ maxPages = 25, limit = 200 } = {}) {
+    const room = this.client.getRoom(this.roomId);
+    if (!room) return this;
+    let timeline = room.getLiveTimeline();
+    for (let page = 0; page < maxPages && timeline.getPaginationToken?.("b"); page++) {
+      let more = false;
+      try { more = await this.client.paginateEventTimeline(timeline, { backwards: true, limit }); }
+      catch (e) { console.warn("[MatrixStore] couldn't read the rest of", this.roomId, e); break; }
+      timeline = room.getLiveTimeline();
+      if (!more) break;
+    }
+    this.historyComplete = !timeline.getPaginationToken?.("b");
+    this._events = timeline.getEvents()
+      .filter((e) => e.getType() === EVENT_TYPE)
+      .map((e) => this._decode(e));
+    return this;
   }
 
   async _ensureAdminInvited(room) {
@@ -3321,9 +3352,10 @@ class EchoModel {
       return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
     }
 
-    const err = field ? Steer.validate(field, lastUser, lang) : null;
+    const answer = field ? Steer.matchChoice(field, lastUser) : lastUser;
+    const err = field ? Steer.validate(field, answer, lang) : null;
     if (err) return JSON.stringify({ support: true, ready: false, extracted: null, distress: false });
-    return JSON.stringify({ support: false, ready: true, extracted: lastUser, distress: false });
+    return JSON.stringify({ support: false, ready: true, extracted: answer, distress: false });
   }
   stream(messages, onToken) { return this.chat(messages).then((s) => { onToken?.(s); return s; }); }
 
@@ -3702,6 +3734,9 @@ function foldConfig(events) {
   let order = null;
 
   for (const e of events) {
+    // The room is readable by every family so it can be joined by alias, which
+    // also lets any of them post to it. Only the office authors the questions.
+    if (e.by && !isAdmin(e.by)) continue;
     if (e.op === OP.DEF && e.payload.anchor === CONFIG_ANCHOR) {
       const { path, value } = e.payload;
       if (path === "systemPrompt") systemPrompt = value;
@@ -3837,6 +3872,7 @@ async function seedConfig(store, cfg = DEFAULT_CONFIG) {
 function deletedFieldIds(events) {
   const gone = new Set();
   for (const e of events) {
+    if (e.by && !isAdmin(e.by)) continue;
     if (e.op === OP.INS && e.payload.entity === ENTITY.FIELD && e.payload.attrs?.deleted) gone.add(e.payload.id);
   }
   return gone;
@@ -3874,6 +3910,10 @@ async function repairSeed(store, cfg, folded) {
 async function ensureSeeded(store, cfg = DEFAULT_CONFIG, { write = true } = {}) {
   let folded = foldConfig(store.timeline());
   if (!write) return folded;
+  if (store.historyComplete === false) {
+    console.warn("[config] couldn't read the whole question log — leaving it untouched this session");
+    return folded;
+  }
   if (!folded.meta.seeded) {
     await seedConfig(store, cfg);
     return foldConfig(store.timeline());
@@ -4302,6 +4342,7 @@ class Intake {
       // reaches the person next is the "does this look right?" confirm
       // step below — nothing here is ever stored without that yes.
       if (f.type === "text") parsed.extracted = Steer.tidyText(parsed.extracted, this.lang, f);
+      parsed.extracted = Steer.matchChoice(f, parsed.extracted);
       const err = validate(f, parsed.extracted, this.lang);
       if (err) { thinking.text = err; thinking.streaming = false; thinking.support = true; this._emit("message", thinking); return; }
       // Valid by shape, but not yet an answer to THIS question — ask again
@@ -4759,83 +4800,6 @@ class Intake {
     });
   }
 
-  // Same assemble() the chat turn uses, but for a one-off "does this one
-  // field's answer happen to be in here" probe against a block of bulk text
-  // instead of the real conversation — the visible chat transcript (and its
-  // epoch bookkeeping) is untouched by this.
-  _assembleBulk(field, text) {
-    return assemble({
-      field,
-      discourse: [{ role: "user", text, epoch: 0 }],
-      timeline: this.store.timeline(),
-      knowledge: this.knowledge,
-      schema: this.schema,
-      anchor: this.anchor,
-      system: this.systemPrompt,
-      pending: null,
-      lang: this.lang,
-    });
-  }
-
-  // "Just let me write it all out" escape hatch for when the one-field-at-a-
-  // time chat is the wrong shape for how someone wants to tell their story.
-  // Runs the SAME per-field classify contract (_assemble → model.chat →
-  // _parseClassification → tidyText/validate) the chat uses, once per
-  // still-unanswered field against the one block of text, instead of a
-  // separate bespoke extractor — so a field either satisfies the exact same
-  // rules typing it in chat would, or it's left for the chat to ask for.
-  // Sequential, not parallel: WebLLM holds a single in-browser engine and
-  // Ollama a single local daemon, neither meant for concurrent requests.
-  // Nothing is stored yet — see commitBulk() — this only proposes candidates
-  // for the person to review first, same "nothing sent until you review it"
-  // bar as every other path into the store.
-  async extractBulk(text) {
-    const intent = Steer.classifyIntent(text, this.lang);
-    if (intent.distress) {
-      Steer.applyForce(this.steer, { distress: true });
-      this._say("assistant", this._reply("safety"), { support: true });
-      return { distress: true, candidates: [] };
-    }
-    const targets = this.progress().filter((p) => !p.done);
-    const candidates = [];
-    for (const f of targets) {
-      const { messages } = this._assembleBulk(f, text);
-      let raw = "";
-      try { raw = await this.model.chat(messages); }
-      catch (e) { console.error("[Intake] extractBulk probe failed:", f.path, e); continue; }
-      const parsed = this._parseClassification(raw, f, text);
-      if (parsed.distress) {
-        Steer.applyForce(this.steer, { distress: true });
-        this._say("assistant", this._reply("safety"), { support: true });
-        return { distress: true, candidates };
-      }
-      if (!parsed.ready || parsed.extracted == null) continue;
-      let value = parsed.extracted;
-      if (f.type === "text") value = Steer.tidyText(value, this.lang, f);
-      if (validate(f, value, this.lang)) continue; // couldn't confidently satisfy this field from the bulk text
-      candidates.push({ field: f, value, source: text });
-    }
-    return { distress: false, candidates };
-  }
-
-  // Stores whichever candidates the person accepted after reviewing
-  // extractBulk()'s proposals (some may have been edited or dropped in that
-  // review — accepted carries only what they actually approved). Provenance
-  // keeps the full bulk text as `source` and inputKind "bulk" so the audit
-  // trail can always show what was pasted, same as "voice"/"typed"/"edited".
-  commitBulk(accepted) {
-    for (const { field, value, source } of accepted) {
-      const ev = this.store.emit(OP.DEF, {
-        anchor: this.anchor, path: field.path, value,
-        source: source ?? null, inputKind: "bulk", voiceClipId: null,
-      });
-      this._emit("stored", { field, value, event: ev });
-      this._checkFilingDeadline(field, value);
-    }
-    if (accepted.length) this.epoch++;
-    return this._askNext();
-  }
-
   _parseClassification(raw, field, userText) {
     // Pull the first {...} block; tolerate models that wrap it in prose/fences.
     const m = (raw || "").match(/\{[\s\S]*\}/);
@@ -4852,8 +4816,9 @@ class Intake {
     // No parseable envelope: rather than dead-ending the conversation on a
     // fallible small model, fall back to the person's own raw text if it
     // already satisfies the field on its own.
-    const err = validate(field, userText, this.lang);
-    if (!err && userText.trim()) return { support: false, ready: true, extracted: userText.trim(), distress: false, followup: null };
+    const answer = Steer.matchChoice(field, userText.trim());
+    const err = validate(field, answer, this.lang);
+    if (!err && answer) return { support: false, ready: true, extracted: answer, distress: false, followup: null };
     return { support: true, ready: false, extracted: null, distress: false, followup: null };
   }
 }
@@ -4896,7 +4861,7 @@ const LETTER_STATUSES = [
 // arrived on or after this date and nothing before it. Nothing is deleted:
 // the events are still in their rooms, and moving this date back brings them
 // straight back into view.
-const OFFICE_DATA_CUTOFF = "2026-09-03T00:00:00.000Z";
+const OFFICE_DATA_CUTOFF = "2026-09-10T16:45:00.000Z";
 const OFFICE_CUTOFF_MS = Date.parse(OFFICE_DATA_CUTOFF);
 
 function afterCutoff(at) {
@@ -5076,9 +5041,15 @@ function collectPipelineData({ storeKind, client }) {
   const pipelines = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
-    if (!events.length) continue;
+    // "Can this device read it" belongs on the row, not only in a banner at
+    // the top: a submission that shows two answers because the rest can't be
+    // decrypted must not look like a family who only answered twice — and one
+    // this device can't read at all must not vanish from the table.
+    const unreadable = storeKind === "matrix" ? MatrixStore.readRoom(client, roomId).undecryptable : 0;
+    if (!events.length && !unreadable) continue;
     const folded = fold(events);
-    const applicantName = folded.anchors?.applicant?.complainant_name?.value || roomId;
+    const applicantName = folded.anchors?.applicant?.complainant_name?.value
+      || (events.length ? roomId : "Not readable on this device");
     const provenance = provenanceOf(folded, "applicant");
 
     const voiceClips = Object.entries(folded.records)
@@ -5094,24 +5065,38 @@ function collectPipelineData({ storeKind, client }) {
     // grab the latest cell value AND find all events for that path
     // (the edit history).
     const seenPaths = new Set();
+    const clipFor = (id) => (id ? voiceClips.find((c) => c.id === id) || null : null);
     for (const ev of defs) {
       const p = ev.payload.path;
-      if (seenPaths.has(p)) continue;
+      // Underscored paths are the interview's own bookkeeping (the submitted
+      // flag), not something the family answered.
+      if (seenPaths.has(p) || p.startsWith("_")) continue;
       seenPaths.add(p);
       const cell = provenance[p];
       if (!cell) continue;
-      const clip = (cell.inputKind === "voice" && cell.voiceClipId)
-        ? voiceClips.find((c) => c.id === cell.voiceClipId) : null;
       answers.push({
         path: p,
         value: cell.value,
         source: cell.source,
         inputKind: cell.inputKind || "typed",
-        voiceClip: clip,
+        voiceClip: cell.inputKind === "voice" ? clipFor(cell.voiceClipId) : null,
         at: cell.at,
         by: cell.by,
+        // Every version, oldest first: an edit supersedes an answer but never
+        // erases how it was first given — typed words, the recording, what
+        // the speech model heard.
+        versions: defs.filter((d) => d.payload.path === p).map((d) => ({
+          value: d.payload.value,
+          source: d.payload.source ?? null,
+          inputKind: d.payload.inputKind || "typed",
+          voiceClip: clipFor(d.payload.voiceClipId),
+          restoredFrom: d.payload.restoredFrom || null,
+          at: d.at,
+          by: d.by,
+        })),
       });
     }
+    const submittedAt = defs.filter((d) => d.payload.path === SUBMITTED_FLAG_PATH && d.payload.value).map((d) => d.at).pop() || null;
 
     const letters = Object.entries(folded.records)
       .filter(([, r]) => r.entity === "letter")
@@ -5122,12 +5107,8 @@ function collectPipelineData({ storeKind, client }) {
     const caseStatus = folded.anchors?.case?.status?.value || "new";
 
     const valueOf = (path) => (answers.find((a) => a.path === path) || {}).value || "";
-    // "Can this device read it" belongs on the row, not only in a banner at
-    // the top: a submission that shows two answers because the rest can't be
-    // decrypted must not look like a family who only answered twice.
-    const unreadable = storeKind === "matrix" ? MatrixStore.readRoom(client, roomId).undecryptable : 0;
     pipelines.push({
-      roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus,
+      roomId, applicantName, answers, letters, voiceClips, lastActivity, caseStatus, submittedAt,
       phone: valueOf("complainant_phone"),
       email: valueOf("complainant_email"),
       unreadable,
@@ -5254,6 +5235,8 @@ function initAdminView({ onClose }) {
   // the Kanban tab is showing. Submissions is the default: it's the queue
   // of whole cases, which is what "processing" mostly means here.
   let kanbanBoard = "submissions";
+  // Which answers the submission view shows: all, only spoken ones, only changed ones.
+  let cardFilter = "all";
 
   // Switching tabs from a click, or from code (opening a family from the
   // case table lands on the tab that reviews one submission).
@@ -5414,101 +5397,84 @@ function initAdminView({ onClose }) {
     return ipLocations.get(ip);
   }
 
-  // The backup panel, above the device list — the device list is the evidence
-  // for why it matters (one row per sign-in, each blind to what came before).
+  // What the server holds, read back rather than assumed: the failure this
+  // must never produce is an office believing history is protected when it
+  // isn't. Unlocking lives in the office-password panel above it.
   function renderBackupPanel() {
     const box = $e("div");
     box.style.cssText = "margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)";
     const head = $e("div", null, "History backup");
-    head.style.cssText = "font:600 13px Inter;margin-bottom:4px";
+    head.style.cssText = "font:600 13px Inter;margin-bottom:6px";
     box.appendChild(head);
 
-    const explain = $e("div");
-    explain.style.cssText = "font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:10px";
-    explain.textContent = "Submissions are encrypted to the devices in the room when they arrive, and the server can never re-send them to a device that came later. Backup is the only way around that: the device that can read the history uploads its keys, encrypted with a recovery key the server never sees, and any later device holding that key can pull them back.";
-    box.appendChild(explain);
-
     const state = $e("div", "mono");
-    state.style.cssText = "font-size:11.5px;color:var(--ink);line-height:1.6;margin-bottom:10px";
+    state.style.cssText = "font-size:11.5px;color:var(--ink);line-height:1.6;white-space:pre-line";
     state.textContent = "Checking…";
     box.appendChild(state);
 
-    const actions = $e("div");
-    actions.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center";
-    box.appendChild(actions);
-
-    const paint = (status) => {
+    keyBackupStatus(ctx.client).then((status) => {
       if (!status.available) { state.textContent = status.reason; return; }
       const lines = [
         `Backup on the server: ${status.serverVersion ? `version ${status.serverVersion}` : "none yet"}`,
         `Keys held by the server: ${status.keyCount == null ? "unknown" : status.keyCount}`,
-        `This device is uploading to: ${status.activeHere ? `version ${status.activeHere}` : "nothing"}`,
-        `Recovery key set up: ${status.secretStorage ? "yes" : "no"}`,
+        `This device is backing up to: ${status.activeHere ? `version ${status.activeHere}` : "nothing — unlock history above"}`,
+        `Locked with the office password: ${status.secretStorage ? "yes" : "no"}`,
       ];
       if (status.error) lines.push(`Last error: ${status.error}`);
       state.textContent = lines.join("\n");
+    }).catch((e) => { state.textContent = "Couldn't read the backup state: " + (e?.message || e); });
+
+    return box;
+  }
+
+  // Signing in with the password unlocks history on its own; this is for a
+  // device that was resumed from a saved session (no password typed) or that
+  // signed in before the office password did the unlocking, and for clearing
+  // out old sessions. The password is used for this click and not kept.
+  function renderOfficeKeysPanel() {
+    const box = $e("div");
+    box.style.cssText = "margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)";
+    const head = $e("div", null, "Office password");
+    head.style.cssText = "font:600 13px Inter;margin-bottom:4px";
+    box.appendChild(head);
+    const explain = $e("div", null, "Signing in with the office password unlocks all history on that device and keeps it backed up for every other sign-in. The password itself never goes to the server.");
+    explain.style.cssText = "font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:10px";
+    box.appendChild(explain);
+
+    const row = $e("div");
+    row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+    const pw = document.createElement("input");
+    pw.type = "password";
+    pw.autocomplete = "current-password";
+    pw.placeholder = "Office password";
+    pw.style.cssText = "flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)";
+    row.appendChild(pw);
+
+    const busy = async (btn, label, work) => {
+      if (!pw.value) { toast("Enter the office password first.", "warn"); pw.focus(); return; }
+      const text = btn.textContent;
+      btn.disabled = true; btn.textContent = label;
+      try { await work(pw.value); pw.value = ""; }
+      catch (e) { console.error("[office]", e); toast(e?.message || String(e), "error"); }
+      finally { btn.disabled = false; btn.textContent = text; }
     };
 
-    keyBackupStatus(ctx.client).then(paint).catch((e) => { state.textContent = "Couldn't read the backup state: " + (e?.message || e); });
+    const unlock = $e("button", "aview", "Unlock history on this device");
+    unlock.onclick = () => busy(unlock, "Unlocking…", async (password) => {
+      reportOfficeHistory(await setUpOfficeHistory(ctx.client, password));
+      renderActive();
+    });
+    row.appendChild(unlock);
 
-    const setup = $e("button", "aview", "Set up backup from this device");
-    setup.onclick = async () => {
-      // Worth one deliberate pause: doing this on a device that cannot read
-      // the old submissions produces a backup that cannot either, and it
-      // replaces any existing recovery key.
-      const ok = confirm(
-        "Set up history backup from THIS device?\n\n"
-        + "Backup can only contain what this device can already read. If older submissions show as unreadable here, run this on the device that can read them instead.\n\n"
-        + "This replaces any existing recovery key for the account. You'll get the new key as a download — it cannot be recovered if lost."
-      );
-      if (!ok) return;
-      setup.disabled = true;
-      setup.textContent = "Setting up…";
-      try {
-        const { recoveryKey, status } = await setUpKeyBackup(ctx.client);
-        downloadRecoveryKey(recoveryKey, ctx.currentUserId);
-        paint(status);
-        // Shown as well as downloaded: a download that silently failed is
-        // otherwise indistinguishable from one that worked.
-        alert("Backup is set up. Your recovery key has been downloaded — keep it somewhere that isn't this computer:\n\n" + recoveryKey);
-        toast(status.serverVersion ? "History backup is on" : "Backup ran, but the server reports no version — check the state above", status.serverVersion ? "success" : "warn");
-      } catch (e) {
-        console.error("[backup] setup failed:", e);
-        toast("Couldn't set up backup: " + (e?.message || e), "error");
-        keyBackupStatus(ctx.client).then(paint).catch(() => {});
-      } finally {
-        setup.disabled = false;
-        setup.textContent = "Set up backup from this device";
-      }
-    };
-    actions.appendChild(setup);
-
-    const keyInput = document.createElement("input");
-    keyInput.type = "text";
-    keyInput.placeholder = "Paste a recovery key to restore history here";
-    keyInput.style.cssText = "flex:1;min-width:240px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)";
-    actions.appendChild(keyInput);
-
-    const restore = $e("button", "aview", "Restore history on this device");
-    restore.onclick = async () => {
-      restore.disabled = true;
-      restore.textContent = "Restoring…";
-      try {
-        const { imported, total, status } = await restoreFromRecoveryKey(ctx.client, keyInput.value);
-        paint(status);
-        keyInput.value = "";
-        toast(`Restored ${imported} of ${total} keys — reopen a submission to see what's readable now`, imported ? "success" : "warn");
-        renderActive();
-      } catch (e) {
-        console.error("[backup] restore failed:", e);
-        toast(e?.message || String(e), "error");
-      } finally {
-        restore.disabled = false;
-        restore.textContent = "Restore history on this device";
-      }
-    };
-    actions.appendChild(restore);
-
+    const others = $e("button", "aview", "Sign out all other devices");
+    others.onclick = () => busy(others, "Signing out…", async (password) => {
+      if (!confirm("Sign out every other device on this account?\n\nAny other browser signed in as the office will be signed out. History stays readable here, and on any device that signs in again with the password once history backup is on.")) return;
+      const n = await signOutOtherDevices(ctx.client, password);
+      toast(n ? `Signed out ${n} other device${n === 1 ? "" : "s"}.` : "No other devices were signed in.", "success");
+      renderActive();
+    });
+    row.appendChild(others);
+    box.appendChild(row);
     return box;
   }
 
@@ -5518,11 +5484,12 @@ function initAdminView({ onClose }) {
       wrap.appendChild($e("div", "aempty", "Sign in with the office account to see its devices and backup."));
       return wrap;
     }
+    wrap.appendChild(renderOfficeKeysPanel());
     wrap.appendChild(renderBackupPanel());
 
     const note = $e("div");
     note.style.cssText = "margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.55";
-    note.textContent = "Every sign-in to this account is a device below. Times and IP addresses come from the homeserver; the location is an approximate lookup of the IP and can be well off, especially on mobile networks. Signing out a device elsewhere makes anything only that device could read unreadable, so treat this as a record, not a control panel.";
+    note.textContent = "Every sign-in to this account is a device below. Times and IP addresses come from the homeserver; the location is an approximate lookup of the IP and can be well off, especially on mobile networks. Once history is backed up, signing out old devices loses nothing.";
     wrap.appendChild(note);
 
     const table = $e("div", "atable-wrap");
@@ -5701,6 +5668,7 @@ function initAdminView({ onClose }) {
       { key: "readable", label: "Readable here", get: (c) => c.unreadable },
       { key: "letters", label: "Drafts", get: (c) => c.letters.length, numeric: true },
       { key: "updated", label: "Last activity", get: (c) => c.lastActivity || "" },
+      { key: "submitted", label: "Submitted", get: (c) => c.submittedAt || "" },
       { key: "status", label: "Status", get: (c) => c.caseStatus || "" },
     ];
 
@@ -5761,6 +5729,7 @@ function initAdminView({ onClose }) {
 
       tr.appendChild($e("td", "acell-mime mono", String(c.letters.length)));
       tr.appendChild($e("td", "acell-date mono", c.lastActivity ? fmtDate(c.lastActivity) : "—"));
+      tr.appendChild($e("td", "acell-date mono", c.submittedAt ? fmtDate(c.submittedAt) : "in progress"));
       tr.appendChild($e("td", "acell-mime mono", c.caseStatus || "new"));
 
       const open = document.createElement("td");
@@ -6010,122 +5979,191 @@ function initAdminView({ onClose }) {
     return wrap;
   }
 
+  // One card per question, read top to bottom: the answer the family ended
+  // up with, then what happened to it, oldest first — who did it (the family
+  // or the office), how (typed, said aloud, pasted, changed), and when. A
+  // spoken answer carries its recording and the transcript the speech model
+  // made of it. An edit, by anyone, is a new step; nothing earlier is erased.
   function renderSingleSubmission(wrap, pl) {
-    // ── Audit summary bar ──
-    const auditBar = $e("div");
-    auditBar.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;padding:10px 14px;background:var(--wash);border:1px solid var(--line);border-radius:9px;font-size:11px;color:var(--muted)";
-    const typedCount = pl.answers.filter((a) => a.inputKind === "typed").length;
-    const voiceCount = pl.answers.filter((a) => a.inputKind === "voice").length;
-    const editedCount = pl.answers.filter((a) => a.inputKind === "edited").length;
-    const bulkCount = pl.answers.filter((a) => a.inputKind === "bulk").length;
-    const parts = [
-      `<span>⌨ <b style="color:var(--ink)">${typedCount} typed</b> — constituent wrote these directly</span>`,
-      `<span>🎙 <b style="color:var(--ink)">${voiceCount} voice-to-text</b> — spoken, transcribed on-device</span>`,
-    ];
-    if (editedCount) parts.push(`<span>✎ <b style="color:var(--ink)">${editedCount} edited</b> — admin-corrected, original preserved in room</span>`);
-    if (bulkCount) parts.push(`<span>📋 <b style="color:var(--ink)">${bulkCount} bulk</b> — extracted from pasted block</span>`);
-    parts.push(`<span style="margin-left:auto;color:var(--seal);font-weight:500">No data is ever destroyed — all changes are new Matrix events</span>`);
-    auditBar.innerHTML = parts.join(" &nbsp;·&nbsp; ");
-    wrap.appendChild(auditBar);
+    const labels = answerLabels();
+    const facts = pl.answers.map((a) => ({ a, ...answerFacts(a) }));
+    const withAudio = facts.filter((x) => x.hasAudio).length;
+    const changed = facts.filter((x) => x.familyChanged || x.officeChanged).length;
 
-    // ── Four-column provenance grid ──
-    const grid = $e("div");
-    grid.style.cssText = "display:grid;grid-template-columns:repeat(4,1fr);gap:12px";
+    const summary = $e("div", "asum");
+    summary.appendChild($e("b", null, pl.submittedAt ? "Submitted for review " : "Still in progress"));
+    summary.appendChild(document.createTextNode(pl.submittedAt ? fmtDate(pl.submittedAt) : " — not submitted yet"));
+    summary.appendChild(document.createTextNode(` · ${pl.answers.length} answers · ${withAudio} with a recording · ${changed} changed after they were first given`));
+    wrap.appendChild(summary);
 
-    // Column 1: Raw — what the user submitted
-    const colRaw = $e("div");
-    colRaw.style.cssText = "border:1px solid var(--line);border-radius:10px;background:#FBF1E3;padding:10px;display:flex;flex-direction:column;gap:6px";
-    const rawHead = $e("div");
-    rawHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
-    rawHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#B67A2E;border-radius:4px;padding:1px 5px;font-weight:600">raw</span><span style="font-size:11.5px;font-weight:600">Submitted</span>`;
-    colRaw.appendChild(rawHead);
-    colRaw.appendChild($e("div", null, "What the constituent typed or spoke — verbatim, never modified."));
-    colRaw.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
+    const bar = $e("div", "afilter");
+    for (const [key, label] of [["all", "All answers"], ["audio", "🎙 Has a recording"], ["changed", "✎ Changed"]]) {
+      const b = $e("button", "atab" + (cardFilter === key ? " on" : ""), label);
+      b.onclick = () => { cardFilter = key; renderActive(); };
+      bar.appendChild(b);
+    }
+    wrap.appendChild(bar);
 
-    for (const a of pl.answers) {
-      if (!a.source) continue;
-      const isVoice = a.inputKind === "voice";
-      const item = $e("div", "mem");
-      item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;gap:4px";
-      const badge = $e("span", "mono", isVoice ? "🎙 voice" : "⌨ typed");
-      badge.style.cssText = `align-self:flex-start;font-size:9px;color:${isVoice ? "var(--seal)" : "var(--muted)"};background:${isVoice ? "var(--seal-soft)" : "var(--wash)"};border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px`;
-      item.appendChild(badge);
-      const sourceText = $e("div", null, a.source);
-      sourceText.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
-      item.appendChild(sourceText);
-      item.appendChild($e("div", "mono", `${a.path} · ${fmtDate(a.at)}`));
-      item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:2px";
-      if (isVoice && a.voiceClip) {
-        const playBtn = document.createElement("button");
-        playBtn.innerHTML = "▶ Play recorded audio";
-        playBtn.style.cssText = "margin-top:4px;border:1px solid var(--seal);border-radius:5px;background:var(--surface);font:500 10px Inter;padding:3px 9px;cursor:pointer;color:var(--seal);align-self:flex-start";
-        playBtn.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
-        item.appendChild(playBtn);
+    const shown = facts.filter((x) => cardFilter === "all" || (cardFilter === "audio" ? x.hasAudio : x.familyChanged || x.officeChanged));
+    const cards = $e("div", "acards");
+    for (const x of shown) cards.appendChild(answerCard(pl, x.a, labels, x));
+    if (!shown.length) cards.appendChild(pipelineEmpty(pl.answers.length ? "No answers match this filter." : "No answers yet."));
+    wrap.appendChild(cards);
+
+    wrap.appendChild(letterPanel(pl));
+  }
+
+  // Labels as the family saw them, from the office's own question set; a
+  // repeated round (a second child, a third placement) borrows round one's.
+  function answerLabels() {
+    const map = new Map();
+    const fields = [...(configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : []), ...SCHEMA.fields];
+    for (const fld of fields) if (!map.has(fld.path)) map.set(fld.path, fld.label || fld.prompt || fld.path);
+    return (path) => {
+      if (map.has(path)) return map.get(path);
+      const m = /^(child|placement)_(\d+)_(.+)$/.exec(path);
+      const first = m && map.get(`${m[1]}_1_${m[3]}`);
+      return first ? first.replace(/\b1\b/, m[2]) : path.replace(/_/g, " ");
+    };
+  }
+
+  function stepsOf(a) { return a.versions?.length ? a.versions : [a]; }
+
+  function answerFacts(a) {
+    const steps = stepsOf(a);
+    return {
+      hasAudio: steps.some((v) => v.inputKind === "voice" && v.voiceClip),
+      familyChanged: steps.some((v) => v.inputKind === "edited" && !isAdmin(v.by)),
+      officeChanged: steps.some((v) => v.inputKind === "edited" && isAdmin(v.by)),
+    };
+  }
+
+  // Who and how, as a sentence: "Family typed", "Office corrected it".
+  function stepSentence(v) {
+    const office = isAdmin(v.by);
+    const verb = v.restoredFrom ? "put an earlier answer back" : {
+      voice: "said it aloud",
+      bulk: "pasted it in a block of text",
+      derived: "— filled in automatically",
+      edited: office ? "corrected it" : "changed their answer",
+    }[v.inputKind] || "typed";
+    return { who: office ? "Office" : "Family", verb, office };
+  }
+
+  function quote(text, cls = "") {
+    return $e("div", "atl-quote" + (cls ? " " + cls : ""), text == null || text === "" ? "(empty)" : String(text));
+  }
+
+  function answerCard(pl, a, labelFor, facts) {
+    const card = $e("div", "acard");
+    const head = $e("div", "acard-head");
+    const q = $e("div", "acard-q", labelFor(a.path));
+    q.title = a.path;
+    head.appendChild(q);
+    const chips = $e("div", "acard-chips");
+    if (facts.hasAudio) chips.appendChild($e("span", "achip audio", "🎙 Recording"));
+    if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
+    if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
+    if (chips.childNodes.length) head.appendChild(chips);
+    card.appendChild(head);
+
+    const finalRow = $e("div", "acard-final");
+    const valueBox = $e("div", "v");
+    valueBox.appendChild($e("div", "lbl", "Final answer"));
+    valueBox.appendChild($e("div", null, a.value == null || a.value === "" ? "(empty)" : String(a.value)));
+    finalRow.appendChild(valueBox);
+    const editBtn = $e("button", "aedit", "✎ Correct");
+    editBtn.title = "Saved as a new step — nothing earlier is overwritten";
+    finalRow.appendChild(editBtn);
+
+    const editor = $e("div", "aedit-area");
+    editor.hidden = true;
+    const box = document.createElement("textarea");
+    box.className = "field-input";
+    editor.appendChild(box);
+    const save = $e("button", "aview", "Save correction");
+    const cancel = $e("button", "aview", "Cancel");
+    const btns = $e("div", "aedit-btns");
+    btns.append(save, cancel);
+    editor.appendChild(btns);
+    const answerCol = $e("div", "acard-answer");
+    answerCol.append(finalRow, editor);
+    card.appendChild(answerCol);
+    editBtn.onclick = () => { box.value = a.value ?? ""; editor.hidden = false; box.focus(); };
+    cancel.onclick = () => { editor.hidden = true; };
+    // Every change is one more step on top, so undoing one is the same act:
+    // put the earlier value back as the newest step.
+    const record = (value, extra = {}) => {
+      const payload = { anchor: "applicant", path: a.path, value, source: null, inputKind: "edited", voiceClipId: null, ...extra };
+      if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, pl.roomId, OP.DEF, payload);
+      else DemoStore.appendEvent(pl.roomId, OP.DEF, payload, ctx.currentUserId);
+      setTimeout(() => renderActive(), 400);
+    };
+    save.onclick = () => {
+      const next = box.value.trim();
+      if (!next || next === a.value) { editor.hidden = true; return; }
+      record(next);
+      toast("Correction saved. To undo it, use Restore on the earlier step.", "success");
+    };
+    box.addEventListener("keydown", (e) => { if (e.key === "Escape") editor.hidden = true; });
+
+    const steps = stepsOf(a);
+    const timeline = $e("ol", "atl");
+    steps.forEach((v, i) => {
+      const latest = i === steps.length - 1;
+      const { who, verb, office } = stepSentence(v);
+      const item = $e("li", "atl-step" + (office ? " office" : "") + (latest ? "" : " replaced"));
+      const line = $e("div", "atl-line");
+      line.appendChild($e("b", null, who));
+      line.appendChild(document.createTextNode(" " + verb));
+      line.appendChild($e("span", "atl-when", " · " + fmtDate(v.at) + (latest ? "" : " · replaced later")));
+      if (!latest && String(v.value ?? "") !== String(a.value ?? "")) {
+        const restore = $e("button", "aview atl-restore", "↩ Restore this");
+        restore.title = "Make this the answer again (added as a new step)";
+        restore.onclick = () => {
+          record(v.value, { restoredFrom: v.at });
+          toast("Earlier answer restored. The step it replaced is kept too.", "success");
+        };
+        line.appendChild(restore);
       }
-      colRaw.appendChild(item);
-    }
-    if (!pl.answers.filter((a) => a.source).length) colRaw.appendChild(pipelineEmpty("No raw submissions."));
-    grid.appendChild(colRaw);
+      item.appendChild(line);
+      if (v.inputKind === "voice") {
+        if (v.voiceClip) {
+          const play = $e("button", "aview atl-play", "▶ Play recording");
+          play.onclick = () => playVoiceClip(v.voiceClip, mediaFor(ctx));
+          item.appendChild(play);
+        }
+        const heard = v.voiceClip?.transcript;
+        item.appendChild($e("div", "atl-label", "Transcript — what the speech-to-text heard"));
+        item.appendChild(quote(heard || "(no transcript saved)", "transcript"));
+        if (String(v.value ?? "") !== String(heard ?? "")) {
+          item.appendChild($e("div", "atl-label", "Saved as"));
+          item.appendChild(quote(v.value));
+        }
+      } else if (v.inputKind === "derived") {
+        item.appendChild($e("div", "atl-label", v.source ? `From their answer “${v.source}”` : "From another answer"));
+        item.appendChild(quote(v.value));
+      } else if (v.inputKind === "edited") {
+        item.appendChild(quote(v.value));
+      } else {
+        const words = v.inputKind === "bulk" && v.source && v.source.length > 240 ? v.source.slice(0, 240) + "…" : v.source;
+        item.appendChild(quote(words ?? v.value));
+        if (v.source != null && String(v.value ?? "") !== String(v.source)) {
+          item.appendChild($e("div", "atl-label", "Saved as"));
+          item.appendChild(quote(v.value));
+        }
+      }
+      timeline.appendChild(item);
+    });
+    card.appendChild(timeline);
+    return card;
+  }
 
-    // Column 2: Heard — VTT transcriptions only
-    const colHeard = $e("div");
-    colHeard.style.cssText = "border:1px solid #C9E0D5;border-radius:10px;background:var(--seal-soft);padding:10px;display:flex;flex-direction:column;gap:6px";
-    const heardHead = $e("div");
-    heardHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
-    heardHead.innerHTML = `<span class="mono" style="font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 5px;font-weight:600">heard</span><span style="font-size:11.5px;font-weight:600">Transcribed (VTT)</span>`;
-    colHeard.appendChild(heardHead);
-    colHeard.appendChild($e("div", null, "What the speech model heard — raw on-device transcription, independent of the answer parser. Play the audio to verify accuracy."));
-    colHeard.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
-    let hc = 0;
-    for (const a of pl.answers) {
-      if (!a.voiceClip || !a.voiceClip.transcript) continue;
-      hc++;
-      const item = $e("div", "mem");
-      item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px;display:flex;flex-direction:column;gap:4px";
-      item.appendChild($e("span", "mono", "on-device VTT"));
-      item.lastChild.style.cssText = "align-self:flex-start;font-size:9px;color:var(--seal);background:#C9E0D5;border-radius:4px;padding:1px 6px;font-weight:600;margin-bottom:2px";
-      item.appendChild($e("div", null, a.voiceClip.transcript));
-      item.lastChild.style.cssText = "font-size:11.5px;line-height:1.45;color:var(--ink);white-space:pre-wrap;word-break:break-word";
-      item.appendChild($e("div", "mono", `${a.path} · ${fmtDate(a.at)}`));
-      item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:2px";
-      const playBtn = document.createElement("button");
-      playBtn.innerHTML = "▶ Play audio to verify transcript";
-      playBtn.style.cssText = "margin-top:4px;border:1px solid var(--seal);border-radius:5px;background:var(--surface);font:500 10px Inter;padding:3px 9px;cursor:pointer;color:var(--seal);align-self:flex-start";
-      playBtn.onclick = () => playVoiceClip(a.voiceClip, mediaFor(ctx));
-      item.appendChild(playBtn);
-      colHeard.appendChild(item);
-    }
-    if (!hc) colHeard.appendChild(pipelineEmpty("No voice transcriptions — all answers were typed."));
-    grid.appendChild(colHeard);
-
-    // Column 3: Parsed answer — model's extraction, editable
-    const colReview = $e("div");
-    colReview.style.cssText = "border:1px solid var(--line);border-radius:10px;background:var(--wash);padding:10px;display:flex;flex-direction:column;gap:6px";
-    const reviewHead = $e("div");
-    reviewHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
-    reviewHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:#5C6B72;border-radius:4px;padding:1px 5px;font-weight:600">review</span><span style="font-size:11.5px;font-weight:600">Parsed answer</span>`;
-    colReview.appendChild(reviewHead);
-    colReview.appendChild($e("div", null, "The model's extraction from the raw input — defaults to best guess. ✎ to override — edit creates a new DEF event, original never touched."));
-    colReview.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
-    for (const a of pl.answers) {
-      colReview.appendChild(pipelineEditableField(pl, a));
-    }
-    if (!pl.answers.length) colReview.appendChild(pipelineEmpty("No answers to review."));
-    grid.appendChild(colReview);
-
-    // Column 4: Templatized — generated letters
-    const colFinal = $e("div");
-    colFinal.style.cssText = "border:1px solid #C9E0D5;border-radius:10px;background:var(--seal-soft);padding:10px;display:flex;flex-direction:column;gap:6px";
-    const finalHead = $e("div");
-    finalHead.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
-    finalHead.innerHTML = `<span class="mono" style="font-size:9px;color:#fff;background:var(--seal);border-radius:4px;padding:1px 5px;font-weight:600">final</span><span style="font-size:11.5px;font-weight:600">Templatized output</span>`;
-    colFinal.appendChild(finalHead);
-    colFinal.appendChild($e("div", null, "OCR complaint letter generated from current answers. Audit trail links every line to its raw source."));
-    colFinal.lastChild.style.cssText = "font-size:10px;color:var(--muted);line-height:1.35;margin-bottom:2px";
-
+  // The complaint letter(s) generated from the answers above.
+  function letterPanel(pl) {
+    const panel = $e("div", "aletters");
+    panel.appendChild($e("div", "aletters-head", "Complaint letter"));
     if (pl.answers.length > 0) {
-      const genItem = $e("div", "mem");
-      genItem.style.cssText = "padding:8px;background:var(--surface);border:2px dashed var(--seal);border-radius:8px;text-align:center";
       // A family with more than one child gets one complaint each: OCR
       // complaints are per child, and the office files and tracks them
       // separately. They stay linked by living in this family's own room and
@@ -6134,12 +6172,9 @@ function initAdminView({ onClose }) {
       const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
       const rounds = childRoundNumbers(answersOf(fold(events), "applicant"));
       const perChild = rounds.length > 1;
-
-      const genBtn = document.createElement("button");
-      genBtn.textContent = perChild
-        ? `✎ Generate ${rounds.length} complaint letters — one per child`
-        : "✎ Generate complaint letter from current answers";
-      genBtn.style.cssText = "border:1px solid var(--seal);border-radius:6px;background:var(--seal);color:#fff;font:600 11px Inter;padding:6px 12px;cursor:pointer;width:100%";
+      const genBtn = $e("button", "aletters-gen", perChild
+        ? `Generate ${rounds.length} complaint letters — one per child`
+        : "Generate complaint letter from current answers");
       genBtn.onclick = () => {
         const folded = fold(ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId));
         const ans = answersOf(folded, "applicant");
@@ -6158,14 +6193,12 @@ function initAdminView({ onClose }) {
           : `Letter generated for ${pl.applicantName} — status: draft`, "success");
         setTimeout(() => renderActive(), 400);
       };
-      genItem.appendChild(genBtn);
-      colFinal.appendChild(genItem);
+      panel.appendChild(genBtn);
     }
-
     for (const l of pl.letters) {
       const item = $e("div", "mem");
       item.style.cssText = "padding:8px;background:var(--surface);border:1px solid #C9E0D5;border-radius:8px";
-      item.appendChild($e("span", "pill pill-" + l.status, LETTER_STATUSES.find((s) => s.key === l.status)?.label || l.status));
+      item.appendChild($e("span", "pill pill-" + l.status, LETTER_STATUSES.find((st) => st.key === l.status)?.label || l.status));
       // Which child this draft is for, when a family has more than one — the
       // drafts are otherwise near-identical and impossible to tell apart.
       if (l.childInitials || l.childName) {
@@ -6180,104 +6213,24 @@ function initAdminView({ onClose }) {
       item.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);margin-top:3px";
       const btns = $e("div");
       btns.style.cssText = "display:flex;gap:5px;margin-top:6px;flex-wrap:wrap";
-      const viewBtn = document.createElement("button");
-      viewBtn.textContent = "View full"; viewBtn.className = "aview";
+      const viewBtn = $e("button", "aview", "View full");
       viewBtn.onclick = () => showLetterModal(l);
       btns.appendChild(viewBtn);
-      const traceBtn = document.createElement("button");
-      traceBtn.textContent = "Audit trail"; traceBtn.className = "aview";
+      const traceBtn = $e("button", "aview", "Audit trail");
       traceBtn.onclick = () => showTraceModal(l);
       btns.appendChild(traceBtn);
       btns.appendChild(letterStatusSelect(l));
       item.appendChild(btns);
-      colFinal.appendChild(item);
+      panel.appendChild(item);
     }
-    if (!pl.letters.length) {
-      colFinal.appendChild(pipelineEmpty("No letters yet — click generate above."));
-    }
-    grid.appendChild(colFinal);
-    wrap.appendChild(grid);
+    if (!pl.letters.length) panel.appendChild(pipelineEmpty("No letters yet."));
+    return panel;
   }
 
-  // Helpers used by both renderPipeline and renderSingleSubmission
   function pipelineEmpty(msg) {
     const el = $e("div", null, msg);
     el.style.cssText = "font-size:11px;color:var(--muted);padding:4px;font-style:italic";
     return el;
-  }
-
-  function pipelineEditableField(pl, a) {
-    const item = $e("div", "mem");
-    item.style.cssText = "padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px";
-
-    const header = $e("div");
-    header.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:4px";
-    header.appendChild($e("span", "mono", a.path));
-    header.lastChild.style.cssText = "font-size:9.5px;color:var(--muted);font-weight:500";
-    header.appendChild($e("span", "mono", `· ${a.inputKind} · ${fmtDate(a.at)}`));
-    header.lastChild.style.cssText = "font-size:9px;color:var(--muted)";
-    item.appendChild(header);
-
-    // Provenance summary: always shown
-    if (a.source && a.inputKind !== "voice") {
-      const prov = $e("div", null, `Source: "${a.source}"`);
-      prov.style.cssText = "font-size:10.5px;color:var(--muted);margin-bottom:4px;font-style:italic;line-height:1.3";
-      item.appendChild(prov);
-    }
-
-    // Editable value — model's best answer displayed, editable inline
-    const valueWrap = $e("div");
-    valueWrap.style.cssText = "display:flex;gap:6px;align-items:flex-start";
-    const valueDisplay = $e("div", null, a.value || "(empty)");
-    valueDisplay.style.cssText = "flex:1;font-size:12.5px;color:var(--ink);line-height:1.45;white-space:pre-wrap;min-height:1.2em;padding:4px 6px;border:1px solid transparent;border-radius:5px";
-    valueWrap.appendChild(valueDisplay);
-    const editBtn = document.createElement("button");
-    editBtn.textContent = "✎";
-    editBtn.title = "Edit value (creates a new event — original is preserved)";
-    editBtn.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--surface);font-size:11px;padding:2px 7px;cursor:pointer;color:var(--muted);flex:none;margin-top:2px";
-    valueWrap.appendChild(editBtn);
-    item.appendChild(valueWrap);
-
-    // Inline edit mode (hidden by default)
-    const editArea = $e("div");
-    editArea.style.cssText = "display:none;flex-direction:column;gap:6px;margin-top:6px";
-    const textarea = document.createElement("textarea");
-    textarea.className = "field-input";
-    textarea.value = a.value || "";
-    textarea.style.cssText = "width:100%;min-height:60px;resize:vertical;margin-bottom:0";
-    editArea.appendChild(textarea);
-    const editBtns = $e("div");
-    editBtns.style.cssText = "display:flex;gap:5px";
-    const saveBtn = document.createElement("button");
-    saveBtn.textContent = "Save (emits new event)";
-    saveBtn.style.cssText = "border:1px solid var(--seal);border-radius:5px;background:var(--seal);color:#fff;font:600 10.5px Inter;padding:3px 9px;cursor:pointer";
-    saveBtn.onclick = () => {
-      const newVal = textarea.value.trim();
-      if (!newVal || newVal === a.value) { editArea.style.display = "none"; valueDisplay.style.display = ""; valueWrap.style.display = ""; return; }
-      const payload = { anchor: "applicant", path: a.path, value: newVal, source: a.source, inputKind: "edited", voiceClipId: null };
-      if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, pl.roomId, OP.DEF, payload);
-      else DemoStore.appendEvent(pl.roomId, OP.DEF, payload, ctx.currentUserId);
-      toast(`Saved "${a.path}" — original event preserved in room timeline`, "success");
-      setTimeout(() => renderActive(), 400);
-    };
-    editBtns.appendChild(saveBtn);
-    const cancelBtn = document.createElement("button");
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--surface);font:500 10.5px Inter;padding:3px 9px;cursor:pointer;color:var(--ink)";
-    cancelBtn.onclick = () => {
-      editArea.style.display = "none"; valueDisplay.style.display = ""; valueWrap.style.display = "";
-    };
-    editBtns.appendChild(cancelBtn);
-    editArea.appendChild(editBtns);
-    item.appendChild(editArea);
-
-    editBtn.onclick = () => {
-      textarea.value = a.value || "";
-      valueDisplay.style.display = "none";
-      editArea.style.display = "flex";
-    };
-
-    return item;
   }
 
   function caseStatusSelect(pl) {
@@ -6688,9 +6641,8 @@ function unreadableNotice(ctx) {
   head.textContent = `${undecryptable} item${undecryptable === 1 ? "" : "s"} in ${rooms} submission${rooms === 1 ? "" : "s"} can't be read on this device.`;
   box.appendChild(head);
   box.appendChild(document.createTextNode(
-    " They were encrypted for the office device that was signed in when they were sent, and encrypted history is never re-sent to a new one."
-    + " Open this dashboard on that device — and don't clear this site's data there, since that discards the keys."
-    + " Anything that arrives from now on will be readable here."
+    " They were encrypted for office devices that existed when they were sent. Unlock history on this device with the office password under Devices & backup."
+    + " Anything that was never backed up — sent before history backup was on, to a device that has since been cleared — can't be recovered by anyone."
   ));
   return box;
 }
@@ -7264,8 +7216,8 @@ function renderSectionReview({ title, rows }) {
   const es = intake?.lang === "es";
   $("reviewTitle").textContent = es ? `Repasemos: ${title}` : `Let's review: ${title}`;
   $("reviewSub").textContent = es
-    ? "Esto es lo que tengo hasta ahora. Si algo no está bien, edítalo aquí — nada se envía todavía."
-    : "Here's what I have so far. If anything isn't right, edit it here — nothing is sent yet.";
+    ? "Esto es lo que tengo hasta ahora. Si algo no está bien, cámbialo aquí — la oficina verá tu corrección."
+    : "Here's what I have so far. If anything isn't right, change it here — the office will see your correction.";
   const box = $("reviewRows");
   box.innerHTML = "";
   for (const row of rows) {
@@ -7790,16 +7742,28 @@ function docRow(d) {
     titleInput.type = "text"; titleInput.className = "dtitle-input";
     titleInput.placeholder = "What is this document? (optional)";
     titleInput.value = d.title || "";
+    // Saved only on purpose — Enter or the Save button. Clicking away keeps
+    // what was typed, unsaved and visibly so; Escape puts the saved title back.
     let saved = titleInput.value;
+    const saveBtn = el("button", "dview", "Save");
+    saveBtn.hidden = true;
+    const dirty = () => { saveBtn.hidden = titleInput.value.trim() === saved; };
     const save = () => {
       const v = titleInput.value.trim();
       if (v === saved) return;
       saved = v;
       updateDocAttrs(d, { title: v });
+      dirty();
     };
-    titleInput.addEventListener("blur", save);
-    titleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); titleInput.blur(); } });
-    li.appendChild(titleInput);
+    saveBtn.onclick = save;
+    titleInput.addEventListener("input", dirty);
+    titleInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); save(); }
+      if (e.key === "Escape") { titleInput.value = saved; dirty(); }
+    });
+    const titleRow = el("div", "dtitle-row");
+    titleRow.append(titleInput, saveBtn);
+    li.appendChild(titleRow);
   }
   const bottom = el("div", "drow2");
   const view = el("button", "dview", "View"); view.onclick = () => previewDocument(d, mediaBackend());
@@ -7943,139 +7907,6 @@ function wireCompose() {
   autosizeInput(input);
 }
 
-// ── "Answer several at once" bulk entry ──
-// An alternative to the one-field-at-a-time chat: write or paste a whole
-// story once, and Intake.extractBulk() runs the exact same per-field
-// classify → tidyText → validate pipeline the chat uses, once per
-// still-unanswered field, against that one block of text. Only offered
-// with a real model backend — EchoModel has no actual language
-// understanding (it's a keyword/format classifier, not an NLU model — see
-// vendor/steer.js), so against a multi-topic block of free text it can't
-// tell which sentence is meant for which field and will happily copy the
-// entire block into every unconstrained text field. That's not a fallback
-// worth offering; the one-field chat (where "the whole message IS the
-// answer to the one active field" holds true) is what EchoModel is built
-// for.
-function wireBulk() {
-  const modal = $("bulkModal");
-  const textEl = $("bulkText");
-  const findBtn = $("bulkFind");
-  const views = {
-    compose: $("bulkComposeView"),
-    loading: $("bulkLoadingView"),
-    review: $("bulkReviewView"),
-    noModel: $("bulkNoModelView"),
-  };
-  const needNote = $("bulkNeedNote");
-  let reviewRows = [];
-
-  function showView(name) {
-    for (const k in views) views[k].classList.toggle("hidden", k !== name);
-  }
-
-  function openModal() {
-    if (!intake) return;
-    textEl.value = "";
-    findBtn.disabled = true;
-    if (intake.model instanceof EchoModel) {
-      needNote.textContent = "";
-      showView("noModel");
-    } else {
-      const remaining = intake.progress().filter((p) => !p.done);
-      needNote.textContent = remaining.length
-        ? "Still need: " + remaining.map((f) => f.label).join(", ") + "."
-        : "Everything's already answered — nothing left to find.";
-      showView("compose");
-    }
-    modal.classList.add("on");
-    setTimeout(() => textEl.focus(), 50);
-  }
-  function closeModal() { modal.classList.remove("on"); }
-
-  $("bulkOpen").onclick = (e) => { e.preventDefault(); openModal(); };
-  $("bulkCancel").onclick = closeModal;
-  $("bulkNoModelClose").onclick = closeModal;
-  $("bulkBack").onclick = () => showView("compose");
-  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
-
-  textEl.addEventListener("input", () => { findBtn.disabled = !textEl.value.trim(); });
-
-  findBtn.onclick = async () => {
-    const text = textEl.value.trim();
-    if (!text || !intake) return;
-    showView("loading");
-    let result;
-    try { result = await intake.extractBulk(text); }
-    catch (e) {
-      console.error("[bulk] extractBulk failed:", e);
-      showView("compose");
-      toast(intake.lang === "es" ? "Algo salió mal — intenta de nuevo." : "Something went wrong — try again.", "error");
-      return;
-    }
-    if (result.distress) {
-      // Intake._say already pushed the exact same safety line the live
-      // chat shows — just get out of the way and let them see it there.
-      closeModal();
-      return;
-    }
-    reviewRows = result.candidates;
-    renderBulkReview();
-    showView("review");
-  };
-
-  function renderBulkReview() {
-    const list = $("bulkReviewList");
-    list.innerHTML = "";
-    const es = intake.lang === "es";
-    $("bulkReviewNote").textContent = reviewRows.length
-      ? (es
-        ? "Encontramos esto — revisa, corrige lo que haga falta, y desmarca lo que no quieras guardar."
-        : "We found these — check them over, fix anything wrong, and uncheck anything you don't want to save.")
-      : (es
-        ? "No encontramos respuestas claras ahí — sigamos en el chat."
-        : "We didn't find clear answers in there — let's keep going in the chat.");
-    for (const row of reviewRows) {
-      const wrap = el("div");
-      wrap.style.cssText = "border:1px solid var(--line);border-radius:8px;padding:10px";
-      const head = document.createElement("label");
-      head.style.cssText = "display:flex;align-items:center;gap:8px;font:600 12.5px Inter;margin-bottom:6px;cursor:pointer";
-      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = true;
-      head.appendChild(cb);
-      head.appendChild(document.createTextNode(row.field.label));
-      wrap.appendChild(head);
-      const fi = buildFieldInput(row.field, row.value);
-      wrap.appendChild(fi.el);
-      const err = el("div");
-      err.style.cssText = "color:var(--red);font-size:11.5px;margin-top:4px;display:none";
-      wrap.appendChild(err);
-      row._checkbox = cb; row._input = fi; row._err = err;
-      list.appendChild(wrap);
-    }
-  }
-
-  $("bulkSave").onclick = () => {
-    const accepted = [];
-    let hasError = false;
-    for (const row of reviewRows) {
-      row._err.style.display = "none";
-      if (!row._checkbox.checked) continue;
-      const value = row._input.getValue();
-      const err = validate(row.field, value, intake.lang);
-      if (err) { row._err.textContent = err; row._err.style.display = ""; hasError = true; continue; }
-      accepted.push({ field: row.field, value, source: row.source });
-    }
-    if (hasError) return;
-    intake.commitBulk(accepted);
-    closeModal();
-    const es = intake.lang === "es";
-    toast(
-      accepted.length
-        ? (es ? `${accepted.length} respuesta(s) guardada(s).` : `${accepted.length} answer(s) saved.`)
-        : (es ? "No se guardó nada." : "Nothing saved."),
-      "success"
-    );
-  };
-}
 
 // ── Voice input (speak your answer) ──
 //
@@ -8635,7 +8466,7 @@ async function tryResumeSilentAccount(saved) {
   if (!sdk || !saved?.accessToken) return null;
   try {
     // useAuthorizationHeader — see MatrixStore.login's comment.
-    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId, useAuthorizationHeader: true });
+    const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId, useAuthorizationHeader: true, cryptoCallbacks: CRYPTO_CALLBACKS });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
     await new Promise((resolve, reject) => {
@@ -8684,24 +8515,10 @@ async function nameThisDevice(client) {
 }
 
 // ── History backup ─────────────────────────────────────────────────────────
-// The problem this exists for: encrypted history is never re-sent to a device
-// that wasn't in the room when it arrived. Every office sign-in mints a
-// device, and each new one is blind to everything sent before it existed —
-// which is how 211 items across 13 submissions became unreadable on the
-// machine the office was actually using.
-//
-// Key backup is the only cure Matrix offers. The device that CAN read the
-// history uploads its room keys to the server, encrypted with a key the
-// server never sees; any later device that holds the recovery key can pull
-// them back down. Two things follow, and both are said plainly in the panel:
-// backup can only ever contain what the device setting it up could already
-// read, and the recovery key is not recoverable — lose it and the backup is
-// as unreadable as the history was.
-//
-// Every status line below is read back from the server and the crypto store
-// rather than inferred from "the call didn't throw", because the failure this
-// feature must never produce is an office believing history is protected when
-// it isn't.
+// Every status line is read back from the server and the crypto store rather
+// than inferred from "the call didn't throw", because the failure this must
+// never produce is an office believing history is protected when it isn't.
+// Setting the backup up and unlocking it: see "Office history" below.
 
 async function keyBackupStatus(client) {
   const crypto = client?.getCrypto?.();
@@ -8723,92 +8540,157 @@ async function keyBackupStatus(client) {
   return status;
 }
 
-// Sets up backup FROM THIS DEVICE, and hands back the recovery key. What it
-// can protect is whatever this device can read: run it on the machine that
-// still has the history, not on a fresh one.
-async function setUpKeyBackup(client) {
-  const crypto = client?.getCrypto?.();
-  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
-  const generated = await crypto.createRecoveryKeyFromPassphrase();
-  await crypto.bootstrapSecretStorage({
-    createSecretStorageKey: async () => generated,
-    setupNewKeyBackup: true,
-    setupNewSecretStorage: true,
-  });
-  // The SDK usually hands back the printable form; where it doesn't, the
-  // codec in vendor/recovery-key.js produces the identical string (same
-  // prefix, parity and base58 the SDK itself uses).
-  const encoded = generated.encodedPrivateKey || RecoveryKey.encode(generated.privateKey);
-  // Read the state back rather than trusting that no exception means success.
-  const status = await keyBackupStatus(client);
-  return { recoveryKey: encoded, status };
+// ── Office history: every sign-in reads everything ──────────────────────────
+// Answers are encrypted to the devices that exist when they're sent, so each
+// new office sign-in used to start blind. The office password is the one
+// thing every sign-in has, so it's what unlocks the history — but the
+// password as typed never reaches the homeserver. The server is given a key
+// derived from it (officeLoginSecret) as the account password; the typed
+// password itself opens secret storage, which holds the office's
+// cross-signing keys and its history-backup key. A device signed in this way
+// imports both, becomes a verified device of the office, restores every
+// backed-up key, and backs up whatever arrives from then on.
+
+// One callbacks object for every client, handed over at construction:
+// MatrixClient gives its secret storage the object it was built with (or a
+// private {} of its own), so a getSecretStorageKey assigned afterwards on
+// client.cryptoCallbacks never reaches secret storage at all.
+const CRYPTO_CALLBACKS = {};
+
+const OFFICE_LOGIN_SALT = "ab/office-login/v1:";
+
+function base64UrlOf(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-// Restores history keys on a device that has none of them, using the written
-// recovery key. Throws with something a person can act on.
-async function restoreFromRecoveryKey(client, text) {
-  const crypto = client?.getCrypto?.();
-  if (!crypto) throw new Error("Encryption isn't set up in this browser.");
-  const key = RecoveryKey.decode(text); // throws with a readable message
+function bytesOfBase64(s) {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
 
-  // The recovery key unlocks secret storage; the backup's own decryption key
-  // lives inside it. Handing the SDK a callback is how it asks for the one to
-  // get at the other.
-  const previous = client.cryptoCallbacks?.getSecretStorageKey;
-  client.cryptoCallbacks = client.cryptoCallbacks || {};
-  client.cryptoCallbacks.getSecretStorageKey = async ({ keys }) => {
-    const keyId = Object.keys(keys || {})[0];
-    return keyId ? [keyId, key] : null;
-  };
+async function pbkdf2Bytes(secret, salt, iterations, hash, bits) {
+  const subtle = globalThis.crypto.subtle;
+  const base = await subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveBits"]);
+  return new Uint8Array(await subtle.deriveBits({ name: "PBKDF2", hash, salt: new TextEncoder().encode(salt), iterations }, base, bits));
+}
 
-  try {
-    const check = await crypto.checkKeyBackupAndEnable();
-    if (!check?.backupInfo?.version) {
-      throw new Error("This account has no history backup on the server yet — set one up from a device that can read the history.");
+async function officeLoginSecret(password, userId) {
+  return "ab1." + base64UrlOf(await pbkdf2Bytes(password, OFFICE_LOGIN_SALT + userId, 310000, "SHA-256", 256));
+}
+
+// The account password is the derived secret once an office has signed in
+// with this build, and the typed one before that; anything asking the server
+// to re-authenticate tries them in that order.
+async function officeAccountPasswords(password, userId) {
+  return [await officeLoginSecret(password, userId), password];
+}
+
+function randomSalt(length) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from(globalThis.crypto.getRandomValues(new Uint8Array(length)), (b) => alphabet[b % alphabet.length]).join("");
+}
+
+// Rebuilds a passphrase-based secret-storage key exactly as the SDK makes one
+// (m.pbkdf2: PBKDF2-SHA-512 over the passphrase and the stored salt).
+function passphraseStorageKey(passphrase, { salt, iterations, bits = 256 }) {
+  return pbkdf2Bytes(passphrase, salt, iterations, "SHA-512", bits);
+}
+
+async function storageKeyFromPassword(client, password, keyId, info) {
+  if (info?.passphrase?.algorithm !== "m.pbkdf2") return null;
+  const key = await passphraseStorageKey(password, info.passphrase);
+  return (await client.secretStorage.checkKey(key, info)) ? key : null;
+}
+
+function unlockSecretStorageWith(client, password) {
+  const opened = new Map();
+  CRYPTO_CALLBACKS.getSecretStorageKey = async ({ keys }) => {
+    for (const [keyId, info] of Object.entries(keys || {})) {
+      if (!opened.has(keyId)) opened.set(keyId, await storageKeyFromPassword(client, password, keyId, info));
+      if (opened.get(keyId)) return [keyId, opened.get(keyId)];
     }
-    const result = await crypto.restoreKeyBackup();
-    const status = await keyBackupStatus(client);
-    return { imported: result?.imported ?? 0, total: result?.total ?? 0, status };
-  } finally {
-    // Leave the client as it was found: the key stays in memory only for the
-    // restore itself.
-    if (previous) client.cryptoCallbacks.getSecretStorageKey = previous;
-    else delete client.cryptoCallbacks.getSecretStorageKey;
-  }
+    return null;
+  };
 }
 
-// The recovery key is worth nothing in a chat log and everything on paper.
-// Same shape as the password file: what it is, what it unlocks, and what
-// nobody can do for you if it's lost.
-function downloadRecoveryKey(recoveryKey, userId) {
-  const body = [
-    "OCR intake — office history recovery key",
-    "",
-    `Account: ${userId}`,
-    `Saved:   ${new Date().toString()}`,
-    "",
-    "RECOVERY KEY:",
-    recoveryKey,
-    "",
-    "What this is for:",
-    "  Submissions are encrypted. A newly signed-in device cannot read anything",
-    "  that arrived before it existed. This key restores that history onto a new",
-    "  device: sign in, open the office dashboard, and paste it into 'Restore",
-    "  history on this device'.",
-    "",
-    "Keep it somewhere that is not this computer. Nobody — not this app, not the",
-    "server, not Anthropic — can recover it or reset it for you. Without it, a",
-    "future device cannot read older submissions.",
-    "",
-  ].join("\n");
-  const url = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `ocr-intake-recovery-key-${new Date().toISOString().slice(0, 10)}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+// User-interactive auth with a password: try without, and on the server's
+// 401 challenge, answer it with each candidate until one is accepted.
+function passwordUia(userId, candidates) {
+  return async (makeRequest) => {
+    try { return await makeRequest(null); }
+    catch (e) {
+      const session = e?.data?.session;
+      if (!session) throw e;
+      let last = e;
+      for (const password of candidates) {
+        try {
+          return await makeRequest({ type: "m.login.password", identifier: { type: "m.id.user", user: userId }, password, session });
+        } catch (err) { last = err; if (err?.errcode !== "M_FORBIDDEN") throw err; }
+      }
+      throw last;
+    }
+  };
+}
+
+// Idempotent; safe to run on every office sign-in. Returns what it did so
+// the caller can say so. Never replaces secret storage it can't open — that
+// would orphan whatever history the existing backup holds.
+async function setUpOfficeHistory(client, password) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) return { ok: false, reason: "Encryption isn't set up in this browser." };
+  const userId = client.getUserId();
+  const auth = passwordUia(userId, await officeAccountPasswords(password, userId));
+  unlockSecretStorageWith(client, password);
+
+  const existing = await client.secretStorage.getKey();
+  if (!existing) {
+    await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys: auth });
+    // Built here rather than by crypto.createRecoveryKeyFromPassphrase, which
+    // throws in this bundle ("Buffer is not defined") while formatting a
+    // printable key nobody needs: the password is the only way in.
+    const passphrase = { algorithm: "m.pbkdf2", iterations: 500000, salt: randomSalt(32) };
+    const generated = { keyInfo: { passphrase }, privateKey: await passphraseStorageKey(password, passphrase) };
+    await crypto.bootstrapSecretStorage({ createSecretStorageKey: async () => generated, setupNewSecretStorage: true, setupNewKeyBackup: true });
+    await crypto.checkKeyBackupAndEnable();
+    return { ok: true, created: true, restored: 0 };
+  }
+
+  const [keyId, info] = existing;
+  if (!(await storageKeyFromPassword(client, password, keyId, info))) {
+    return { ok: false, reason: "The office's history backup was locked with something other than this password." };
+  }
+  await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys: auth });
+  let backupInfo = (await crypto.checkKeyBackupAndEnable())?.backupInfo;
+  if (!backupInfo?.version) {
+    await crypto.resetKeyBackup();
+    backupInfo = (await crypto.checkKeyBackupAndEnable())?.backupInfo;
+  }
+  const backupKey = await client.secretStorage.get("m.megolm_backup.v1");
+  if (!backupKey || !backupInfo?.version) return { ok: false, reason: "Secret storage opened, but it holds no history-backup key." };
+  await crypto.storeSessionBackupPrivateKey(bytesOfBase64(backupKey), backupInfo.version);
+  await crypto.checkKeyBackupAndEnable();
+  const result = await client.restoreKeyBackupWithCache(undefined, undefined, backupInfo);
+  return { ok: true, created: false, restored: result?.imported ?? 0, total: result?.total ?? 0 };
+}
+
+function reportOfficeHistory(result) {
+  if (result.ok && result.created) toast("History backup is on — every office sign-in will read everything from here on.", "success");
+  else if (result.ok) toast(result.restored ? `Restored ${result.restored} history keys to this device.` : "History is unlocked on this device.", "success");
+  else toast("History isn't unlocked on this device: " + result.reason, "warn");
+  if (isAdminViewOpen()) adminCtl?.refresh?.();
+}
+
+// Every other device on the account, signed out in one request. Needs the
+// password because the homeserver asks for it; tries the derived secret
+// first, the typed password second (see officeAccountPasswords).
+async function signOutOtherDevices(client, password) {
+  const userId = client.getUserId();
+  const mine = client.getDeviceId();
+  const { devices = [] } = await client.getDevices();
+  const others = devices.map((d) => d.device_id).filter((id) => id !== mine);
+  if (!others.length) return 0;
+  await passwordUia(userId, await officeAccountPasswords(password, userId))((auth) => client.deleteMultipleDevices(others, auth || undefined));
+  return others.length;
 }
 
 // ── Entry: language gate → straight into the conversation ──
@@ -8824,6 +8706,16 @@ function hideEntryLoader() { document.getElementById("entryLoader").classList.ad
 // initEntry. sessionStorage, not localStorage: a tab that was sent to the
 // sign-in screen once should not keep landing there tomorrow.
 const FORCE_LOGIN_KEY = "ab.forceLogin";
+// The office's question set, handed from the dashboard to the demo tab it
+// opens (see adminPreviewForm). Questions only — no answers ever go here.
+const PREVIEW_CONFIG_KEY = "ab.previewConfig";
+function officeQuestionsForDemo() {
+  if (loginState?.kind !== "demo" || new URLSearchParams(location.search).get("demo") !== "1") return null;
+  try {
+    const cfg = JSON.parse(localStorage.getItem(PREVIEW_CONFIG_KEY) || "null");
+    return cfg?.schema?.fields?.length ? cfg : null;
+  } catch { return null; }
+}
 function requestLoginScreen() {
   try { sessionStorage.setItem(FORCE_LOGIN_KEY, "1"); } catch {}
 }
@@ -9124,6 +9016,19 @@ function isCryptoStoreMismatch(e) {
   return /account in the store doesn'?t match/i.test(e?.message || "") || e?.code === CRYPTO_STORE_MISMATCH;
 }
 
+// The SDK's refusal names both sides — "…expected @u:hs:DEVICE, got
+// @u:hs:DEVICE" — but not which one is the store, so the caller takes
+// whichever isn't the client it just built. The device ID is everything
+// after the last colon; user IDs carry colons of their own.
+function accountsNamedInMismatch(e) {
+  const m = /expected (\S+), got (\S+)/.exec(e?.message || "");
+  if (!m) return [];
+  return [m[1], m[2]].map((s) => {
+    const i = s.lastIndexOf(":");
+    return { userId: s.slice(0, i), deviceId: s.slice(i + 1).replace(/[^\w-]+$/, "") };
+  }).filter((a) => a.userId && a.deviceId);
+}
+
 // Everything this device could decrypt, discarded. Only ever called with a
 // person's explicit say-so (see the sign-in recovery below): the keys in
 // here are the only way to read messages already received, and the server
@@ -9150,6 +9055,8 @@ async function initClientCrypto(client) {
       // the one recovery that exists instead of reporting a server outage.
       const err = new Error("This browser already holds the encryption keys for a different session of this account.");
       err.code = CRYPTO_STORE_MISMATCH;
+      err.storeAccount = accountsNamedInMismatch(e)
+        .find((a) => a.userId !== client.getUserId() || a.deviceId !== client.getDeviceId()) || null;
       console.error("[e2ee] crypto store belongs to another session:", e);
       throw err;
     }
@@ -9896,19 +9803,102 @@ async function resumeInsteadOfNewDevice(userId) {
   return true;
 }
 
-async function doMatrixLogin(homeserver, userId, password, submitBtn) {
+const TAKEN_OVER_DEVICE_GONE = "taken-over-device-has-no-keys-on-server";
+
+// A device that was signed out elsewhere can be signed back into by ID, but
+// the homeserver deleted its keys when it went, and the crypto store here
+// believes they're already published — so it never re-uploads them, and
+// nobody can encrypt to it again. Asked of the server directly, because the
+// local store lists its own device whether the server has it or not.
+async function serverHasThisDevice(client) {
+  const userId = client.getUserId(), deviceId = client.getDeviceId();
+  try {
+    const res = await fetch(`${(client.baseUrl || "").replace(/\/+$/, "")}/_matrix/client/v3/keys/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + client.getAccessToken() },
+      body: JSON.stringify({ device_keys: { [userId]: [deviceId] } }),
+    });
+    if (!res.ok) return true; // can't tell — not a reason to refuse the sign-in
+    const body = await res.json();
+    return !!body?.device_keys?.[userId]?.[deviceId];
+  } catch (e) {
+    console.warn("[e2ee] couldn't check this device's keys on the server:", e);
+    return true;
+  }
+}
+
+// Best-effort: ends a session on the homeserver (which deletes its device).
+async function endSession(client) {
+  if (!client) return;
+  try { await client.logout(true); }
+  catch (e) { console.warn("[session] the homeserver didn't confirm the sign-out:", e); }
+}
+
+async function endSessionByToken(homeserver, accessToken) {
+  if (!homeserver || !accessToken) return;
+  try {
+    await fetch(`${homeserver.replace(/\/+$/, "")}/_matrix/client/v3/logout`, {
+      method: "POST", headers: { Authorization: "Bearer " + accessToken },
+    });
+  } catch (e) { console.warn("[session] couldn't sign the old session out:", e); }
+}
+
+// The office's session is remembered on this browser the same way a family's
+// send-and-forget account is (token, never password), so reopening the page
+// lands back on the dashboard instead of an interview, and signing in again
+// resumes this device instead of minting another. Ordinary password accounts
+// are deliberately not remembered: on a shared computer the next person
+// would walk into them. The Sign out button is how it ends.
+function rememberOfficeSession(client, homeserver) {
+  if (!isAdmin(client.getUserId())) return;
+  saveSilentAccount(homeserver, {
+    user_id: client.getUserId(), device_id: client.getDeviceId(), access_token: client.getAccessToken(),
+  });
+}
+
+// `deviceId` signs in AS an existing device. The homeserver invalidates every
+// token that device had, which is what kicks the other session out; the keys
+// stay, because they're the ones in this browser.
+// The office signs in with the secret derived from its password; an account
+// that hasn't been switched over yet still has the typed password, so that is
+// tried second and the switch is made once signed in (see doMatrixLogin).
+async function passwordLogin(tmp, userId, password, deviceId) {
+  const attempt = (pw) => tmp.login("m.login.password", {
+    identifier: { type: "m.id.user", user: userId },
+    password: pw,
+    ...(deviceId ? { device_id: deviceId } : {}),
+  });
+  if (!isAdmin(userId)) return { res: await attempt(password), switchTo: null };
+  const secret = await officeLoginSecret(password, userId);
+  try { return { res: await attempt(secret), switchTo: null }; }
+  catch (e) {
+    if (e?.errcode !== "M_FORBIDDEN") throw e;
+    return { res: await attempt(password), switchTo: secret };
+  }
+}
+
+async function doMatrixLogin(homeserver, userId, password, submitBtn, { deviceId = null } = {}) {
   const btn = submitBtn || document.getElementById("loginMatrix");
   const err = document.getElementById("loginError");
+  // An office that types its password always really signs in — resuming the
+  // saved token would skip unlocking the history — but as the device this
+  // browser already is, so no new device is minted.
+  const saved = !deviceId && isAdmin(userId) ? loadSilentAccount() : null;
+  const ownDevice = saved?.userId === userId ? saved.deviceId : null;
+  if (ownDevice) deviceId = ownDevice;
+  const takingOver = !!deviceId;
+  let client = null;
   try {
     const sdk = window.matrixcs;
     if (!sdk) throw new Error("Matrix SDK not loaded");
-    if (await resumeInsteadOfNewDevice(userId)) return;
+    if (!takingOver && await resumeInsteadOfNewDevice(userId)) return;
     const tmp = sdk.createClient({ baseUrl: homeserver });
-    const res = await tmp.loginWithPassword(userId, password);
+    const { res, switchTo } = await passwordLogin(tmp, userId, password, deviceId);
     // useAuthorizationHeader — see MatrixStore.login's comment.
-    const client = sdk.createClient({
+    client = sdk.createClient({
       baseUrl: homeserver, accessToken: res.access_token,
       userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
+      cryptoCallbacks: CRYPTO_CALLBACKS,
     });
     await initClientCrypto(client);
     client.startClient({ initialSyncLimit: 50 });
@@ -9916,17 +9906,60 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
       const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
       client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
     });
+    if (takingOver && !(await serverHasThisDevice(client))) {
+      const gone = new Error("The device this browser's keys belong to was signed out elsewhere.");
+      gone.code = TAKEN_OVER_DEVICE_GONE;
+      throw gone;
+    }
     loginState = { kind: "matrix", client, userId };
+    rememberOfficeSession(client, homeserver);
     nameThisDevice(client);
     hideLogin();
     boot();
+    if (takingOver && !ownDevice) toast("Signed in. The earlier session on this browser was signed out, and everything it could read is still readable here.", "success");
+    if (isAdmin(client.getUserId())) {
+      (async () => {
+        // From here on the homeserver is only ever sent the derived secret.
+        if (switchTo) {
+          try { await changeAccountPassword({ client, userId: client.getUserId(), current: password, next: switchTo }); }
+          catch (e) { console.warn("[office] couldn't switch the account to the derived password yet; will retry next sign-in:", e); }
+        }
+        reportOfficeHistory(await setUpOfficeHistory(client, password));
+      })().catch((e) => {
+        console.error("[office] unlocking history failed:", e);
+        toast("Couldn't unlock the office history on this device: " + (e?.message || e), "warn");
+      });
+    }
   } catch (e) {
     if (e?.code === CRYPTO_STORE_MISMATCH) {
+      const theirs = e.storeAccount;
+      const mine = client?.getUserId() || userId;
+      // Only an ordinary sign-in gets here with a throwaway: the device it
+      // just registered holds nothing and never will, so it isn't left
+      // cluttering the account's device list.
+      if (!takingOver) await endSession(client);
+      if ((!takingOver || ownDevice) && theirs && theirs.userId === mine && theirs.deviceId !== deviceId) {
+        return doMatrixLogin(homeserver, userId, password, btn, { deviceId: theirs.deviceId });
+      }
       err.textContent = "";
       showLoginError(
-        "This browser already holds encryption keys for a different session of this account, and only one session's keys can live here at a time. "
-        + "Starting fresh will sign you in — but messages received by that earlier session stay readable only there.",
-        { offerFreshStart: () => startFreshAndRetry(homeserver, userId, password, btn) },
+        theirs && theirs.userId !== mine
+          ? `This browser holds the encryption keys of a different account (${theirs.userId}), and only one account's keys can live here at a time. `
+            + "Starting fresh signs that account out of this browser and discards its keys, then signs you in."
+          : "This browser already holds encryption keys for a different session of this account, and only one session's keys can live here at a time. "
+            + "Starting fresh will sign you in — but messages received by that earlier session stay readable only there.",
+        { offerFreshStart: () => startFreshAndRetry(homeserver, userId, password, btn, theirs) },
+      );
+      btn.disabled = false;
+      return;
+    }
+    if (e?.code === TAKEN_OVER_DEVICE_GONE) {
+      await endSession(client);
+      err.textContent = "";
+      showLoginError(
+        "This browser's keys belong to a session of this account that was signed out somewhere else, so nothing new can reach it. "
+        + "Starting fresh signs you in as a new device — anything only that session could read is lost unless it was backed up.",
+        { offerFreshStart: () => startFreshAndRetry(homeserver, userId, password, btn, null) },
       );
       btn.disabled = false;
       return;
@@ -9938,15 +9971,47 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn) {
   }
 }
 
-// The one recovery for a store that belongs to another session, taken only
-// when the person chooses it: discard this browser's keys and sign in as a
-// new device. Deliberately not automatic — what it throws away cannot be
-// fetched again from the server by anyone.
-async function startFreshAndRetry(homeserver, userId, password, btn) {
+// The one recovery for a store that can't be taken over, taken only when the
+// person chooses it: discard this browser's keys and sign in as a new device.
+// Deliberately not automatic — what it throws away cannot be fetched again
+// from the server by anyone. The session those keys belonged to is signed out
+// too where this browser holds its token, rather than left orphaned.
+async function startFreshAndRetry(homeserver, userId, password, btn, theirs) {
   btn.disabled = true;
+  const saved = loadSilentAccount();
+  if (saved && (saved.userId === theirs?.userId || saved.userId === userId)) {
+    await endSessionByToken(saved.homeserver, saved.accessToken);
+    try { localStorage.removeItem(SILENT_ACCOUNT_KEY); } catch {}
+  }
   try { await wipeCryptoStore(); }
   catch (e) { console.error("[e2ee] couldn't clear the old crypto store:", e); }
   await doMatrixLogin(homeserver, userId, password, btn);
+}
+
+// Ends this browser's session for real: the homeserver deletes the device and
+// its token, and the keys it held are discarded here — a store kept behind
+// would belong to a device that no longer exists, and the next sign-in would
+// dead-end on it. Those keys are the only copy of anything this device alone
+// could read, so a device that isn't backing up says so before it goes.
+async function signOutOfThisBrowser() {
+  const client = loginState?.kind === "matrix" ? (loginState.client || store?.client) : null;
+  if (client) {
+    let backingUp = false;
+    try { backingUp = !!(await keyBackupStatus(client)).activeHere; } catch {}
+    const ok = confirm(backingUp
+      ? "Sign out of this browser?\n\nThis device's keys are being backed up, so a later sign-in can restore the history with the recovery key."
+      : "Sign out of this browser?\n\nThis browser's encryption keys are not backed up. Signing out discards them, and anything only this device could read becomes unreadable everywhere. To keep it, cancel and set up backup under Devices & backup first.\n\nSign out anyway?");
+    if (!ok) return;
+    await endSession(client);
+    try { await wipeCryptoStore(); }
+    catch (e) { console.error("[e2ee] couldn't clear the crypto store:", e); }
+    if (loadSilentAccount()?.userId === client.getUserId()) {
+      try { localStorage.removeItem(SILENT_ACCOUNT_KEY); } catch {}
+    }
+  }
+  loginState = null;
+  requestLoginScreen();
+  location.reload();
 }
 
 function doDemoLogin() {
@@ -10064,11 +10129,14 @@ async function boot() {
 
   if (loginState.kind === "matrix") {
     const { client, userId } = loginState;
+    // Covers the interview screen until the dashboard replaces it, so the
+    // office never lands on a family's form first.
+    if (isAdmin(userId)) showEntryLoader("Opening the office dashboard…");
     try {
       if (userId === ADMIN_USER_ID) autoJoinInvitesForAdmin(client);
       const configRoomId = await ensureConfigRoom(client);
       const answersRoom = await ensureAnswerRoom(client);
-      configStore = await new MatrixStore(client).open(configRoomId, { encrypted: false });
+      configStore = await (await new MatrixStore(client).open(configRoomId, { encrypted: false })).loadFullHistory();
       store = await new MatrixStore(client).open(answersRoom);
     } catch (e) {
       // Falling back to demo storage here is right — better a working
@@ -10078,6 +10146,7 @@ async function boot() {
       // session and nothing said so; the office would sit in front of an
       // empty dashboard concluding that nobody had submitted anything.
       console.error("[boot] couldn't open this account's rooms — falling back to this device only:", e);
+      hideEntryLoader();
       toast("Couldn't reach your account just now — this session is saved on this device only.", "warn");
       doDemoLogin();
       return;
@@ -10102,17 +10171,24 @@ async function boot() {
   // entirely and lands straight on the read-only dashboard, defaulted to the
   // Pipeline tab (submissions table + per-applicant inbox-style detail view).
   if (isAdmin(loginState.userId)) {
-    const cfg = configStore.roomId ? await ensureSeeded(configStore, DEFAULT_CONFIG, { write: true }) : foldConfig([]);
-    knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
+    knowledge = KnowledgeStore.fromJSON(foldConfig(configStore.timeline()).knowledge);
     store.subscribe(renderDocs);
     configStore.subscribe(onConfigChange);
     renderDocs();
     renderLedgerFromTimeline();
+    hideEntryLoader();
     openAdmin();
     // Submissions is where an office starts; it is also the default tab, so
     // this only matters when a previous view was left open.
     const submissionsTab = document.querySelector('.atab[data-view="answers"]');
     if (submissionsTab) submissionsTab.click();
+    // Seeding and repair write to a rate-limited homeserver, one event at a
+    // time; the dashboard used to sit behind every one of them.
+    if (configStore.roomId) {
+      ensureSeeded(configStore, DEFAULT_CONFIG, { write: true })
+        .then((cfg) => { knowledge = KnowledgeStore.fromJSON(cfg.knowledge); })
+        .catch((e) => console.error("[config] seeding the shared question set failed:", e));
+    }
     return;
   }
 
@@ -10143,13 +10219,14 @@ async function _bootAfterStore() {
   // in to create the shared config room — configStore.roomId is null in that
   // case. Read-only defaults are fine; only the admin's session seeds the room.
   const isOffice = isAdmin(configStore.user);
-  const cfg = configStore.roomId ? await ensureSeeded(configStore, DEFAULT_CONFIG, { write: isOffice }) : foldConfig([]);
+  const preview = officeQuestionsForDemo();
+  const cfg = preview || (configStore.roomId ? await ensureSeeded(configStore, DEFAULT_CONFIG, { write: isOffice }) : foldConfig([]));
   // A stored set that is missing questions the complaint requires, with
   // nothing recording that anyone deleted them, is a half-written room — not
   // an authored form. Asking a family three of the thirty-six questions and
   // calling it an intake is worse than ignoring the room until an office
   // session repairs it.
-  const partial = configStore.roomId && schemaLooksPartial(cfg, configStore.timeline());
+  const partial = !preview && configStore.roomId && schemaLooksPartial(cfg, configStore.timeline());
   if (partial) console.warn("[config] stored question set looks incomplete — using the built-in questions");
   const useStored = cfg.schema.fields.length && !partial;
   const schema = {
@@ -10247,8 +10324,16 @@ function wireNewNav() {
   // the applicant-facing form instead of only ever reviewing what's already
   // been submitted. See initEntry()'s ?demo=1 handling.
   document.getElementById("adminPreviewForm").onclick = () => {
+    // The demo tab has no access to the office's config room, so it would
+    // otherwise run the built-in questions rather than the ones written here.
+    try {
+      const cfg = configStore?.roomId ? foldConfig(configStore.timeline()) : null;
+      if (cfg?.schema?.fields?.length) localStorage.setItem(PREVIEW_CONFIG_KEY, JSON.stringify(cfg));
+      else localStorage.removeItem(PREVIEW_CONFIG_KEY);
+    } catch (e) { console.warn("[preview] couldn't hand the question set to the demo tab:", e); }
     window.open(location.origin + location.pathname + "?demo=1", "_blank", "noopener");
   };
+  document.getElementById("adminSignOut").onclick = signOutOfThisBrowser;
 
   document.getElementById("adminClose").onclick = () => {
     document.getElementById("adminView").classList.add("hidden");
@@ -10629,7 +10714,6 @@ document.addEventListener("DOMContentLoaded", () => {
   wirePasswordModal();
   wireSectionReview();
   wireCompose();
-  wireBulk();
   wireVoice();
   wireDocs();
   wireNewNav();

@@ -235,7 +235,7 @@
       confirming: (value) => `You said: "${value}". Does that look right? You can say yes to keep it, or no to change it.`,
       // Said once per section, when a stretch of the interview is finished
       // and worth looking over as a whole (see Intake._openReview).
-      reviewing: (section) => `Now let's review what you've told me about ${section.toLowerCase()}. Have a read — if anything needs fixing, you can change it right there. Say yes when it looks right.`,
+      reviewing: (section) => `Now let's review this section: ${section}. Have a read — if anything needs fixing, you can change it right there. Say yes when it looks right.`,
       reviewHelp: "Take a look at the summary — you can edit anything in it. When it looks right, say yes and we'll carry on.",
       confirmed: "Thank you — I've saved that.",
       // Hand-written variants of the same acknowledgement, rotated per
@@ -287,7 +287,7 @@
         "Lo estás haciendo bien. Incluso una respuesta parcial ayuda — siempre podemos añadir más después.",
       ],
       confirming: (value) => `Dijiste: "${value}". ¿Está correcto? Puedes decir sí para guardarlo, o no para cambiarlo.`,
-      reviewing: (section) => `Ahora repasemos lo que me has contado sobre ${section.toLowerCase()}. Léelo con calma — si algo hay que corregir, puedes cambiarlo ahí mismo. Di sí cuando esté bien.`,
+      reviewing: (section) => `Ahora repasemos esta sección: ${section}. Léelo con calma — si algo hay que corregir, puedes cambiarlo ahí mismo. Di sí cuando esté bien.`,
       reviewHelp: "Revisa el resumen — puedes editar cualquier cosa. Cuando esté bien, di sí y seguimos.",
       confirmed: "Gracias — ya lo guardé.",
       confirmedAlt: [
@@ -594,7 +594,10 @@
       // decades out. The window is deliberately wide — a grandparent's birth
       // year at one end, next year at the other for an already-scheduled
       // hearing — so it only ever catches what could not have happened.
-      const year = new Date(v).getFullYear();
+      // Read an ISO year straight off the string: "1900-01-01" parses as UTC
+      // midnight, which is still 1899 anywhere west of Greenwich.
+      const iso = /^(\d{4})-\d{2}/.exec(v);
+      const year = iso ? Number(iso[1]) : new Date(v).getFullYear();
       if (year < MIN_YEAR || year > maxYear()) return M.year(MIN_YEAR, maxYear());
     }
     if (field.type === "number" && v && isNaN(Number(v))) return M.number;
@@ -627,6 +630,31 @@
     // someone typed about where to mail their own reply would be a worse
     // failure than storing something oddly formatted.
     return null;
+  }
+
+  // Maps what someone typed onto a fixed-choice field's own option, so
+  // "Davidson" is Davidson County and "foster home" is "A foster home"
+  // instead of a list of every option read back at them. In order: an exact
+  // match; the one option containing every word they typed; the one option
+  // with a word that starts with what they typed. Anything ambiguous is left
+  // as typed, for validate() to turn away. Multiselects match piece by piece.
+  function matchChoice(field, value) {
+    const opts = field && field.enum;
+    const v = (value ?? "").toString().trim();
+    if (!opts || !opts.length || !v) return value;
+    if (field.type === "multiselect") {
+      return v.split(",").map((s) => s.trim()).filter(Boolean).map((piece) => matchChoice({ enum: opts }, piece)).join(", ");
+    }
+    const n = normalize(v);
+    const exact = opts.find((o) => normalize(o) === n);
+    if (exact) return exact;
+    const only = (hits) => (hits.length === 1 ? hits[0] : null);
+    const typed = n.split(" ").filter(Boolean);
+    const words = (o) => normalize(o).split(" ").filter(Boolean);
+    const containing = only(opts.filter((o) => typed.every((t) => words(o).includes(t))));
+    if (containing) return containing;
+    const starting = n.length >= 3 ? only(opts.filter((o) => words(o).some((_, i, ws) => ws.slice(i).join(" ").startsWith(n)))) : null;
+    return starting ?? value;
   }
 
   // ---- US mailing addresses --------------------------------------------------
@@ -806,7 +834,7 @@
     createState, applyForce, tierOf,
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
-    VALIDATION_MESSAGES, validate, dateBounds,
+    VALIDATION_MESSAGES, validate, dateBounds, matchChoice,
     tidyText, readAttempt, initialsOf,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
     isFieldSkipped,

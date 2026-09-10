@@ -492,3 +492,28 @@ test("initialsOf: how a complaint names a child whose name the office keeps on f
   assert.equal(Steer.initialsOf("   "), "");
   assert.equal(Steer.initialsOf(null), "");
 });
+
+test("matchChoice maps what someone typed onto the field's own option", () => {
+  const county = { type: "select", enum: ["Anderson County", "Davidson County", "Knox County", "Other…"] };
+  assert.equal(Steer.matchChoice(county, "Davidson"), "Davidson County");
+  assert.equal(Steer.matchChoice(county, "davidson county"), "Davidson County");
+  assert.equal(Steer.matchChoice(county, "david"), "Davidson County");
+  const placement = { type: "select", enum: ["A relative's home (kinship placement)", "A foster home", "A group home", "Other…"] };
+  assert.equal(Steer.matchChoice(placement, "foster home"), "A foster home");
+  assert.equal(Steer.matchChoice(placement, "kinship"), "A relative's home (kinship placement)");
+});
+
+test("matchChoice leaves anything ambiguous or unknown as typed, for validate() to turn away", () => {
+  const county = { type: "select", enum: ["Anderson County", "Davidson County", "Knox County"] };
+  assert.equal(Steer.matchChoice(county, "county"), "county");
+  assert.equal(Steer.matchChoice(county, "Narnia"), "Narnia");
+  assert.ok(Steer.validate(county, Steer.matchChoice(county, "Narnia"), "en"));
+  assert.equal(Steer.validate(county, Steer.matchChoice(county, "Knox"), "en"), null);
+  assert.equal(Steer.matchChoice({ type: "text" }, "free text"), "free text");
+});
+
+test("matchChoice maps a multiselect piece by piece", () => {
+  const race = { type: "multiselect", enum: ["Black or African American", "Hispanic or Latino", "White", "Other"] };
+  assert.equal(Steer.matchChoice(race, "hispanic, white"), "Hispanic or Latino, White");
+  assert.equal(Steer.validate(race, Steer.matchChoice(race, "Black, Hispanic"), "en"), null);
+});

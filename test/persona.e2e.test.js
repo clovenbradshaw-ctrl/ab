@@ -224,11 +224,22 @@ test("enum field: repeated free-text misses keep surfacing the specific options 
   for (const t of turns.slice(2)) assert.equal(t.reply, enumMsg);
 });
 
-test("enum field: exact and case-insensitive matches still confirm and store normally", async () => {
+test("enum field: a case-insensitive match confirms and stores the option as the form spells it", async () => {
   const engine = loadEngine();
   const { intake } = await converse(engine, "en", ["Frank Smith", "PARENT", "yes"]);
   const relField = engine.SCHEMA.fields.find((f) => f.path === "complainant_relationship");
-  assert.equal(intake.answers()[relField.path], "PARENT");
+  assert.equal(intake.answers()[relField.path], "Parent");
+});
+
+test("select field: a county typed without the word County is stored as that county", async () => {
+  const engine = loadEngine();
+  const fields = engine.SCHEMA.fields;
+  const idx = fields.findIndex((f) => f.path === "dcs_county");
+  const lines = [];
+  lines.push(...linesUpTo(fields, idx));
+  lines.push("davidson");
+  const { intake } = await converse(engine, "en", lines);
+  assert.equal(intake.answers().dcs_county, "Davidson County");
 });
 
 test("multiselect field: multiple race/ethnicity picks are stored as one comma-joined value", async () => {
