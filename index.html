@@ -958,7 +958,7 @@ nav .setup .rail-toggle{display:inline-flex}
       <button id="submissionBtn" class="icon-btn" title="View my submission" style="display:none"><i class="ph ph-clipboard-text"></i></button>
       <button id="resetBtn" class="icon-btn" title="Start over"><i class="ph ph-arrow-counter-clockwise"></i></button>
       <button id="pwBtn" class="icon-btn" title="Change password" style="display:none"><i class="ph ph-key"></i></button>
-      <button id="logoutBtn" class="icon-btn" title="Switch account"><i class="ph ph-sign-out"></i></button>
+      <button id="logoutBtn" class="icon-btn" title="Sign out"><i class="ph ph-sign-out"></i></button>
       <span class="setup-admin hidden" id="navAdmin">
         <select id="modelSel" title="Model backend"><option value="echo" selected>Demo</option><option value="webllm">Qwen2.5 0.5B (smallest)</option><option value="ollama">Ollama</option></select>
         <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">ready</span></span>
@@ -1099,8 +1099,8 @@ nav .setup .rail-toggle{display:inline-flex}
   <h3>Change password</h3>
   <p class="field-path" id="pwWho"></p>
   <div class="pw-group">
-    <label for="pwCurrent">Current password</label>
-    <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="••••••••">
+    <label for="pwCurrent">Current password (optional)</label>
+    <input id="pwCurrent" type="password" autocomplete="current-password" placeholder="Leave blank if you don't know it">
   </div>
   <div class="pw-group">
     <label for="pwNew">New password</label>
@@ -6231,6 +6231,18 @@ function initAdminView({ onClose }) {
     if (!shown.length) cards.appendChild(pipelineEmpty(pl.answers.length ? "No answers match this filter." : "No answers yet."));
     wrap.appendChild(cards);
 
+    // Everything the family hasn't reached yet, still visible to answer
+    // directly here — e.g. finishing an intake by phone. Shown regardless of
+    // which filter tab above is active: a filter narrows which GIVEN answers
+    // are shown, not whether unanswered ones exist.
+    const missing = missingFieldsFor(pl);
+    if (missing.length) {
+      wrap.appendChild($e("div", "afiles-head", `Not answered yet (${missing.length})`));
+      const missingCards = $e("div", "acards");
+      for (const f of missing) missingCards.appendChild(blankCard(pl, f, labels));
+      wrap.appendChild(missingCards);
+    }
+
     wrap.appendChild(letterPanel(pl));
   }
 
@@ -6284,6 +6296,103 @@ function initAdminView({ onClose }) {
     };
   }
 
+  // Same repeating-group growth Intake._maybeInjectNextChildRound and
+  // _maybeInjectNextPlacementRound do live during the family's own chat, run
+  // here as a pure function over the FINAL answers instead of replayed
+  // turn-by-turn — a review only needs "which rounds exist by now," not the
+  // order they were asked in. Each newly-spliced round carries its own
+  // "another one?" field, which is what lets the next round match on the
+  // next pass through the loop.
+  function withRepeatingRounds(fields, answers) {
+    const out = fields.slice();
+    for (let n = 1; ; n++) {
+      const v = answers[`child_more_${n}`];
+      if (v !== "Yes" && v !== "Sí") break;
+      if (!out.some((f) => f.path === `child_${n + 1}_initials`)) {
+        const at = out.findIndex((f) => f.path === `child_more_${n}`) + 1;
+        out.splice(at, 0, ...childRoundFields(n + 1));
+      }
+    }
+    for (let n = 1; ; n++) {
+      const v = answers[`placement_more_${n}`];
+      if (v !== "Yes" && v !== "Sí") break;
+      if (!out.some((f) => f.path === `placement_${n + 1}_when`)) {
+        const at = out.findIndex((f) => f.path === `placement_more_${n}`) + 1;
+        out.splice(at, 0, ...placementRoundFields(n + 1));
+      }
+    }
+    return out;
+  }
+
+  // What the family hasn't answered yet, in the order they'd be asked it —
+  // same visibility rules (skipUnless, derived) the live chat itself uses,
+  // computed from this submission's own answers rather than a fresh
+  // interview replay. Narrative-triggered follow-ups
+  // (Intake._maybeInjectFollowups / _maybeInjectCoverageFollowup — a
+  // question added because the family's own words mentioned something
+  // specific) aren't reconstructed here: they come from reading the story
+  // text against a model, not from the answers alone, and re-running that
+  // inference on every dashboard render isn't worth it for a follow-up the
+  // office can always add as a correction/note instead.
+  function missingFieldsFor(pl) {
+    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const fields = withRepeatingRounds(base, answers);
+    return fields.filter((f) => !f.derived && !Steer.isFieldSkipped(f, answers)
+      && (answers[f.path] == null || answers[f.path] === ""));
+  }
+
+  // A still-blank question, with a collapsed "+ Answer" that opens the same
+  // kind of editor answerCard's "✎ Correct" uses. Saved with its own
+  // inputKind (office_answered, not edited — see stepSentence) so the
+  // provenance trail reads "Office answered it," not "corrected it": nothing
+  // is being fixed here, an answer that never existed is being given one.
+  function blankCard(pl, field, labelFor) {
+    const card = $e("div", "acard acard-blank");
+    const head = $e("div", "acard-head");
+    head.appendChild($e("div", "acard-q", labelFor(field.path)));
+    if (field.required) {
+      const chips = $e("div", "acard-chips");
+      chips.appendChild($e("span", "achip", "Required"));
+      head.appendChild(chips);
+    }
+    card.appendChild(head);
+
+    const finalRow = $e("div", "acard-final");
+    finalRow.appendChild($e("div", "v", "Not answered yet"));
+    const addBtn = $e("button", "aedit", "+ Answer");
+    finalRow.appendChild(addBtn);
+
+    const editor = $e("div", "aedit-area");
+    editor.hidden = true;
+    const box = document.createElement("textarea");
+    box.className = "field-input";
+    editor.appendChild(box);
+    const save = $e("button", "aview", "Save answer");
+    const cancel = $e("button", "aview", "Cancel");
+    const btns = $e("div", "aedit-btns");
+    btns.append(save, cancel);
+    editor.appendChild(btns);
+    const answerCol = $e("div", "acard-answer");
+    answerCol.append(finalRow, editor);
+    card.appendChild(answerCol);
+
+    addBtn.onclick = () => { editor.hidden = false; box.focus(); };
+    const close = () => { editor.hidden = true; box.value = ""; };
+    cancel.onclick = close;
+    box.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    save.onclick = () => {
+      const value = box.value.trim();
+      if (!value) return;
+      const payload = { anchor: "applicant", path: field.path, value, source: null, inputKind: "office_answered", voiceClipId: null };
+      if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, pl.roomId, OP.DEF, payload);
+      else DemoStore.appendEvent(pl.roomId, OP.DEF, payload, ctx.currentUserId);
+      toast("Answer saved — the family will see it was given by the office.", "success");
+      setTimeout(() => renderActive(), 400);
+    };
+    return card;
+  }
+
   function stepsOf(a) { return a.versions?.length ? a.versions : [a]; }
 
   function answerFacts(a) {
@@ -6303,6 +6412,7 @@ function initAdminView({ onClose }) {
       bulk: "pasted it in a block of text",
       derived: "— filled in automatically",
       edited: office ? "corrected it" : "changed their answer",
+      office_answered: "answered it",
     }[v.inputKind] || "typed";
     return { who: office ? "Office" : "Family", verb, office };
   }
@@ -8938,9 +9048,42 @@ function passwordUia(userId, candidates) {
   };
 }
 
+// Re-wraps this account's cross-signing identity and backup key under a
+// freshly-derived secret-storage key, without touching what they actually
+// ARE — the identity a device already trusts, and the backup it can already
+// decrypt with, don't change; only what protects them at rest does. That's
+// the whole difference between rotating a password and losing everything
+// under it: the wrapper changes, the wrapped material doesn't.
+//
+// Two callers: submitPasswordChange, right after the login password itself
+// changes, so this device's own new password is what every future sign-in
+// needs — and the self-heal branch in setUpOfficeHistory below, for a
+// device that's already trusted but hit a password that doesn't match
+// whatever secret storage remembers (typically: the password changed
+// somewhere that never called this, before this function existed).
+//
+// Deliberately narrow: this only ever runs from a device that is ALREADY
+// cross-signing-ready — one with its own, previously-established local
+// trust, never a freshly-registered one. A device with nothing of its own
+// to fall back on can't manufacture that trust here; it hits the honest
+// failure in setUpOfficeHistory instead. That's not a gap to close, it's
+// the actual security boundary secret storage exists to enforce.
+async function rewrapSecretStorage(client, password) {
+  const crypto = client.getCrypto();
+  unlockSecretStorageWith(client, password);
+  const passphrase = { algorithm: "m.pbkdf2", iterations: 500000, salt: randomSalt(32) };
+  const generated = { keyInfo: { passphrase }, privateKey: await passphraseStorageKey(password, passphrase) };
+  await crypto.bootstrapSecretStorage({ createSecretStorageKey: async () => generated, setupNewSecretStorage: true });
+  await crypto.exportCrossSigningKeysToStorage();
+  const backupPrivateKey = await crypto.getSessionBackupPrivateKey();
+  if (backupPrivateKey) await client.secretStorage.store("m.megolm_backup.v1", base64UrlOf(new Uint8Array(backupPrivateKey)));
+}
+
 // Idempotent; safe to run on every office sign-in. Returns what it did so
-// the caller can say so. Never replaces secret storage it can't open — that
-// would orphan whatever history the existing backup holds.
+// the caller can say so. Never replaces secret storage it can't open unless
+// this device already has its own independent grounds to be trusted (see
+// rewrapSecretStorage) — that would otherwise orphan whatever history the
+// existing backup holds.
 async function setUpOfficeHistory(client, password) {
   const crypto = client?.getCrypto?.();
   if (!crypto) return { ok: false, reason: "Encryption isn't set up in this browser." };
@@ -8964,10 +9107,23 @@ async function setUpOfficeHistory(client, password) {
   }
 
   const [keyId, info] = existing;
+  let healed = false;
   if (!(await storageKeyFromPassword(client, password, keyId, info))) {
-    return { ok: false, reason: "The office's history backup was locked with something other than this password." };
+    // The typed password doesn't open what's there. Normally that's the end
+    // of it — but if THIS device already trusts its own cross-signing
+    // identity, it doesn't need to open the old storage to prove anything;
+    // it already has everything of value that was in it. Re-wrap under the
+    // password typed just now instead of failing, so this one already-real
+    // admin device heals the mismatch for every device that signs in after
+    // it, not just itself.
+    if (await crypto.isCrossSigningReady()) {
+      await rewrapSecretStorage(client, password);
+      healed = true;
+    } else {
+      return { ok: false, reason: "The office's history backup was locked with something other than this password." };
+    }
   }
-  await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys: auth });
+  if (!healed) await crypto.bootstrapCrossSigning({ authUploadDeviceSigningKeys: auth });
   // A device holding an older office identity's keys (another sign-in reset
   // it before storage existed) keeps them through bootstrapCrossSigning, and
   // then trusts nothing the current identity signed — including the backup.
@@ -8983,7 +9139,7 @@ async function setUpOfficeHistory(client, password) {
   await signBackupAsOffice(client, backupInfo);
   await crypto.checkKeyBackupAndEnable();
   const result = await client.restoreKeyBackupWithCache(undefined, undefined, backupInfo);
-  return { ok: true, created: false, restored: result?.imported ?? 0, total: result?.total ?? 0 };
+  return { ok: true, created: false, healed, restored: result?.imported ?? 0, total: result?.total ?? 0 };
 }
 
 // Replaces this device's cross-signing keys with the ones in secret storage
@@ -9039,6 +9195,7 @@ async function refreshOfficeHistory(client) {
 
 function reportOfficeHistory(result) {
   if (result.ok && result.created) toast("History backup is on — every office sign-in will read everything from here on.", "success");
+  else if (result.ok && result.healed) toast("This device's password didn't match what history was locked with, so it reset the lock to match — every device that signs in from now on uses this password.", "success");
   else if (result.ok) toast(result.restored ? `Restored ${result.restored} history keys to this device.` : "History is unlocked on this device.", "success");
   else toast("History isn't unlocked on this device: " + result.reason, "warn");
   if (isAdminViewOpen()) adminCtl?.refresh?.();
@@ -9066,7 +9223,7 @@ function hideLangGate() { document.getElementById("langGate").classList.add("hid
 function showEntryLoader(text) { document.getElementById("entryLoaderText").textContent = text; document.getElementById("entryLoader").classList.remove("hidden"); }
 function hideEntryLoader() { document.getElementById("entryLoader").classList.add("hidden"); }
 
-// Set for exactly one load by "Switch account", read and cleared by
+// Set for exactly one load by a "Sign out" button, read and cleared by
 // initEntry. sessionStorage, not localStorage: a tab that was sent to the
 // sign-in screen once should not keep landing there tomorrow.
 const FORCE_LOGIN_KEY = "ab.forceLogin";
@@ -9876,8 +10033,24 @@ function suDownloadCredentials() {
 //
 // The change itself is one call to the homeserver, but it is wrapped in the
 // user-interactive auth dance because that's what a homeserver asks for: the
-// first POST comes back 401 with the flows it will accept, and the current
-// password is replayed into a second POST carrying that challenge's session.
+// first POST comes back 401 with the flows it will accept, and a second POST
+// carries that challenge's session plus whichever stage this browser can
+// actually complete.
+//
+// A live session here already IS full access to the account — every answer
+// in it is readable and writable through this same access token — so a
+// current password this browser doesn't have (a silently-provisioned account
+// never shows one to anyone; see saveSilentAccount) shouldn't be the one
+// thing standing between that access and a password to match it. When the
+// homeserver's challenge offers m.login.dummy — the same no-proof stage
+// hyphae.social already accepts for signing up a new account, see
+// SILENT_STAGES — this completes the change with that instead, current
+// password or not. m.login.password is still tried first when one was
+// typed, since a real proof is preferable to a free pass when both are on
+// offer. Whoever holds a session can therefore always set a fresh password,
+// and anyone who only had the old one — or never had one — is locked out
+// by it. That is the point of a password: this is just what lets an account
+// nobody ever gave one to get its first.
 //
 // logout_devices stays false on purpose. Someone may well do this in the
 // middle of an interview, and signing every device out from under them would
@@ -9895,19 +10068,16 @@ async function changeAccountPassword({ client, userId, current, next }) {
   if (res.status === 401) {
     const challenge = await res.json().catch(() => ({}));
     const stages = (challenge.flows || []).flatMap((f) => f.stages || []);
-    if (!stages.includes("m.login.password")) {
+    const withAuth = (auth) => post({ auth: { session: challenge.session, ...auth } });
+    if (stages.includes("m.login.password") && current) {
+      res = await withAuth({ type: "m.login.password", user: userId, identifier: { type: "m.id.user", user: userId }, password: current });
+    } else if (stages.includes("m.login.dummy")) {
+      res = await withAuth({ type: "m.login.dummy" });
+    } else if (stages.includes("m.login.password")) {
+      throw new Error("Your current password is needed to change it, and this browser doesn't have it.");
+    } else {
       throw new Error("This provider wants a sign-in step this page can't do. Change the password from your provider's own site instead.");
     }
-    if (!current) throw new Error("Your current password is needed to change it.");
-    res = await post({
-      auth: {
-        type: "m.login.password",
-        session: challenge.session,
-        user: userId,
-        identifier: { type: "m.id.user", user: userId },
-        password: current,
-      },
-    });
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -9964,6 +10134,23 @@ async function submitPasswordChange() {
   btn.textContent = "Changing…";
   try {
     await changeAccountPassword({ client, userId, current, next });
+    // Secret storage, if this account has any, still remembers the OLD
+    // password's derived key at this point — re-wrap it under the new one
+    // now, while this device still has everything unlocked in memory, so a
+    // sign-in on some other device isn't what discovers the mismatch (see
+    // rewrapSecretStorage). Only for an account with something to re-wrap:
+    // an ordinary account with no cross-signing identity set up has nothing
+    // here to lose either way. Best-effort — the password change above
+    // already succeeded and is the part that can't be silently retried, so
+    // a rewrap failure is logged, not surfaced as the whole operation
+    // failing; setUpOfficeHistory's own self-heal branch will catch it on
+    // a later sign-in from a device that's still trusted.
+    try {
+      const crypto = client.getCrypto?.();
+      if (crypto && (await crypto.isCrossSigningReady())) await rewrapSecretStorage(client, next);
+    } catch (e) {
+      console.error("[password] couldn't re-lock history with the new password yet; a later trusted sign-in will retry:", e);
+    }
     // Downloaded before anything else can go wrong, and before the modal
     // closes: this file is now the only record of the password that exists
     // anywhere outside the person's own memory.
@@ -10357,6 +10544,14 @@ async function startFreshAndRetry(homeserver, userId, password, btn, theirs) {
 // would belong to a device that no longer exists, and the next sign-in would
 // dead-end on it. Those keys are the only copy of anything this device alone
 // could read, so a device that isn't backing up says so before it goes.
+// Shared by both nav "sign out" buttons (office and family) — this used to be
+// office-only, with the family-facing one ("Switch account") leaving the
+// session untouched instead. That meant a family member switching accounts,
+// or an office reviewer testing from the same browser, could leave this
+// device holding one account's keys while trying to sign in as another —
+// the crypto store refuses that combination, so the next sign-in dead-ended
+// on a "this browser already holds different keys" prompt. Wiping for real on
+// confirm is what lets a browser actually change hands between accounts.
 // An in-page yes/no instead of window.confirm, which some browsers and
 // embedded views suppress — there it answers "no" on its own and the button
 // seems to do nothing. Clicking outside or Escape is always "no".
@@ -10395,11 +10590,14 @@ function confirmInPage(message, { confirmLabel = "Continue", cancelLabel = "Canc
 async function signOutOfThisBrowser() {
   const client = loginState?.kind === "matrix" ? (loginState.client || store?.client) : null;
   if (client) {
+    const office = isAdmin(client.getUserId());
     let backingUp = false;
     try { backingUp = !!(await keyBackupStatus(client)).activeHere; } catch {}
     const ok = await confirmInPage(backingUp
-      ? "Sign out of this browser?\n\nThis device's keys are in the office's history backup, so signing in again with the office password brings everything back."
-      : "Sign out of this browser?\n\nThis browser hasn't put its keys in the history backup yet. Signing out discards them, and anything only this device can read becomes unreadable everywhere.\n\nTo keep it, cancel and unlock history under Devices & backup first.",
+      ? "Sign out of this browser?\n\nThis device's keys are backed up, so signing in again with the password brings everything back."
+      : office
+        ? "Sign out of this browser?\n\nThis browser hasn't put its keys in the history backup yet. Signing out discards them, and anything only this device can read becomes unreadable everywhere.\n\nTo keep it, cancel and unlock history under Devices & backup first."
+        : "Sign out of this browser?\n\nThis account's answers have no backup anywhere. Signing out discards this device's only copy, so you won't be able to read them here again — even signing back into the same account. The office you sent this to keeps its own separate copy and isn't affected either way.",
       { confirmLabel: backingUp ? "Sign out" : "Sign out anyway" });
     if (!ok) return;
     await endSession(client);
@@ -10491,18 +10689,10 @@ function wireLogin() {
     document.getElementById("demoBar").classList.add("hidden");
     try { sessionStorage.setItem("eo.demoBarDismissed", "1"); } catch {}
   };
-  document.getElementById("logoutBtn").onclick = async () => {
-    if (await confirmInPage("Switch accounts?\n\nYour answers stay saved in this account; you can come back to it.", { confirmLabel: "Switch" })) {
-      loginState = null;
-      if (store?.client) try { store.client.stopClient(); } catch {}
-      // Without this the reload finds the saved session and resumes it, so
-      // "Switch account" landed the person back in the same interview they
-      // just asked to leave. The saved session itself is left alone — this
-      // load shows the sign-in screen; nothing is signed out or deleted.
-      requestLoginScreen();
-      location.reload();
-    }
-  };
+  // Same teardown as the admin dashboard's "Sign out" — see signOutOfThisBrowser
+  // for why this used to just hide the session (a "Switch account" that left
+  // the old one signed in) and now actually ends it.
+  document.getElementById("logoutBtn").onclick = signOutOfThisBrowser;
 }
 
 // ── Boot ──

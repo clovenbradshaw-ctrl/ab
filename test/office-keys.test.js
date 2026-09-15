@@ -28,7 +28,7 @@ function loadOfficeKeys() {
 
 // A scripted stand-in for the client: records every SDK call, and treats a
 // secret-storage key as correct when it equals `storedKey`.
-function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", backupSecret = "AQIDBA", identityReady = true, backupMatches = true, masterSigned = false } = {}) {
+function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", backupSecret = "AQIDBA", identityReady = true, backupMatches = true, masterSigned = false, sessionBackupPrivateKey = new Uint8Array([9, 9, 9]) } = {}) {
   const calls = [];
   const same = (a, b) => a && b && a.length === b.length && a.every((x, i) => x === b[i]);
   let ready = identityReady;
@@ -49,6 +49,11 @@ function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", bac
     isKeyBackupTrusted: async () => ({ matchesDecryptionKey: backupMatches, trusted: false }),
     signObject: async (obj) => { obj.signatures = { [USER]: { "ed25519:MASTER": "new", "ed25519:THISDEVICE": "d2" } }; },
     olmMachine: { importCrossSigningKeys: async (...keys) => { calls.push({ importCrossSigningKeys: keys }); ready = true; } },
+    // Only meaningful once a device is already trusted — see
+    // rewrapSecretStorage: exporting is how that trust rides into a freshly
+    // bootstrapped storage instead of being re-derived from nothing.
+    exportCrossSigningKeysToStorage: async () => { calls.push("exportCrossSigningKeysToStorage"); },
+    getSessionBackupPrivateKey: async () => sessionBackupPrivateKey,
   };
   const client = {
     getUserId: () => USER,
@@ -58,6 +63,7 @@ function fakeOffice({ storage = null, storedKey = null, backupVersion = "4", bac
       getKey: async () => storage,
       checkKey: async (key) => same([...key], storedKey && [...storedKey]),
       get: async (name) => { calls.push("get:" + name); return name === "m.megolm_backup.v1" ? backupSecret : "secret:" + name; },
+      store: async (name, value) => { calls.push({ store: name, value }); },
     },
     http: { authedRequest: async (method, path, query, body) => { calls.push({ [method]: path, body }); return {}; } },
     restoreKeyBackupWithCache: async () => { calls.push("restore"); return { imported: 5, total: 6 }; },
@@ -105,14 +111,42 @@ test("a first sign-in creates cross-signing, then password-locked secret storage
   assert.deepEqual(Buffer.from(boot.generated.privateKey), expected, "the stored key is the one the password rebuilds");
 });
 
-test("a password that can't open existing secret storage never replaces it", async () => {
+test("a password that can't open existing secret storage never replaces it, for a device with no trust of its own", async () => {
   const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
   const storedKey = nodeCrypto.pbkdf2Sync("the real one", info.passphrase.salt, 1000, 32, "sha512");
-  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey });
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey, identityReady: false });
   const r = await keys.setUpOfficeHistory(client, "a different one");
   assert.equal(r.ok, false);
   assert.match(r.reason, /locked with something other than this password/);
   assert.deepEqual(calls, [], "nothing was bootstrapped, reset, or written");
+});
+
+// The one case a mismatched password DOESN'T dead-end: a device that
+// already, independently trusts its own cross-signing identity has nothing
+// to gain from the old storage and everything it needs already in hand — so
+// it re-wraps storage under the password just typed instead of refusing.
+// This is what lets one real admin device recover every device signing in
+// after it, without ever needing to fabricate trust a device doesn't have
+// (see the sibling test above for that boundary).
+test("an already-trusted device re-wraps secret storage instead of refusing a mismatched password", async () => {
+  const info = { passphrase: { algorithm: "m.pbkdf2", salt: "S".repeat(32), iterations: 1000 } };
+  const storedKey = nodeCrypto.pbkdf2Sync("the real one", info.passphrase.salt, 1000, 32, "sha512");
+  const { calls, client } = fakeOffice({ storage: ["KEY", info], storedKey, identityReady: true });
+  const r = await keys.setUpOfficeHistory(client, "a new password");
+  assert.equal(r.ok, true);
+  assert.equal(r.healed, true);
+  assert.ok(!calls.includes("bootstrapCrossSigning"), "the existing identity is reused, not recreated");
+  const boot = calls.find((c) => c.bootstrapSecretStorage);
+  assert.ok(boot, "secret storage is re-wrapped");
+  assert.equal(boot.bootstrapSecretStorage.setupNewSecretStorage, true);
+  assert.ok(!("setupNewKeyBackup" in boot.bootstrapSecretStorage), "the existing backup is kept, not recreated");
+  const { passphrase } = boot.generated.keyInfo;
+  const expected = nodeCrypto.pbkdf2Sync("a new password", passphrase.salt, passphrase.iterations, 32, "sha512");
+  assert.deepEqual(Buffer.from(boot.generated.privateKey), expected, "re-wrapped under the password just typed, not the old one");
+  assert.ok(calls.includes("exportCrossSigningKeysToStorage"), "the device's own identity is what gets carried over, not a fresh one");
+  const stored = calls.find((c) => c.store === "m.megolm_backup.v1");
+  assert.ok(stored, "the backup key is carried into the new wrapping too");
+  assert.equal(r.restored, 5, "the rest of setUpOfficeHistory still runs — restore isn't skipped just because it healed");
 });
 
 test("the right password opens storage, caches the backup key, and restores", async () => {
