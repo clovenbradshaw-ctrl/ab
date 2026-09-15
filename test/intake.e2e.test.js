@@ -400,3 +400,76 @@ test("Spanish: the review is announced in Spanish, naming the section", async ()
     engine.Steer.REPLIES.es.reviewing(section.labelEs),
   );
 });
+
+// A cold page reload (or opening the account in a second tab) rebuilds
+// Intake's schema from the static base fields alone — see _bootAfterStore
+// in index.html. A LIVE session, by contrast, grows `this.schema.fields` in
+// memory as it goes: a second child round (_maybeInjectNextChildRound), a
+// narrative follow-up triggered by a keyword in the family's own story
+// (_maybeInjectFollowups), and a coverage follow-up asked because an answer
+// didn't include a date or a name (_maybeInjectCoverageFollowup). None of
+// that ever gets written back into the stored question set, so without
+// re-deriving it on resume, a family who finished the whole interview in
+// one sitting shows up "incomplete" the moment the page reloads. This walks
+// a real conversation through all three growth mechanisms, then rebuilds
+// the schema the way a cold boot does (withRepeatingRounds +
+// withAnsweredFollowups over the stored answers alone) and checks the two
+// views agree.
+test("a cold-resumed schema reconstructs live-session follow-ups and repeating rounds, so progress matches across reload", async () => {
+  const engine = loadEngine();
+  const { Intake, SCHEMA, withRepeatingRounds, withAnsweredFollowups, answersOf } = engine;
+  const store = makeStore(engine);
+  const model = new engine.EchoModel();
+  const intake = new Intake({ schema: SCHEMA, store, model, lang: "en" });
+  await intake.begin();
+  await settle(intake);
+
+  for (let guard = 0; guard < 500; guard++) {
+    const f = intake.nextField();
+    if (!f) break;
+    let answer;
+    // Mentions "medication" — triggers the narrative follow-up
+    // (NARRATIVE_FRAMEWORK's "medical" slot) on this required story field.
+    if (f.path === "family_background") answer = "My child is on medication and I'm not sure she's getting it on schedule.";
+    // Deliberately no date and no two-capitalized-word name, so neither
+    // COVERAGE_FRAMEWORKS slot is met and a coverage follow-up fires.
+    else if (f.path === "dcs_actions_failures") answer = "Nobody at the agency would return our calls or help us at all.";
+    else if (/^dcs_actions_failures_coverage_\d+$/.test(f.path)) answer = "I honestly don't remember any more than that.";
+    else if (f.path === "child_more_1") answer = "Yes"; // grows a second child round
+    else answer = validAnswerFor(f);
+    await intake.submit(answer);
+    await settle(intake);
+  }
+
+  assert.ok(intake.isComplete(), "the live, never-reloaded session should be complete");
+  // Confirm all three growth mechanisms actually fired, or the rest of this
+  // test would pass vacuously.
+  assert.ok(intake.schema.fields.some((f) => f.path === "narrative_followup_medical"), "narrative follow-up should have been injected live");
+  assert.ok(intake.schema.fields.some((f) => f.path === "dcs_actions_failures_coverage_1"), "coverage follow-up should have been injected live");
+  assert.ok(intake.schema.fields.some((f) => f.path === "child_2_initials"), "second child round should have been injected live");
+
+  const liveTotal = intake.progress().length;
+  const liveDone = intake.progress().filter((p) => p.done).length;
+
+  // Simulate the cold reload: a fresh schema built from nothing but the
+  // static base fields and this store's own stored answers — exactly what
+  // _bootAfterStore does, with the fix applied.
+  const resumedAnswers = answersOf(store.fold(), "applicant");
+  const resumedFields = withAnsweredFollowups(withRepeatingRounds(SCHEMA.fields, resumedAnswers), resumedAnswers);
+  const resumedIntake = new Intake({ schema: { ...SCHEMA, fields: resumedFields }, store, model, lang: "en" });
+
+  assert.equal(resumedFields.length, intake.schema.fields.length, "the reconstructed field count must match the live session's grown schema");
+  assert.equal(resumedIntake.progress().length, liveTotal, "the resumed progress total must match the live session's");
+  assert.equal(resumedIntake.progress().filter((p) => p.done).length, liveDone, "the resumed done-count must match the live session's");
+  assert.ok(resumedIntake.isComplete(), "a cold-resumed session that was actually finished must show complete, not corrupted");
+
+  // Without the fix (reconstructing from SCHEMA.fields alone, no
+  // withRepeatingRounds/withAnsweredFollowups), this is exactly the
+  // reported bug: the ring/total under-counts against what the live,
+  // never-reloaded session showed — every field the second child round,
+  // the narrative follow-up, and the coverage follow-up(s) added goes
+  // missing from the count entirely, not just from "done".
+  const brokenIntake = new Intake({ schema: SCHEMA, store, model, lang: "en" });
+  const brokenTotal = brokenIntake.progress().length;
+  assert.ok(brokenTotal < liveTotal, "sanity: reproduces the under-count without the reconstruction fix");
+});

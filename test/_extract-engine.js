@@ -83,6 +83,9 @@ function loadEngine() {
     exports.NARRATIVE_FRAMEWORK = NARRATIVE_FRAMEWORK;
     exports.COVERAGE_FRAMEWORKS = COVERAGE_FRAMEWORKS;
     exports.placementRoundFields = placementRoundFields;
+    exports.childRoundFields = childRoundFields;
+    exports.withRepeatingRounds = withRepeatingRounds;
+    exports.withAnsweredFollowups = withAnsweredFollowups;
     exports.SECTIONS = SECTIONS;
     exports.SECTION_INTROS = SECTION_INTROS;
     exports.renderTemplate = renderTemplate;

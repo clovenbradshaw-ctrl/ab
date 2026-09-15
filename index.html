@@ -4143,6 +4143,105 @@ function schemaLooksPartial(folded, events, cfg = DEFAULT_CONFIG) {
   return cfg.fields.some((f) => f.required && !present.has(f.path) && !deleted.has(f.path));
 }
 
+// Same repeating-group growth Intake._maybeInjectNextChildRound and
+// _maybeInjectNextPlacementRound do live, mid-conversation, to
+// `this.schema.fields` — but only ever to that one live session's in-memory
+// copy (see the Intake constructor's own note on why `fields` is a fresh
+// slice, never the shared SCHEMA.fields array). Run here as a pure function
+// over a final answers object instead of replayed turn-by-turn, so both the
+// admin dashboard's "what's still missing" view (missingFieldsFor, in the
+// admin panel below) and a cold-booted Intake resuming an in-progress
+// session (see _bootAfterStore) can re-derive exactly which rounds exist
+// without the live splice having happened in this process — a family who
+// reached the end in one sitting shouldn't look incomplete the moment they
+// reload the page or open the form in a second tab.
+function withRepeatingRounds(fields, answers) {
+  const out = fields.slice();
+  for (let n = 1; ; n++) {
+    const v = answers[`child_more_${n}`];
+    if (v !== "Yes" && v !== "Sí") break;
+    if (!out.some((f) => f.path === `child_${n + 1}_initials`)) {
+      const at = out.findIndex((f) => f.path === `child_more_${n}`) + 1;
+      out.splice(at, 0, ...childRoundFields(n + 1));
+    }
+  }
+  for (let n = 1; ; n++) {
+    const v = answers[`placement_more_${n}`];
+    if (v !== "Yes" && v !== "Sí") break;
+    if (!out.some((f) => f.path === `placement_${n + 1}_when`)) {
+      const at = out.findIndex((f) => f.path === `placement_more_${n}`) + 1;
+      out.splice(at, 0, ...placementRoundFields(n + 1));
+    }
+  }
+  return out;
+}
+
+// The narrative-triggered (Intake._maybeInjectFollowups) and per-topic
+// coverage (Intake._maybeInjectCoverageFollowup) follow-ups are the other
+// two ways a live session grows `this.schema.fields` beyond withRepeatingRounds
+// above — and unlike the repeating rounds, WHICH follow-up gets asked
+// depends on reading the family's own story text (against a model, or the
+// deterministic keyword fallback), not on the answers alone. A cold-booted
+// Intake has no reason to re-run that reading: every one of these fields
+// only exists because it was asked, and it was only ever asked because
+// something upstream detected it was owed — so a stored answer at one of
+// these paths is, on its own, sufficient proof the field belongs back in
+// the schema, regardless of why it was originally injected. (Re-deriving
+// exactly which slot produced a given coverage follow-up is only needed for
+// its label text, not for it to be counted — done below with the same
+// deterministic EOReader6.surf match _metSlotKeys itself falls back to when
+// no model is available, so this stays synchronous and reload-safe.)
+function withAnsweredFollowups(fields, answers) {
+  const out = fields.slice();
+
+  for (const slot of NARRATIVE_FRAMEWORK.slots) {
+    const path = slot.followup.path;
+    if (answers[path] == null || answers[path] === "") continue;
+    if (out.some((f) => f.path === path)) continue;
+    // Which trigger field actually surfaced this in the live session isn't
+    // recoverable (any of the four could have), so it's spliced after
+    // whichever one sits furthest along — close enough for review's
+    // document-order reading, and irrelevant to the count this exists for.
+    const afterIdx = NARRATIVE_FRAMEWORK.triggerFields
+      .map((p) => out.findIndex((f) => f.path === p))
+      .reduce((max, i) => Math.max(max, i), -1);
+    out.splice(afterIdx + 1, 0, slot.followup);
+  }
+
+  for (const [baseKey, framework] of Object.entries(COVERAGE_FRAMEWORKS)) {
+    const baseField = out.find((f) => f.path === baseKey);
+    const askedSlotKeys = new Set();
+    let cumulative = (answers[baseKey] ?? "").toString();
+    let afterPath = baseKey;
+    for (let n = 1; n <= framework.maxFollowups; n++) {
+      const path = `${baseKey}_coverage_${n}`;
+      const value = answers[path];
+      if (value == null || value === "") break;
+      const metKeys = new Set(EOReader6.surf(cumulative, framework.slots).filter((r) => r.met).map((r) => r.key));
+      const slot = framework.slots.find((s) => !metKeys.has(s.key) && !askedSlotKeys.has(s.key)) || framework.slots[n - 1];
+      askedSlotKeys.add(slot.key);
+      cumulative = [cumulative, value].filter(Boolean).join(" ");
+      if (!out.some((f) => f.path === path)) {
+        const insertAt = out.findIndex((f) => f.path === afterPath) + 1;
+        out.splice(insertAt, 0, {
+          path,
+          label: slot.followup.label,
+          type: "text",
+          section: (baseField && baseField.section) || undefined,
+          required: false,
+          prompt: slot.followup.prompt,
+          promptEs: slot.followup.promptEs,
+          help: slot.followup.help,
+          helpEs: slot.followup.helpEs,
+          _coverageSlotKey: slot.key,
+        });
+      }
+      afterPath = path;
+    }
+  }
+
+  return out;
+}
 
 // intake.js — the conversation fold.
 //
@@ -6296,33 +6395,10 @@ function initAdminView({ onClose }) {
     };
   }
 
-  // Same repeating-group growth Intake._maybeInjectNextChildRound and
-  // _maybeInjectNextPlacementRound do live during the family's own chat, run
-  // here as a pure function over the FINAL answers instead of replayed
-  // turn-by-turn — a review only needs "which rounds exist by now," not the
-  // order they were asked in. Each newly-spliced round carries its own
-  // "another one?" field, which is what lets the next round match on the
-  // next pass through the loop.
-  function withRepeatingRounds(fields, answers) {
-    const out = fields.slice();
-    for (let n = 1; ; n++) {
-      const v = answers[`child_more_${n}`];
-      if (v !== "Yes" && v !== "Sí") break;
-      if (!out.some((f) => f.path === `child_${n + 1}_initials`)) {
-        const at = out.findIndex((f) => f.path === `child_more_${n}`) + 1;
-        out.splice(at, 0, ...childRoundFields(n + 1));
-      }
-    }
-    for (let n = 1; ; n++) {
-      const v = answers[`placement_more_${n}`];
-      if (v !== "Yes" && v !== "Sí") break;
-      if (!out.some((f) => f.path === `placement_${n + 1}_when`)) {
-        const at = out.findIndex((f) => f.path === `placement_more_${n}`) + 1;
-        out.splice(at, 0, ...placementRoundFields(n + 1));
-      }
-    }
-    return out;
-  }
+  // withRepeatingRounds is now a top-level function (see above SCHEMA/Intake
+  // — shared with the family-side cold-resume path in _bootAfterStore),
+  // reused here as-is: a review only needs "which rounds exist by now," not
+  // the order they were asked in.
 
   // What the family hasn't answered yet, in the order they'd be asked it —
   // same visibility rules (skipUnless, derived) the live chat itself uses,
@@ -10822,13 +10898,24 @@ async function _bootAfterStore() {
   const partial = !preview && configStore.roomId && schemaLooksPartial(cfg, configStore.timeline());
   if (partial) console.warn("[config] stored question set looks incomplete — using the built-in questions");
   const useStored = cfg.schema.fields.length && !partial;
+  // A cold page load (or a second tab) rebuilds this from the static base
+  // fields alone — none of the narrative/coverage follow-ups or repeating
+  // rounds a LIVE session spliced into its own in-memory schema.fields ever
+  // get written back to the stored question set (see
+  // Intake._maybeInjectFollowups and friends). Without re-deriving them
+  // here, a resumed session's progress ring/total undercounts against what
+  // the same account showed in the tab that never reloaded — replaying them
+  // from this store's own answers keeps the two in sync.
+  const baseFields = useStored ? cfg.schema.fields : SCHEMA.fields;
+  const resumedAnswers = answersOf(store.fold(), "applicant");
+  const fields = withAnsweredFollowups(withRepeatingRounds(baseFields, resumedAnswers), resumedAnswers);
   const schema = {
     id: useStored ? (cfg.schema.id || SCHEMA.id) : SCHEMA.id,
     title: (useStored && cfg.schema.title) || SCHEMA.title,
     blurb: (useStored && cfg.schema.blurb) || SCHEMA.blurb || "",
     titleEs: (useStored && cfg.schema.titleEs) || SCHEMA.titleEs || "",
     blurbEs: (useStored && cfg.schema.blurbEs) || SCHEMA.blurbEs || "",
-    fields: useStored ? cfg.schema.fields : SCHEMA.fields,
+    fields,
   };
   knowledge = KnowledgeStore.fromJSON(cfg.knowledge);
 
