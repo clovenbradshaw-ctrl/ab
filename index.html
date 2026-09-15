@@ -519,6 +519,29 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .inline-editor#traceModal .modal{width:min(640px,94vw)}
 .inline-editor#letterModal h3{font-size:17px}
 .letter-preview{white-space:pre-wrap}
+
+/* Rich-text (WYSIWYG) editor — used for letter templates and drafted letters */
+.rich-toolbar{display:flex;gap:3px;flex-wrap:wrap;padding:5px 6px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--wash);position:sticky;top:0;z-index:2}
+.rich-toolbar button{font:600 12px Inter;line-height:1;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
+.rich-toolbar button:hover{background:var(--seal-soft)}
+.rich-toolbar button.rt-strong{font-weight:700}
+.rich-toolbar button.rt-em{font-style:italic}
+.rich-toolbar button.rt-code{font-family:"IBM Plex Mono",monospace;font-size:10px}
+.rich-toolbar .rt-sep{width:1px;background:var(--line);margin:2px 4px}
+.rich-editor{width:100%;min-height:220px;max-height:52vh;overflow:auto;resize:vertical;font:13px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;border:1px solid var(--line);border-radius:0 0 8px 8px;padding:12px 14px;background:var(--surface);color:var(--ink);white-space:pre-wrap}
+.rich-editor:focus{outline:none;border-color:var(--seal)}
+.rich-editor p{margin:0 0 .6em}
+.rich-editor ul,.rich-editor ol{margin:.2em 0 .6em;padding-left:1.5em}
+.rich-editor h2{font-family:Fraunces,Georgia,serif;font-size:16px;margin:.6em 0 .3em}
+.rich-editor h3{font-family:Fraunces,Georgia,serif;font-size:14px;margin:.5em 0 .3em}
+.rich-editor hr{border:none;border-top:1px solid var(--line);margin:.8em 0}
+.rich-editor .tpl-token{background:var(--seal-soft);border:1px solid #C9E0D5;border-radius:4px;padding:0 4px;font-family:"IBM Plex Mono",monospace;font-size:.92em}
+.letter-preview.rich-body{font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;color:var(--ink)}
+.letter-preview.rich-body p{margin:0 0 .6em}
+.letter-preview.rich-body ul,.letter-preview.rich-body ol{margin:.2em 0 .6em;padding-left:1.5em}
+.letter-preview.rich-body h2{font-family:Fraunces,Georgia,serif;font-size:15px;margin:.6em 0 .3em}
+.letter-preview.rich-body h3{font-family:Fraunces,Georgia,serif;font-size:13px;margin:.5em 0 .3em}
+.letter-preview.rich-body hr{border:none;border-top:1px solid var(--line);margin:.8em 0}
 .wiz-step-count{font-size:11px;color:var(--muted);margin:-2px 0 10px}
 
 /* No-model form wizard (end-user intake, one field per screen) */
@@ -1094,10 +1117,11 @@ nav .setup .rail-toggle{display:inline-flex}
 
 <!-- Admin: generated outgoing draft — editable in place. Saving an edit
      emits a DEF event on the letter's anchor, so the original generated
-     text stays in the room timeline untouched. -->
+     text stays in the room timeline untouched. The editor is a rich-text
+     (WYSIWYG) surface; formatting written here is preserved on save. -->
 <div class="inline-editor" id="letterModal"><div class="modal">
   <h3 id="letterTitle">Complaint draft</h3><p class="field-path" id="letterPath"></p>
-  <textarea id="letterBody" spellcheck="false" style="width:100%;min-height:320px;max-height:50vh;resize:vertical;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)"></textarea>
+  <div id="letterEditor"></div>
   <div class="btns"><button class="cancel" id="letterRegen">Regenerate letter</button><button class="cancel" id="letterCopy">Copy</button><button class="cancel" id="letterSave">Save edits</button><button class="primary" id="letterClose">Close</button></div>
 </div></div>
 
@@ -1136,7 +1160,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="eval">Retrieval Eval</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm" title="Opens the questions in a demo — nothing is saved or sent">Try the questions (demo) ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -2436,7 +2460,112 @@ function buildComplaintLetter(answers, provenance = {}, { child = null } = {}) {
     "Prepared with the assistance of Representative Aftyn Behn's office, pending review before any filing.",
   ];
 
+  // The builder stays a pure, deterministic plain-text assembler — tests and
+  // the audit trail depend on that. Display layers (the letter card, the
+  // WYSIWYG modal, legacy drafts) render it as-is because their CSS keeps
+  // white-space:pre-wrap, or convert with plainTextToHtml when they need HTML.
   return { letter: lines.join("\n"), missing, sources };
+}
+
+// ── Rich-text letter bodies ──────────────────────────────────────────────
+// Letters and templates are authored in a WYSIWYG editor, so their bodies are
+// HTML. Answer values are data, not markup: every value dropped into a letter
+// goes through escapeHtml so an applicant's text can never inject HTML into a
+// document the office will later file or print.
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+// Plain-text → HTML for the built-in OCR assembler and for legacy letters
+// that predate the WYSIWYG editor. Blank-line-separated runs become
+// paragraphs; single newlines become <br>.
+function plainTextToHtml(text) {
+  const esc = escapeHtml(text);
+  const paras = esc.split(/\n{2,}/).map((p) => p.replace(/\n/g, "<br>").trim());
+  return paras.filter(Boolean).map((p) => `<p>${p}</p>`).join("");
+}
+
+// Letters and templates are admin-authored, but the admin pastes, and pasted
+// HTML is the classic way a badge sneaks into a document that later gets
+// opened outside the app. Strip the dangerous subset before it is ever shown
+// or re-saved.
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(String(html ?? ""), "text/html");
+  for (const el of doc.querySelectorAll("script,iframe,object,embed,link,style,meta,base,form,input,button,textarea,select")) {
+    el.remove();
+  }
+  for (const el of doc.body.querySelectorAll("*")) {
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("on")) el.removeAttribute(attr.name);
+      if (name === "style") el.removeAttribute(attr.name);
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+// One WYSIWYG editor: a toolbar of document.execCommand actions over a
+// contenteditable body. execCommand is deprecated but is the only API every
+// browser implements for rich-text editing, and this app ships no build step
+// to depend on a real editor framework.
+function makeRichEditor(initialHtml = "") {
+  const wrap = document.createElement("div");
+  const toolbar = document.createElement("div");
+  toolbar.className = "rich-toolbar";
+  const editor = document.createElement("div");
+  editor.className = "rich-editor";
+  editor.contentEditable = "true";
+  editor.spellcheck = false;
+  editor.innerHTML = sanitizeHtml(initialHtml);
+
+  const run = (cmd, val) => { editor.focus(); document.execCommand(cmd, false, val); };
+
+  const buttons = [
+    { label: "B", cls: "rt-strong", title: "Bold", act: () => run("bold") },
+    { label: "I", cls: "rt-em", title: "Italic", act: () => run("italic") },
+    { label: "U", title: "Underline", act: () => run("underline") },
+    { label: "S", cls: "rt-strong", title: "Strikethrough", act: () => run("strikeThrough") },
+    { label: "·|", sep: true },
+    { label: "• List", title: "Bulleted list", act: () => run("insertUnorderedList") },
+    { label: "1. List", title: "Numbered list", act: () => run("insertOrderedList") },
+    { label: "Indent", title: "Increase indent", act: () => run("indent") },
+    { label: "Outdent", title: "Decrease indent", act: () => run("outdent") },
+    { label: "·|", sep: true },
+    { label: "Paragraph", title: "Plain paragraph", act: () => run("formatBlock", "p") },
+    { label: "Heading", title: "Section heading", act: () => run("formatBlock", "h3") },
+    { label: "⏶", title: "Clear formatting", act: () => run("removeFormat") },
+    { label: "—", title: "Horizontal rule", act: () => run("insertHorizontalRule") },
+  ];
+  for (const b of buttons) {
+    if (b.sep) { const s = document.createElement("span"); s.className = "rt-sep"; toolbar.appendChild(s); continue; }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = b.label;
+    if (b.cls) btn.className = b.cls;
+    btn.title = b.title || "";
+    // mousedown so the button never steals the caret from the editor before
+    // the command runs; click alone is not enough because focus follows mousedown.
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", b.act);
+    toolbar.appendChild(btn);
+  }
+
+  wrap.appendChild(toolbar);
+  wrap.appendChild(editor);
+  return {
+    wrap,
+    editor,
+    html: () => editor.innerHTML,
+    setHtml: (h) => { editor.innerHTML = sanitizeHtml(h); },
+    insertToken(token) {
+      editor.focus();
+      document.execCommand("insertText", false, token);
+    },
+    plainText: () => editor.innerText || editor.textContent || "",
+  };
 }
 
 // ── Custom outgoing-document templates ──
@@ -2489,7 +2618,7 @@ function renderTemplate(tpl, answers, provenance = {}) {
   const letter = String(tpl.body || "").replace(TEMPLATE_PLACEHOLDER_RE, (_, p) => {
     if (p === "_date") return today;
     const val = answers[p];
-    return (val == null || String(val).trim() === "") ? "(not provided)" : String(val).trim();
+    return (val == null || String(val).trim() === "") ? "(not provided)" : escapeHtml(String(val).trim());
   });
   return { letter, missing, sources };
 }
@@ -5223,7 +5352,9 @@ async function sendGuarded(ctx, roomId, op, payload) {
 }
 
 function sendGuardedOrWarn(ctx, roomId, op, payload) {
-  sendGuarded(ctx, roomId, op, payload).catch((e) => {
+  // Returns the promise so callers that need the change to be durable before
+  // they re-render (the kanban drop) can await it.
+  return sendGuarded(ctx, roomId, op, payload).catch((e) => {
     console.error("Refused to send unencrypted, or send failed:", e);
     toast("Couldn't securely save that change — nothing was sent to the server.", "warn");
   });
@@ -5258,16 +5389,18 @@ function saveLetter(ctx, roomId, text, template = null, about = {}) {
 // shadow this one (classic function-hoisting collision).
 function setDocStatus(ctx, doc, status) {
   const payload = { anchor: doc.id, path: "status", value: status };
-  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, doc.roomId, OP.DEF, payload);
-  else DemoStore.appendEvent(doc.roomId, OP.DEF, payload, ctx.currentUserId);
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, doc.roomId, OP.DEF, payload);
+  DemoStore.appendEvent(doc.roomId, OP.DEF, payload, ctx.currentUserId);
+  return Promise.resolve();
 }
 
 // Letter status changes ride the same DEF op as document status, keyed off
 // the letter record's id — one status channel per record type, same truth.
 function setLetterStatus(ctx, roomId, letterId, status) {
   const payload = { anchor: letterId, path: "status", value: status };
-  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
-  else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
+  DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+  return Promise.resolve();
 }
 
 // An admin edit (or regeneration) of a drafted letter is one DEF event on
@@ -5285,8 +5418,9 @@ function setLetterText(ctx, roomId, letterId, text) {
 // a generated letter's field set. Folded back out by collectPipelineData.
 function setCaseStatus(ctx, roomId, status) {
   const payload = { anchor: "case", path: "status", value: status };
-  if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
-  else DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.DEF, payload);
+  DemoStore.appendEvent(roomId, OP.DEF, payload, ctx.currentUserId);
+  return Promise.resolve();
 }
 
 function mediaFor(ctx) { return ctx.storeKind === "matrix" ? new MatrixMedia(ctx.client) : new DemoMedia(); }
@@ -5310,7 +5444,6 @@ function initAdminView({ onClose }) {
   let ctx = null;
   let searchQuery = "";
   let searchTimer = null;
-  let evalTimer = null;
   // Which applicant the Pipeline tab's single-submission (inbox detail) view
   // is showing, if any. Lives here — not on the div renderPipeline builds —
   // because that div is thrown away and rebuilt every renderActive() call,
@@ -5325,6 +5458,19 @@ function initAdminView({ onClose }) {
   // the Kanban tab is showing. Submissions is the default: it's the queue
   // of whole cases, which is what "processing" mostly means here.
   let kanbanBoard = "submissions";
+  // Fallback identity of the card being dragged. HTML5 drag-and-drop is
+  // reliable at setting text/plain in dragstart, but some browsers (Safari
+  // among them) hand the drop handler an empty dataTransfer — writing the
+  // key to a variable as well makes the drop resolve the card either way.
+  let kanbanDragKey = null;
+  // Every sign-in to the same office account reads the same rooms, but a
+  // dashboard left open on one device should also keep up with changes made
+  // on another. The live-update watcher already redraws on sync activity; a
+  // slow tick adds a safety net for rooms that arrive quietly (a submitter
+  // created a room while this device was mid-sync, a backfill token cleared)
+  // and guarantees the two devices converge even if an event slips past the
+  // watcher. Only ever does work while the dashboard is actually on screen.
+  let adminRefreshTimer = null;
   // Which answers the submission view shows: all, only spoken ones, only changed ones.
   let cardFilter = "all";
 
@@ -5413,33 +5559,12 @@ function initAdminView({ onClose }) {
       const letters = collectAllLetters(ctx);
       const filtered = letters.filter((l) => matchesQuery(`${l.applicantName} ${l.status} ${l.text}`, q));
       body.appendChild(renderLetters(filtered));
-    } else if (active === "eval") {
-      body.appendChild(renderEval());
     } else if (active === "access") {
       body.appendChild(renderAccessLog());
     } else if (active === "pipeline") {
       const pipelineData = collectPipelineData(ctx);
       body.appendChild(renderPipeline(pipelineData));
     }
-  }
-
-  // Retrieval Eval: exercise the same KnowledgeStore.retrieve()/.surface() calls
-  // the live assistant uses each turn, so an admin can sanity-check the memory
-  // folded into a question before applicants ever see it.
-  function knowledgeRow(rank, item) {
-    const row = $e("div", "mem");
-    const head = $e("div", null, `#${rank} · ${item.topic || "(untitled)"}`);
-    head.style.cssText = "font:600 12px Inter;margin-bottom:3px";
-    row.appendChild(head);
-    const text = $e("div", null, item.text || "");
-    text.style.cssText = "font-size:12px;color:var(--ink);line-height:1.5";
-    row.appendChild(text);
-    if (item.tags?.length) {
-      const tags = $e("div", null, item.tags.join(", "));
-      tags.style.cssText = "font-size:10.5px;color:var(--muted);margin-top:4px";
-      row.appendChild(tags);
-    }
-    return row;
   }
 
   // ── Access log ────────────────────────────────────────────────────────────
@@ -5639,73 +5764,6 @@ function initAdminView({ onClose }) {
     return wrap;
   }
 
-  function renderEval() {
-    const wrap = $e("div");
-    wrap.style.cssText = "display:flex;flex-direction:column;gap:16px";
-
-    const cfg = foldConfig(configStore.timeline());
-    // No fallback to DEFAULT_CONFIG here: an admin who deleted every question
-    // should see an empty eval, not the built-in ones back from the dead.
-    const fields = cfg.schema.fields;
-    // Always fold fresh from configStore rather than the (possibly stale, set
-    // only at boot) global `knowledge` — an admin editing Memory just above
-    // expects Retrieval Eval to reflect it immediately, not after a reload.
-    const kn = KnowledgeStore.fromJSON(cfg.knowledge);
-
-    const intro = $e("div", "atable-wrap");
-    intro.style.cssText = "padding:12px 16px";
-    const introText = $e("div", null, "Preview which knowledge items retrieve() / surface() would fold into the prompt — the same calls the live assistant makes each turn.");
-    introText.style.cssText = "font-size:12.5px;color:var(--muted);line-height:1.5";
-    intro.appendChild(introText);
-    wrap.appendChild(intro);
-
-    // Free-text query tester (surface()).
-    const testCard = $e("div", "atable-wrap");
-    testCard.style.cssText = "padding:14px 16px";
-    const label = $e("div", null, "Test a free-text query");
-    label.style.cssText = "font:600 12.5px Inter;margin-bottom:8px";
-    testCard.appendChild(label);
-    const input = document.createElement("input");
-    input.type = "search";
-    input.placeholder = 'e.g. "long hold times on the phone"';
-    input.style.cssText = "width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);margin-bottom:10px";
-    testCard.appendChild(input);
-    const resultsBox = $e("div");
-    testCard.appendChild(resultsBox);
-    function runSurface() {
-      resultsBox.innerHTML = "";
-      const query = input.value.trim();
-      if (!query) { resultsBox.appendChild($e("div", "aempty", "Type a query above to see which knowledge items surface() would retrieve.")); return; }
-      const { items } = kn.surface(query, { limit: 5 });
-      if (!items.length) { resultsBox.appendChild($e("div", "aempty", "No knowledge items match that query.")); return; }
-      items.forEach((it, i) => resultsBox.appendChild(knowledgeRow(i + 1, it)));
-    }
-    input.oninput = () => { clearTimeout(evalTimer); evalTimer = setTimeout(runSurface, 150); };
-    runSurface();
-    wrap.appendChild(testCard);
-
-    // Per-question retrieval preview (retrieve()), mirroring assemble()'s defaults.
-    const fieldsHead = $e("div", null, "Per-question retrieval");
-    fieldsHead.style.cssText = "font:600 13px Inter";
-    wrap.appendChild(fieldsHead);
-    for (const f of fields) {
-      const seed = f.help ? [{ topic: f.label, text: f.help }] : [];
-      const { items } = kn.retrieve(f, { budget: 700, seed });
-      const card = $e("div", "atable-wrap");
-      card.style.cssText = "padding:12px 16px";
-      const head = $e("div", null, `${f.label} `);
-      head.style.cssText = "font:600 12.5px Inter;margin-bottom:6px";
-      const pathTag = $e("span", "mono", f.path);
-      pathTag.style.cssText = "color:var(--muted);font-size:11px;font-weight:400;margin-left:6px";
-      head.appendChild(pathTag);
-      card.appendChild(head);
-      if (!items.length) card.appendChild($e("div", "aempty", "No knowledge item scores high enough to fold in for this field."));
-      else items.forEach((it, i) => card.appendChild(knowledgeRow(i + 1, it)));
-      wrap.appendChild(card);
-    }
-    return wrap;
-  }
-
   function viewBtn(d) {
     const btn = $e("button", "aview", "View");
     btn.onclick = () => previewDocument(d, mediaFor(ctx));
@@ -5722,22 +5780,46 @@ function initAdminView({ onClose }) {
 
   function renderTable(docs) {
     if (!docs.length) return $e("div", "aempty", docs.length === 0 && !searchQuery ? "No documents uploaded yet." : "No documents match your search.");
-    const wrap = $e("div", "atable-wrap");
-    const table = document.createElement("table"); table.className = "atable";
-    table.innerHTML = "<thead><tr><th>Applicant</th><th>Document</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Status</th><th></th></tr></thead>";
-    const tbody = document.createElement("tbody");
+    const wrap = $e("div");
+    wrap.style.cssText = "display:flex;flex-direction:column;gap:14px";
+
+    // Organized by submitter: each family's documents sit under their own
+    // header, so "what did this family send us" is answered in one place.
+    const bySubmitter = new Map();
     for (const d of docs) {
-      const tr = document.createElement("tr");
-      tr.appendChild($e("td", "acell-name", d.applicantName));
-      tr.appendChild($e("td", "acell-doc", d.filename));
-      tr.appendChild($e("td", "acell-mime mono", d.mimetype));
-      tr.appendChild($e("td", "acell-size mono", fmtBytes(d.size)));
-      tr.appendChild($e("td", "acell-date mono", fmtDate(d.uploadedAt)));
-      const statusTd = document.createElement("td"); statusTd.appendChild(statusSelect(d)); tr.appendChild(statusTd);
-      const actionTd = document.createElement("td"); actionTd.appendChild(viewBtn(d)); tr.appendChild(actionTd);
-      tbody.appendChild(tr);
+      const key = d.applicantName || d.roomId;
+      if (!bySubmitter.has(key)) bySubmitter.set(key, []);
+      bySubmitter.get(key).push(d);
     }
-    table.appendChild(tbody); wrap.appendChild(table);
+
+    for (const [submitter, familyDocs] of bySubmitter) {
+      const group = $e("div", "atable-wrap");
+      const head = $e("div");
+      head.style.cssText = "display:flex;align-items:baseline;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--wash)";
+      const name = $e("span", null, submitter);
+      name.style.cssText = "font:600 13.5px Fraunces,Georgia,serif;color:var(--ink)";
+      head.appendChild(name);
+      const count = $e("span", "mono", `${familyDocs.length} document${familyDocs.length === 1 ? "" : "s"}`);
+      count.style.cssText = "font-size:10.5px;color:var(--muted)";
+      head.appendChild(count);
+      group.appendChild(head);
+
+      const table = document.createElement("table"); table.className = "atable";
+      table.innerHTML = "<thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Status</th><th></th></tr></thead>";
+      const tbody = document.createElement("tbody");
+      for (const d of familyDocs) {
+        const tr = document.createElement("tr");
+        tr.appendChild($e("td", "acell-doc", d.filename));
+        tr.appendChild($e("td", "acell-mime mono", d.mimetype));
+        tr.appendChild($e("td", "acell-size mono", fmtBytes(d.size)));
+        tr.appendChild($e("td", "acell-date mono", fmtDate(d.uploadedAt)));
+        const statusTd = document.createElement("td"); statusTd.appendChild(statusSelect(d)); tr.appendChild(statusTd);
+        const actionTd = document.createElement("td"); actionTd.appendChild(viewBtn(d)); tr.appendChild(actionTd);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody); group.appendChild(table);
+      wrap.appendChild(group);
+    }
     return wrap;
   }
 
@@ -5847,13 +5929,21 @@ function initAdminView({ onClose }) {
       col.appendChild(head);
       const list = $e("div", "klist");
       list.dataset.status = s.key;
-      list.addEventListener("dragover", (e) => { e.preventDefault(); list.classList.add("over"); });
+      list.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        list.classList.add("over");
+      });
       list.addEventListener("dragleave", () => list.classList.remove("over"));
-      list.addEventListener("drop", (e) => {
+      list.addEventListener("drop", async (e) => {
         e.preventDefault(); list.classList.remove("over");
-        const [roomId, id] = (e.dataTransfer.getData("text/plain") || "").split("::");
+        const raw = e.dataTransfer?.getData("text/plain") || kanbanDragKey || "";
+        const [roomId, id] = raw.split("::");
         const d = docs.find((x) => x.roomId === roomId && x.id === id);
-        if (d && d.status !== s.key) { setDocStatus(ctx, d, s.key); renderActive(); }
+        if (d && d.status !== s.key) {
+          await setDocStatus(ctx, d, s.key);
+          renderActive();
+        }
       });
       for (const d of docs.filter((x) => x.status === s.key)) list.appendChild(kanbanCard(d));
       col.appendChild(list);
@@ -5865,7 +5955,14 @@ function initAdminView({ onClose }) {
   function kanbanCard(d) {
     const card = $e("div", "kcard");
     card.draggable = true;
-    card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", `${d.roomId}::${d.id}`));
+    card.addEventListener("dragstart", (e) => {
+      if (e.dataTransfer) {
+        e.dataTransfer.setData("text/plain", `${d.roomId}::${d.id}`);
+        e.dataTransfer.effectAllowed = "move";
+      }
+      kanbanDragKey = `${d.roomId}::${d.id}`;
+    });
+    card.addEventListener("dragend", () => { kanbanDragKey = null; });
     card.appendChild($e("div", "kname", d.filename));
     card.appendChild($e("div", "kapp", d.applicantName));
     const meta = $e("div", "kmeta"); meta.textContent = `${fmtBytes(d.size)} · ${fmtDate(d.uploadedAt)}`;
@@ -5906,17 +6003,32 @@ function initAdminView({ onClose }) {
       head.appendChild($e("span", "kcount", String(items.filter((x) => statusOf(x) === s.key).length)));
       col.appendChild(head);
       const list = $e("div", "klist");
-      list.addEventListener("dragover", (e) => { e.preventDefault(); list.classList.add("over"); });
+      list.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        list.classList.add("over");
+      });
       list.addEventListener("dragleave", () => list.classList.remove("over"));
-      list.addEventListener("drop", (e) => {
+      list.addEventListener("drop", async (e) => {
         e.preventDefault(); list.classList.remove("over");
-        const it = items.find((x) => keyOf(x) === (e.dataTransfer.getData("text/plain") || ""));
-        if (it && statusOf(it) !== s.key) { onDrop(it, s.key); renderActive(); }
+        const key = e.dataTransfer?.getData("text/plain") || kanbanDragKey || "";
+        const it = items.find((x) => keyOf(x) === key);
+        if (it && statusOf(it) !== s.key) {
+          await onDrop(it, s.key);
+          renderActive();
+        }
       });
       for (const it of items.filter((x) => statusOf(x) === s.key)) {
         const card = cardOf(it);
         card.draggable = true;
-        card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", keyOf(it)));
+        card.addEventListener("dragstart", (e) => {
+          if (e.dataTransfer) {
+            e.dataTransfer.setData("text/plain", keyOf(it));
+            e.dataTransfer.effectAllowed = "move";
+          }
+          kanbanDragKey = keyOf(it);
+        });
+        card.addEventListener("dragend", () => { kanbanDragKey = null; });
         list.appendChild(card);
       }
       col.appendChild(list);
@@ -5950,7 +6062,11 @@ function initAdminView({ onClose }) {
         card.appendChild(open);
         return card;
       },
-      (p, status) => { setCaseStatus(ctx, p.roomId, status); toast(`${p.applicantName} moved to ${CASE_STATUSES.find((s) => s.key === status)?.label}`, "success"); },
+      (p, status) => {
+        const sent = setCaseStatus(ctx, p.roomId, status);
+        toast(`${p.applicantName} moved to ${CASE_STATUSES.find((s) => s.key === status)?.label}`, "success");
+        return sent;
+      },
       "No submissions yet — cases appear here as constituents answer questions.",
     );
   }
@@ -5972,7 +6088,11 @@ function initAdminView({ onClose }) {
         card.appendChild(open);
         return card;
       },
-      (l, status) => { setLetterStatus(ctx, l.roomId, l.id, status); toast(`Letter moved to ${LETTER_STATUSES.find((s) => s.key === status)?.label}`, "success"); },
+      (l, status) => {
+        const sent = setLetterStatus(ctx, l.roomId, l.id, status);
+        toast(`Letter moved to ${LETTER_STATUSES.find((s) => s.key === status)?.label}`, "success");
+        return sent;
+      },
       "No letters yet — generate drafts from the Letters tab.",
     );
   }
@@ -6432,19 +6552,28 @@ function initAdminView({ onClose }) {
     $("letterTitle").textContent = (l.templateName || "Complaint draft") + " — " + l.applicantName;
     const editedNote = l.editedAt ? ` · edited ${fmtDate(l.editedAt)} by ${l.editedBy || "?"}` : "";
     $("letterPath").textContent = `Generated ${fmtDate(l.generatedAt)}${editedNote} · ${tr.missing.length} required field(s) still empty`;
-    const body = $("letterBody");
-    body.value = l.text || tr.letter;
+
+    // The WYSIWYG editor is built fresh on every open (the modal is reused,
+    // and its state must not leak between letters). The stored letter and the
+    // freshly traced draft are both HTML; a legacy plain-text letter still
+    // shows fine because the editor renders with pre-wrap.
+    const holder = $("letterEditor");
+    holder.innerHTML = "";
+    const editor = makeRichEditor(l.text || tr.letter);
+    holder.appendChild(editor.wrap);
+
     const btn = $("letterCopy");
     btn.onclick = () => {
-      navigator.clipboard?.writeText(body.value);
+      navigator.clipboard?.writeText(editor.plainText());
       toast("Draft copied to clipboard", "success");
     };
-    // Save edits: the textarea IS the editor. One DEF on the letter's anchor
-    // per save — the generated original stays in the INS record untouched.
+    // Save edits: one DEF on the letter's anchor per save — the generated
+    // original stays in the INS record untouched.
     const save = $("letterSave");
     save.onclick = () => {
-      if (body.value === (l.text || tr.letter)) { toast("No edits to save", "warn"); return; }
-      setLetterText(ctx, l.roomId, l.id, body.value);
+      const html = sanitizeHtml(editor.html());
+      if (html === sanitizeHtml(l.text || tr.letter)) { toast("No edits to save", "warn"); return; }
+      setLetterText(ctx, l.roomId, l.id, html);
       toast("Edits saved — the original generated text stays in the timeline", "success");
       m.classList.remove("on");
       setTimeout(() => renderActive(), 400);
@@ -6456,7 +6585,7 @@ function initAdminView({ onClose }) {
     regen.style.display = "";
     regen.onclick = () => {
       const rebuilt = tr.letter;
-      if (rebuilt === body.value) { toast("No changes — draft is already current", "warn"); return; }
+      if (rebuilt === sanitizeHtml(editor.html())) { toast("No changes — draft is already current", "warn"); return; }
       if (!confirm("Rebuild this draft from the current answers? Manual edits in the text will be replaced (they stay recoverable in the room timeline).")) return;
       setLetterText(ctx, l.roomId, l.id, rebuilt);
       toast("Draft regenerated from current answers", "success");
@@ -6532,8 +6661,9 @@ function initAdminView({ onClose }) {
     card.appendChild(top);
 
     const tr = traceFor(l.roomId, l.templateId);
-    const preview = $e("pre", "letter-preview", (l.text || tr.letter).slice(0, 260));
-    preview.style.cssText = "white-space:pre-wrap;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin:0 0 10px;max-height:110px;overflow:hidden";
+    const preview = $e("div", "letter-preview rich-body");
+    preview.innerHTML = sanitizeHtml(l.text || tr.letter);
+    preview.style.cssText = "color:var(--ink);margin:0 0 10px;max-height:150px;overflow:hidden;border:1px solid var(--line);border-radius:7px;padding:10px 12px;background:var(--wash)";
     card.appendChild(preview);
 
     const actions = $e("div");
@@ -6563,7 +6693,33 @@ function initAdminView({ onClose }) {
       return wrap;
     }
     wrap.appendChild(letterGenerator());
-    for (const l of letters) wrap.appendChild(letterCard(l));
+    if (!letters.length) {
+      wrap.appendChild($e("div", "aempty", "No drafts generated yet. Pick an applicant above to write the first one."));
+      return wrap;
+    }
+    // Grouped by submitter so one family's review queue is one place, and
+    // the status ladder is read per family rather than across a wall of cards.
+    const bySubmitter = new Map();
+    for (const l of letters) {
+      const key = l.applicantName || l.roomId;
+      if (!bySubmitter.has(key)) bySubmitter.set(key, []);
+      bySubmitter.get(key).push(l);
+    }
+    for (const [submitter, ls] of bySubmitter) {
+      const group = $e("div");
+      group.style.cssText = "display:flex;flex-direction:column;gap:8px";
+      const head = $e("div");
+      head.style.cssText = "display:flex;align-items:baseline;gap:8px;margin-top:2px";
+      const name = $e("span", null, submitter);
+      name.style.cssText = "font:600 14px Fraunces,Georgia,serif;color:var(--ink)";
+      head.appendChild(name);
+      const count = $e("span", "mono", `${ls.length} draft${ls.length === 1 ? "" : "s"}`);
+      count.style.cssText = "font-size:10.5px;color:var(--muted)";
+      head.appendChild(count);
+      group.appendChild(head);
+      for (const l of ls) group.appendChild(letterCard(l));
+      wrap.appendChild(group);
+    }
     return wrap;
   }
 
@@ -6653,12 +6809,15 @@ function initAdminView({ onClose }) {
     nameInput.style.cssText = "border:1px solid var(--line);border-radius:7px;padding:7px 10px;font:600 13px Inter;background:var(--surface);color:var(--ink)";
     box.appendChild(nameInput);
 
-    const bodyInput = document.createElement("textarea");
-    bodyInput.spellcheck = false;
-    bodyInput.placeholder = "Dear {{complainant_name}},\n\nWe received your submission on {{_date}} regarding your child ({{child_1_initials}})…";
-    bodyInput.value = tpl?.body || "";
-    bodyInput.style.cssText = "width:100%;min-height:220px;resize:vertical;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface);color:var(--ink)";
-    box.appendChild(bodyInput);
+    const bodyInput = makeRichEditor(tpl?.body || "");
+    // The WYSIWYG surface can't show a placeholder hint the way a textarea
+    // could, so an empty template gets a starter paragraph the admin can
+    // replace or format.
+    if (!bodyInput.editor.textContent?.trim()) {
+      bodyInput.setHtml("<p>Dear {{complainant_name}},</p><p></p><p>We received your submission on {{_date}} regarding your child ({{child_1_initials}}).</p>");
+    }
+    bodyInput.wrap.style.cssText = "min-width:0";
+    box.appendChild(bodyInput.wrap);
 
     // Placeholder palette: every schema field path, click to insert at the
     // caret — no need to remember or retype exact paths.
@@ -6673,13 +6832,7 @@ function initAdminView({ onClose }) {
       const chip = $e("button", "mono", `{{${o.path}}}`);
       chip.title = o.label;
       chip.style.cssText = "border:1px solid var(--line);border-radius:5px;background:var(--wash);font-size:9.5px;padding:2px 6px;cursor:pointer;color:var(--ink)";
-      chip.onclick = () => {
-        const at = bodyInput.selectionStart ?? bodyInput.value.length;
-        const token = `{{${o.path}}}`;
-        bodyInput.value = bodyInput.value.slice(0, at) + token + bodyInput.value.slice(bodyInput.selectionEnd ?? at);
-        bodyInput.focus();
-        bodyInput.selectionStart = bodyInput.selectionEnd = at + token.length;
-      };
+      chip.onclick = () => { bodyInput.insertToken(`{{${o.path}}}`); };
       palette.appendChild(chip);
     }
     box.appendChild(palette);
@@ -6690,9 +6843,9 @@ function initAdminView({ onClose }) {
     save.style.cssText += ";border-color:var(--seal);color:var(--seal);font-weight:600";
     save.onclick = () => {
       const name = nameInput.value.trim();
-      const body = bodyInput.value;
+      const body = sanitizeHtml(bodyInput.html());
       if (!name) { toast("Give the template a name", "warn"); return; }
-      if (!body.trim()) { toast("The template body is empty", "warn"); return; }
+      if (!bodyInput.editor.textContent?.trim()) { toast("The template body is empty", "warn"); return; }
       putTemplate(configStore, { id: tpl?.id || newId("tpl"), name, body });
       tplEditing = null;
       toast(`Template "${name}" saved`, "success");
@@ -6756,6 +6909,12 @@ function initAdminView({ onClose }) {
         // Pull in the older half of every submission, then redraw with it.
         MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
         watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
+        // Slow cross-device convergence tick — see adminRefreshTimer above.
+        clearInterval(adminRefreshTimer);
+        adminRefreshTimer = setInterval(() => {
+          if (!isAdminViewOpen() || !ctx?.client) return;
+          MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+        }, 12000);
       }
     },
     // Called by the live-update watcher below. Rendering the admin surface is
