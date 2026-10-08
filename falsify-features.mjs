@@ -519,6 +519,37 @@ await page.waitForTimeout(1200);
   check("accepted proposals are applied on the next read", r.after.length > 0 && r.after.every((x) => x.known));
 }
 
+// 9i2. the lesson loop re-derives every other reading, recursively, TRACKING the
+//      machine's changes and never touching a person's pinned text or kind
+{
+  const r = await page.evaluate(async () => {
+    const before = configStore;
+    const records = {
+      // one active key lesson and one confirmed kind signature
+      key_child_1_name: { entity: "doc_key", attrs: { label: "Child Name", status: "active", kind: "form", at: "" } },
+      kind_form: { entity: "doc_kind", attrs: { name: "form", tokens: ["family", "court", "child"], count: 2, source: "confirmed" } },
+    };
+    configStore = { roomId: "!cfg", fold: () => ({ records }), emit: () => {} };
+    const human = { id: "d1", roomId: "!a:hs", ocrText: "Family court\nChild Name: Ana\nChild 2 Name: Bo", ocrKind: "edited", docKind: "form", docKindAssertedBy: "@j:hs", ocrFields: [], ocrRelevant: [], ocrIgnored: null };
+    const machine = { id: "d2", roomId: "!a:hs", ocrText: "Family court\nChild Name: Ana", docKind: null, ocrFields: null, ocrRelevant: [], ocrIgnored: null };
+    const writes = [];
+    const n = await reapplyLessonsEverywhere([human, machine], (d, patch) => writes.push({ id: d.id, patch }), { source: "test" });
+    configStore = before;
+    const h = writes.find((x) => x.id === "d1");
+    const m = writes.find((x) => x.id === "d2");
+    return {
+      n,
+      humanKindPinned: !h || h.patch.docKind === undefined,
+      machineKindLearned: !!m && m.patch.docKind === "form",
+      machineFieldsKnown: !!m && (m.patch.ocrFields || []).some((f) => f.label === "Child Name" && f.known),
+      tracked: !!m && m.patch.ocrDerivedBy === "machine" && Array.isArray(m.patch.ocrDerivedHistory) && m.patch.ocrDerivedHistory.length === 1,
+    };
+  });
+  check("a person's pinned kind survives the recursive re-derive", r.humanKindPinned);
+  check("machine readings are re-classified and re-keyed", r.machineKindLearned && r.machineFieldsKnown, JSON.stringify(r));
+  check("machine alterations are tracked, attributable and bounded", r.tracked && r.n <= 4);
+}
+
 // 9j. grid forms: header row -> columns; each row binds to them
 {
   const r = await page.evaluate(() => {

@@ -38,8 +38,10 @@ const looksLikeStamp = (n) => /[A-Za-z]/.test(n) && !/[.!?]$/.test(n);
 const STAMP = /\b(view only|confidential|draft|sample|copy|watermark|proof|do not (copy|distribute)|uncontrolled)\b/i;
 
 /** planIgnores(text, { pages }) -> { ignored, kept, removed, rule }.
- *  Blanks ignored lines length-preservingly and mints one falsifiable rule. */
-export function planIgnores(text, { pages = 1 } = {}) {
+ *  Blanks ignored lines length-preservingly and mints one falsifiable rule.
+ *  `dry` computes the same without minting — a re-derive pass applies the
+ *  standing rules to every reading and must not mint one per reading. */
+export function planIgnores(text, { pages = 1, dry = false } = {}) {
   const lines = String(text || '').split('\n');
   const counts = new Map();
   lines.forEach((l) => { const n = norm(l); if (isShortLine(n)) counts.set(n, (counts.get(n) || 0) + 1); });
@@ -58,6 +60,6 @@ export function planIgnores(text, { pages = 1 } = {}) {
   const kept = lines.map(l => blank.has(norm(l)) ? ' '.repeat(l.length) : l).join('\n');
   // MINT the falsifiable rule tschichold would: what recurs is furniture.
   const rule = { schema: 'IgnoreRule@1', id: 'ig' + Date.now().toString(36), at: new Date().toISOString(), kind: 'recurring-line', primitive: 'templateLines', table: ignored.map(x => x.text).slice(0, 20), evidence: ignored[0].evidence, claim: 'a line that recurs in a document is furniture, not material', falsifier: 'a recurring line a person confirms is material (e.g. a required form field) falsifies this rule', standing: 'disclosed' };
-  try { const a = rules(); a.push(rule); localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {}
-  return { ignored, kept, removed: ignored.length, rule };
+  if (!dry) { try { const a = rules(); a.push(rule); localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} }
+  return { ignored, kept, removed: ignored.length, rule: dry ? null : rule };
 }
