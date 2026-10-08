@@ -778,10 +778,6 @@ mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .ib-progress{height:5px;border-radius:99px;background:var(--wash);overflow:hidden;margin-top:6px}
 .ib-progress i{display:block;height:100%;background:var(--seal);border-radius:99px}
 .ib-pct{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);margin-left:auto}
-.docview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
-@media(max-width:720px){.docview{grid-template-columns:1fr}}
-.docview-native{min-width:0}
-.docview-text{min-width:0}
 .docsurface{width:100%}
 .ds-tabs{display:flex;gap:6px;align-items:center;margin-bottom:8px}
 .ds-tab{font:500 11px Inter;padding:3px 10px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
@@ -794,6 +790,8 @@ mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .ds-span.ignored{color:var(--muted);text-decoration:line-through;opacity:.45}
 .ds-span:hover{background:rgba(46,111,94,.12)}
 .ds-span::selection{background:rgba(46,111,94,.35)}
+.ds-flat{position:relative;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);font-size:13px;line-height:1.5;cursor:text}
+.ds-flat.editing{background:rgba(182,122,46,.08);outline:1px dashed var(--turn)}
 .afile{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px;min-width:0}
 .afile-icon{font-size:16px;flex:none}
 .afile-main{flex:1;min-width:0}
@@ -4177,20 +4175,12 @@ function closeDoc() {
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDoc(); });
 
-// A file that was read is shown two ways at once: its native format (the
-// image, the video) and its transcription, side by side. Sources stay separate
-// — the transcription belongs to this one file.
-function docTranscriptView(nativeEl, doc) {
-  const wrap = $e("div", "docview");
-  const left = $e("div", "docview-native"); left.appendChild(nativeEl);
-  const right = $e("div", "docview-text"); right.appendChild(ocrPanel(doc, {}));
-  wrap.append(left, right);
-  return wrap;
-}
-
-// A file that was read, with its text laid back ON the page in the same
-// geography it was read from: selectable, editable, and in a second view the
-// same positioned text alone. `onSaveText(text, pages)` persists an edit.
+// A file that was read, shown ONE way at a time. The page (the image with its
+// text laid back on it in the same geography it was read from — selectable,
+// editable) or the text alone at those same positions. A reading with no
+// measured positions (an old doc, or an eye that stored only a flat string)
+// still shows one view: the page alone, or the plain text. `onSaveText(text,
+// pages)` persists an edit.
 function docSurface(doc, nativeEl, onSaveText) {
   const pages = Array.isArray(doc.ocrPages) && doc.ocrPages.length ? doc.ocrPages : [{ page: 1, width: doc.width || 1000, height: doc.height || 1000, text: doc.ocrText || "", elements: [] }];
   const wrap = $e("div", "docsurface");
@@ -4210,34 +4200,45 @@ function docSurface(doc, nativeEl, onSaveText) {
   const save = () => {
     if (!onSaveText) return;
     const p = pages[0];
-    p.text = (p.elements || []).map((e) => e.text).join("\n");
+    if ((p.elements || []).length) p.text = p.elements.map((e) => e.text).join("\n");
     onSaveText(p.text, pages);
   };
   function draw() {
     stage.innerHTML = "";
     const p = pages[0];
     const W = p.width || 1000, H = p.height || 1000;
+    const hasPos = (p.elements || []).some((e) => e.region);
     const boxW = stage.clientWidth || 760;
     const scale = boxW / W;
-    stage.style.height = (H * scale) + "px";
+    if (mode === "page" || hasPos) stage.style.height = (H * scale) + "px";
+    else stage.style.height = "auto";
     if (mode === "page") {
       nativeEl.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill";
       stage.appendChild(nativeEl);
     }
-    for (const el of (p.elements || [])) {
-      const r = el.region; if (!r) continue;
-      const sp = document.createElement("span");
-      const ignored = Array.isArray(doc.ocrIgnored) && doc.ocrIgnored.some((x) => x.trim() === String(el.text).trim());
-      sp.className = "ds-span" + (editing ? " editing" : "") + (mode === "text" ? " textonly" : "") + (ignored ? " ignored" : "");
-      if (ignored) sp.title = "Furniture — ignored (a running head/footer, boilerplate, or a watermark)";
-      sp.textContent = el.text;
-      sp.style.left = (r[0] * scale) + "px";
-      sp.style.top = (r[1] * scale) + "px";
-      sp.style.minWidth = (r[2] * scale) + "px";
-      sp.style.fontSize = Math.max(7, r[3] * scale * 0.82) + "px";
-      sp.contentEditable = editing ? "true" : "false";
-      sp.addEventListener("blur", () => { el.text = sp.textContent; save(); });
-      stage.appendChild(sp);
+    if (hasPos) {
+      for (const el of p.elements) {
+        const r = el.region; if (!r) continue;
+        const sp = document.createElement("span");
+        const ignored = Array.isArray(doc.ocrIgnored) && doc.ocrIgnored.some((x) => x.trim() === String(el.text).trim());
+        sp.className = "ds-span" + (editing ? " editing" : "") + (mode === "text" ? " textonly" : "") + (ignored ? " ignored" : "");
+        if (ignored) sp.title = "Furniture — ignored (a running head/footer, boilerplate, or a watermark)";
+        sp.textContent = el.text;
+        sp.style.left = (r[0] * scale) + "px";
+        sp.style.top = (r[1] * scale) + "px";
+        sp.style.minWidth = (r[2] * scale) + "px";
+        sp.style.fontSize = Math.max(7, r[3] * scale * 0.82) + "px";
+        sp.contentEditable = editing ? "true" : "false";
+        sp.addEventListener("blur", () => { el.text = sp.textContent; save(); });
+        stage.appendChild(sp);
+      }
+    } else if (mode === "text") {
+      // No measured positions on record: the text alone, editably, as the one view.
+      const flat = $e("div", "ds-flat" + (editing ? " editing" : ""));
+      flat.textContent = p.text || doc.ocrText || "";
+      flat.contentEditable = editing ? "true" : "false";
+      flat.addEventListener("blur", () => { p.text = flat.textContent; save(); });
+      stage.appendChild(flat);
     }
     pageTab.classList.toggle("on", mode === "page");
     textTab.classList.toggle("on", mode === "text");
@@ -4271,10 +4272,9 @@ async function previewDocument(doc, media, opts = {}) {
     const mime = doc.mimetype || "";
     if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
-      // The text laid back on the page, positioned, selectable, editable —
-      // alongside the plain text view.
-      if (Array.isArray(doc.ocrPages) && doc.ocrPages.length) body.appendChild(docSurface(doc, img, opts.onSaveText));
-      else body.appendChild(docTranscriptView(img, doc));
+      // One view at a time: the page with its positioned, selectable text, or
+      // the text alone at those same positions.
+      body.appendChild(docSurface(doc, img, opts.onSaveText));
     } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
       body.appendChild(frame);
@@ -4282,8 +4282,8 @@ async function previewDocument(doc, media, opts = {}) {
       const player = document.createElement("video");
       player.controls = true; player.src = objUrl;
       player.style.cssText = "width:100%;display:block;margin:4px 0;max-height:60vh";
-      // The video, beside the text transcribed from its frames.
-      body.appendChild(docTranscriptView(player, doc));
+      // One view at a time: the video, or the text transcribed from its frames.
+      body.appendChild(docSurface(doc, player, opts.onSaveText));
     } else if (mime.startsWith("audio/")) {
       const player = document.createElement("audio");
       player.controls = true; player.src = objUrl;
@@ -6699,10 +6699,21 @@ function initAdminView({ onClose }) {
   const ocrQueue = [];
   const ocrQueued = new Set();   // attempted this session — never retried in a loop
   let ocrQueueRunning = false;
+  // A document wants (re)reading when it is readable media and either was never
+  // read, or was read but has no positioned reading on record. The latter is a
+  // legacy doc (read before positions were kept) — re-reading it lays the text
+  // back on the page. `ocrStatus` empty/failed means a read already decided this
+  // device gets nothing useful out of it; don't spin on that.
+  function wantsReading(d) {
+    if (!isReadableMedia(d)) return false;
+    if (d.ocrStatus === "empty" || d.ocrStatus === "failed") return false;
+    if (!d.ocrText) return true;
+    return isImageDoc(d) && !(Array.isArray(d.ocrPages) && d.ocrPages.length);
+  }
   function enqueueUnreadImages() {
     let added = false;
     for (const d of collectAllDocuments(ctx)) {
-      if (!isReadableMedia(d) || d.ocrText || d.ocrStatus === "empty" || d.ocrStatus === "failed") continue;
+      if (!wantsReading(d)) continue;
       if (ocrQueued.has(d.id)) continue;
       ocrQueued.add(d.id);
       ocrQueue.push(d);
@@ -7774,7 +7785,20 @@ function initAdminView({ onClose }) {
     }
     const pull = $e("button", "aview", "Pull uploads & parse");
     pull.onclick = () => { induceDocKinds([]); toast("Parsed the uploads", "success"); renderActive(); };
-    btns.append(drop, pull);
+    const cbtn = $e("button", "aview", "Load corpus");
+    cbtn.title = "Learn from the local corpus (run: node corpus/fetch.mjs)";
+    cbtn.onclick = async () => {
+      try {
+        const man = await (await fetch("corpus/manifest.json", { cache: "no-cache" })).json();
+        const blocks = [];
+        for (const doc of (man.documents || [])) {
+          try { const t = await (await fetch("corpus/" + doc.file.replace(/^corpus\//, ""), { cache: "no-cache" })).text(); if (t) blocks.push({ name: doc.kind || "form", text: t }); } catch (e) {}
+        }
+        if (!blocks.length) { toast("Corpus empty — run: node corpus/fetch.mjs", "warn"); return; }
+        induceDocKinds(blocks); toast("Learned from " + blocks.length + " corpus items", "success"); renderActive();
+      } catch (e) { toast("No corpus yet — run: node corpus/fetch.mjs", "warn"); }
+    };
+    btns.append(drop, pull, cbtn);
     head.appendChild(btns);
     const ig = $e("div", "da-ignore");
     ig.appendChild($e("span", "da-flabel", "ignore"));
@@ -9973,6 +9997,26 @@ function renderDocs() {
   list.querySelectorAll(".doc:not(.pending)").forEach((n) => n.remove());
   $("docsCount").textContent = docs.length ? String(docs.length) : "";
   for (const d of docs.reverse()) list.appendChild(docRow(d));
+  backfillPositions();
+}
+
+// On refresh, a family document read before positions were kept was stored as
+// flat text only — it opens in the single-view surface, but with no geography
+// to lay the text back on. Re-read it once, quietly, so its text can be shown
+// at the pixel positions it was read from. Each document is attempted at most
+// once per session (the `_posBackfilled` guard), and only when the device can
+// actually run the reader.
+const _posBackfilled = new Set();
+function backfillPositions() {
+  if (!store || !ocrReady() || !ocrAutoAllowed()) return;
+  for (const [id, r] of Object.entries(store.fold().records)) {
+    if (r.entity !== "document") continue;
+    const d = { id, ...r.attrs };
+    if (!isImageDoc(d) || !d.ocrText || (Array.isArray(d.ocrPages) && d.ocrPages.length)) continue;
+    if (_posBackfilled.has(id)) continue;
+    _posBackfilled.add(id);
+    autoReadDoc(d, mediaBackend(), submitterDocEmit, meId());
+  }
 }
 
 // Re-emits OP.INS for the same document id with updated attrs — INS is
@@ -10532,7 +10576,12 @@ function commitOcr(emit, doc, patch) {
   const next = patch.ocrText != null ? patch.ocrText : cur;
   const statusChanged = patch.ocrStatus && patch.ocrStatus !== doc.ocrStatus;
   const kindChanged = patch.imageKind != null && patch.imageKind !== doc.imageKind;
-  if (next === cur && !statusChanged && !kindChanged) return false;
+  // A positioned reading is new information even when the text is identical:
+  // a doc read before positions were kept gets its geography written, so it can
+  // be laid back on the page. Re-reading it must not be silently dropped by the
+  // unchanged-text guard below.
+  const pagesChanged = patch.ocrPages != null && JSON.stringify(patch.ocrPages) !== JSON.stringify(doc.ocrPages || null);
+  if (next === cur && !statusChanged && !kindChanged && !pagesChanged) return false;
   const attrs = docAttrsForWrite(doc);
   if (patch.ocrText != null && next !== cur && cur) {
     attrs.ocrHistory = [...(doc.ocrHistory || []), { text: doc.ocrText, kind: doc.ocrKind || "ocr", at: doc.ocrAt || null, by: doc.ocrBy || null }].slice(-20);
