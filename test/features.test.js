@@ -81,6 +81,26 @@ test("childIndicesFromAnswers counts every child named, mid-interview included",
   assert.deepEqual(Array.from(kids({})), []);
 });
 
+test("editField records nothing when the value is unchanged (no duplicate steps)", () => {
+  const engine = loadEngine();
+  const events = [];
+  const store = {
+    timeline: () => events,
+    fold: () => engine.fold(events),
+    emit: (op, payload) => { const ev = { id: "e" + events.length, op, payload, at: "2026-01-01T00:00:00.000Z", by: "@fam:local" }; events.push(ev); return ev; },
+  };
+  const intake = new engine.Intake({ schema: engine.SCHEMA, store, model: {}, anchor: "applicant", lang: "en" });
+  store.emit(engine.OP.DEF, { anchor: "applicant", path: "complainant_name", value: "Nora", source: null, inputKind: "typed", voiceClipId: null });
+  const before = events.length;
+  const same = intake.editField("complainant_name", "Nora");
+  assert.equal(same.ok, true);
+  assert.equal(same.unchanged, true);
+  assert.equal(events.length, before, "opening the editor and saving the same value leaves no event");
+  const diff = intake.editField("complainant_name", "Nora Alvarez");
+  assert.equal(diff.ok, true);
+  assert.equal(events.length, before + 1, "a genuine change is exactly one new step");
+});
+
 test("the child round's schema makes the fork explicit and one-child-at-a-time", () => {
   const engine = loadEngine();
   const r2 = engine.childRoundFields(2);
@@ -94,3 +114,4 @@ test("the child round's schema makes the fork explicit and one-child-at-a-time",
   assert.equal(dob.type, "date_flex");
   assert.match(dob.help, /however you remember it/i);
 });
+

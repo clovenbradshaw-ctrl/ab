@@ -397,7 +397,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
    and a long answer list doesn't get stuck at a fixed pixel cap. flex-basis
    0 makes the ratio hold regardless of either card's actual content. */
 .rail .card.rail-4{flex:4 1 0;min-height:0;display:flex;flex-direction:column}
-.rail .card.rail-1{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+.rail .card.rail-1{flex:1 1 0;min-height:min(240px,42vh);display:flex;flex-direction:column}
 .check{list-style:none;margin:0;padding:4px;overflow-y:auto;scrollbar-width:thin}
 .rail-4 .check{flex:1;min-height:0}
 .check li{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:7px;cursor:pointer;transition:background .12s ease}
@@ -429,13 +429,14 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .foot code{font-family:"IBM Plex Mono",monospace;background:var(--surface);border:1px solid var(--line);padding:1px 4px;border-radius:3px;font-size:10px}
 
 /* Docs */
-.docs-drop{margin:6px 8px;padding:12px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:var(--wash);transition:border-color .15s ease,background .15s ease;flex:none}
+.docs-drop{margin:6px 8px;padding:8px 10px;border:1.5px dashed var(--line);border-radius:9px;text-align:center;background:var(--wash);transition:border-color .15s ease,background .15s ease;flex:none}
 .docs-drop.over{border-color:var(--seal);background:var(--seal-soft)}
 .docs-drop p{margin:0 0 3px;font-size:11.5px;color:var(--muted)}
 .docs-drop p:last-child{margin-bottom:0;font-size:10.5px}
 .docs-drop button{font:inherit;font-size:inherit;color:var(--seal);background:none;border:none;padding:0;text-decoration:underline;cursor:pointer}
-.docs-list{list-style:none;margin:0;padding:0 8px 6px;overflow-y:auto;scrollbar-width:thin}
+.docs-list{list-style:none;margin:0;padding:0 8px 6px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;min-height:0}
 .rail-1 .docs-list{flex:1;min-height:0}
+.docs-list .ocr-text{max-height:120px;overflow-y:auto;scrollbar-width:thin}
 .docs-list .doc{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:5px;background:var(--surface)}
 .docs-list .doc.pending{opacity:.7}
 .docs-list .doc.error{border-color:var(--red-soft);background:var(--red-soft)}
@@ -591,9 +592,6 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,1.25fr) minmax(260px,2fr);gap:16px;align-items:start;box-shadow:var(--shadow)}
-.acard.collapsed{display:block}
-.acard.collapsed .acard-answer,.acard.collapsed .atl{display:none}
-.acard-toggle{align-self:flex-start;border:1px solid var(--line);background:var(--surface);border-radius:6px;font:600 11px Inter;line-height:1;padding:3px 7px;cursor:pointer;color:var(--muted)}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
 .acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
 .acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4}
@@ -608,6 +606,100 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .afiles-head{font:600 13px Inter;color:var(--ink)}
 .afiles-group{display:flex;flex-direction:column;gap:5px}
 .afiles-q{font:600 11.5px Inter;color:var(--muted)}
+/* Submission header: a progress dashboard (2/3) beside a searchable
+   documents box (1/3). The answers are the hero content beneath them. */
+.sreview{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start;margin-bottom:16px}
+@media(max-width:900px){.sreview{grid-template-columns:1fr}}
+.sdash{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 15px;display:flex;flex-direction:column;gap:10px}
+.sdash-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.sdash-title{font-family:Fraunces,serif;font-weight:560;font-size:16px;color:var(--ink)}
+.sdash-when{font-size:11px;color:var(--muted)}
+.sdash-bar{height:8px;border-radius:99px;background:var(--wash);overflow:hidden}
+.sdash-bar i{display:block;height:100%;background:var(--seal);border-radius:99px;transition:width .3s var(--ease-out)}
+.sdash-pct{font-size:10.5px;color:var(--muted);margin-top:-5px}
+.sdash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sstat{background:var(--wash);border-radius:9px;padding:8px 10px}
+.sstat-n{font:600 17px Fraunces,serif;color:var(--ink);line-height:1.1}
+.sstat-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.sstat.alert .sstat-n{color:var(--turn)}
+.sdash-secs{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.ssec{display:grid;grid-template-columns:118px 1fr auto;align-items:center;gap:8px;font-size:11.5px;color:var(--ink)}
+.ssec-track{height:6px;border-radius:99px;background:var(--wash);overflow:hidden}
+.ssec-track i{display:block;height:100%;background:var(--seal-soft);border-right:2px solid var(--seal);border-radius:99px}
+.ssec-n{font:500 10px "IBM Plex Mono",monospace;color:var(--muted)}
+.sdash-status{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);padding-top:9px}
+.sdocbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+.sdocbox-head{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.sdocbox-title{font-family:Fraunces,serif;font-weight:560;font-size:14px}
+.sdocbox-head .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
+.sdoc-search{margin:8px 10px 6px;font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.sdoc-types{display:flex;gap:5px;flex-wrap:wrap;padding:0 10px 8px}
+.sdoc-type{font:500 10.5px Inter;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.sdoc-type.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
+.sdoc-list{overflow-y:auto;overscroll-behavior:contain;max-height:324px;padding:0 6px 8px}
+.sdoc-row{display:flex;gap:9px;align-items:flex-start;padding:8px;border-radius:9px;cursor:pointer}
+.sdoc-row:hover{background:var(--wash)}
+.sdoc-ic{flex:none;font-size:15px}
+.sdoc-main{min-width:0}
+.sdoc-name{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdoc-meta{font-size:10.5px;color:var(--muted)}
+.sdoc-ocr{font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdoc-empty{padding:14px 12px;font-size:12px;color:var(--muted)}
+/* The submissions inbox: list on the left, the selected profile on the right */
+.inbox{display:grid;grid-template-columns:minmax(260px,320px) 1fr;gap:14px;align-items:start}
+@media(max-width:900px){.inbox{grid-template-columns:1fr}}
+.inbox-list{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;position:sticky;top:8px;display:flex;flex-direction:column;max-height:calc(100vh - 170px)}
+.inbox-list-head{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.inbox-list-title{font-family:Fraunces,serif;font-weight:560;font-size:14px}
+.inbox-list-head .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
+.inbox-rows{overflow-y:auto;overscroll-behavior:contain;padding:6px}
+.inbox-row{padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+.inbox-row:hover{background:var(--wash)}
+.inbox-row.on{background:var(--seal-soft);border-color:var(--seal)}
+.inbox-name{font:600 13px Inter;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inbox-when{font-size:10.5px;color:var(--muted);margin-top:1px}
+.inbox-row3{display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap}
+.inbox-kids{font-size:10.5px;color:var(--muted)}
+.scase{font:500 9.5px "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.03em;padding:1px 6px;border-radius:99px;background:var(--wash);color:var(--muted)}
+.scase.status-new{background:var(--wash)}
+.scase.status-in_review{background:var(--turn-soft);color:var(--turn)}
+.scase.status-needs_info{background:var(--red-soft);color:var(--red)}
+.scase.status-complete{background:var(--seal-soft);color:var(--seal)}
+.inbox-detail{min-width:0}
+.inbox-detail-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.inbox-empty{padding:18px;color:var(--muted);font-size:13px;text-align:center}
+/* Timeline + buckets row, and the query/passages surface */
+.srow{display:grid;grid-template-columns:1.25fr 1fr;gap:14px;align-items:start;margin-bottom:16px}
+@media(max-width:900px){.srow{grid-template-columns:1fr}}
+.spanel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.spanel-head{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.spanel-title{font-family:Fraunces,serif;font-weight:560;font-size:14px}
+.spanel-head .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
+.spanel-empty{padding:14px 12px;font-size:12px;color:var(--muted)}
+.tl{max-height:360px;overflow-y:auto;padding:6px}
+.tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
+.tl-row:hover{background:var(--wash)}
+.tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
+.tl-main{min-width:0}
+.tl-title{font-size:12.5px;color:var(--ink)}
+.tl-detail{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-src{flex:none;font:500 10.5px Inter;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.tl-src:hover{border-color:var(--seal);color:var(--seal)}
+.bucket{padding:9px 12px;border-bottom:1px solid var(--line)}
+.bucket:last-child{border-bottom:none}
+.bucket-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
+.bucket-name{font:600 12.5px Inter;color:var(--ink)}
+.bucket-n{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted)}
+.bucket-chips{display:flex;flex-wrap:wrap;gap:5px}
+.bchip{font:500 10.5px Inter;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.bchip.have{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
+.bchip.req{background:var(--turn-soft);border-color:var(--turn);color:var(--turn)}
+.acard.flash{box-shadow:0 0 0 3px var(--turn);transition:box-shadow .2s ease}
+mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
+.appquery{flex:1;min-width:180px;font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.docbody .passage{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:8px}
+.docbody .passage-meta{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
+.docbody .passage-text{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 .afile{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px;min-width:0}
 .afile-icon{font-size:16px;flex:none}
 .afile-main{flex:1;min-width:0}
@@ -2236,6 +2328,86 @@ function provenanceOf(folded, anchor = "_root") {
 }
 
 function nowIso() { return new Date().toISOString(); }
+// Two answers are "the same" when their stored text matches. This is the guard
+// that stops a no-op save from landing as a duplicate step in the provenance
+// timeline — several "changed their answer" entries all carrying one value.
+function sameAnswer(a, b) {
+  const norm = (v) => (v == null ? "" : String(v)).trim();
+  return norm(a) === norm(b);
+}
+
+// ── anonymized record ids and deep links ──
+// An admin can email a colleague a pointer to one submission. The URL carries
+// only an anonymized id — a one-way digest of the room, never a name — and
+// every office device derives the same id for the same room, so the link
+// resolves with no central directory. Identity stays out of the URL.
+function anonRecordId(roomId) {
+  const s = String(roomId || "");
+  const mix = (seed) => {
+    let h1 = 0x9e3779b9 ^ seed, h2 = 0x85ebca6b ^ seed;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 2654435761);
+      h2 = Math.imul(h2 ^ c, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return h1 >>> 0;
+  };
+  const hex = (n) => (n >>> 0).toString(16).padStart(8, "0");
+  const raw = hex(mix(1)) + hex(mix(2)) + hex(mix(3)) + hex(mix(4));
+  return raw.slice(0, 8) + "-" + raw.slice(8, 12) + "-" + raw.slice(12, 16) + "-" + raw.slice(16, 20) + "-" + raw.slice(20, 32);
+}
+function recordUrl(roomId, docId) {
+  const params = new URLSearchParams();
+  params.set("sub", anonRecordId(roomId));
+  if (docId) params.set("doc", docId);
+  return location.origin + location.pathname + "?" + params.toString();
+}
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function answerAnchor(path) { return String(path).replace(/[^a-zA-Z0-9_-]/g, "_"); }
+// A window of a long reading around the first hit, so a passage shows the
+// sentence that matched, not the whole document.
+function clipPassage(text, terms, window = 320) {
+  const low = (text || "").toLowerCase();
+  let idx = -1;
+  for (const t of terms) { const i = low.indexOf(t); if (i >= 0 && (idx === -1 || i < idx)) idx = i; }
+  if (idx === -1 || text.length <= 600) return (text || "").slice(0, 600);
+  const start = Math.max(0, idx - 120);
+  return (start > 0 ? "…" : "") + text.slice(start, start + window) + (start + window < text.length ? "…" : "");
+}
+function highlightPassage(text, query) {
+  const escaped = escAttr(text);
+  const terms = query.split(/\s+/).filter(Boolean).map(escapeRe);
+  if (!terms.length) return escaped;
+  try { return escaped.replace(new RegExp("(" + terms.join("|") + ")", "gi"), "<mark>$1</mark>"); }
+  catch (e) { return escaped; }
+}
+// "Query this application": the passages in ONE submission that match — its
+// own answers, what was said, and the text read from its own documents. Never
+// another family's content.
+function showPassagesModal(pl, query, results) {
+  const scrim = ensureModal();
+  const head = scrim.querySelector(".dochead");
+  const body = scrim.querySelector(".docbody");
+  head.textContent = "Passages matching “" + query + "” — " + (pl.applicantName || "this application");
+  body.innerHTML = "";
+  if (!results.length) {
+    body.appendChild($e("p", "docstatus", "No passages in this application mention that."));
+    scrim.classList.add("on");
+    return;
+  }
+  body.appendChild($e("p", "docstatus", results.length + " passage" + (results.length === 1 ? "" : "s") + " — from this application only."));
+  for (const r of results) {
+    const card = $e("div", "passage");
+    card.appendChild($e("div", "passage-meta", r.label));
+    const t = $e("div", "passage-text");
+    t.innerHTML = highlightPassage(r.text, query);
+    card.appendChild(t);
+    body.appendChild(card);
+  }
+  scrim.classList.add("on");
+}
 function newId(prefix = "e") { return prefix + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
 
 // The fields the OCR draft can't be filed without. Single source of truth for
@@ -3808,6 +3980,16 @@ function closeDoc() {
   if (!modalEl) return;
   modalEl.classList.remove("on");
   if (lastObjectUrl) { URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
+  // Drop a ?doc=<id> from the URL too, so closing a shared document pointer
+  // leaves the link pointing at the submission, not at a closed preview.
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get("doc")) {
+      p.delete("doc");
+      const qs = p.toString();
+      history.replaceState({}, "", location.pathname + (qs ? "?" + qs : ""));
+    }
+  } catch (e) {}
 }
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDoc(); });
@@ -4946,7 +5128,12 @@ class Intake {
     // the audit trail and the letter always see one canonical shape, whatever
     // way the person wrote the date.
     const value = Steer.normalizeAnswer(field, rawValue);
-    const ev = this.store.emit(OP.DEF, {
+    // Re-answering with the exact value already stored is not a new step —
+    // unless it carries new evidence (a fresh recording). Otherwise the same
+    // answer would stack up on the timeline as identical duplicates.
+    const bringsEvidence = inputKind === "voice" && !!voiceClipId;
+    const already = sameAnswer(value, this.answers()[field.path]);
+    const ev = (already && !bringsEvidence) ? null : this.store.emit(OP.DEF, {
       anchor: this.anchor, path: field.path, value,
       source: source ?? null, inputKind: inputKind ?? "typed", voiceClipId: voiceClipId ?? null,
     });
@@ -4966,7 +5153,7 @@ class Intake {
       this._say("assistant", ack);
     }
     this._sayMilestone();
-    this._emit("stored", { field, value, event: ev });
+    if (ev) this._emit("stored", { field, value, event: ev });
     this._deriveFrom(field, value);
     this._checkFilingDeadline(field, value);
     await this._maybeInjectFollowups(field, value);
@@ -5206,6 +5393,10 @@ class Intake {
     const normalized = Steer.normalizeAnswer(field, value);
     const err = validate(field, normalized, this.lang);
     if (err) return { ok: false, error: err };
+    // Opening the editor and saving without changing anything is not an edit.
+    // Recording it would stack a second identical value on the timeline, which
+    // is exactly the duplicate-step noise this guards against.
+    if (sameAnswer(this.answers()[path], normalized)) return { ok: true, unchanged: true };
     const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value: normalized, source: null, inputKind: "edited", voiceClipId: null });
     this.epoch++;
     this._emit("stored", { field, value: normalized, event: ev });
@@ -5800,6 +5991,34 @@ function initAdminView({ onClose }) {
   // so state stored on it never survives the re-render its own click
   // handlers trigger.
   let pipelineViewing = null;
+  // A deep link in the URL (?sub=<anon-id>[&doc=<id>]) opens that record once
+  // the pipelines are in hand. Read once; cleared the first time it resolves.
+  let deepLinkPending = (() => {
+    const p = new URLSearchParams(location.search);
+    const sub = p.get("sub");
+    return sub ? { sub, doc: p.get("doc") || null } : null;
+  })();
+  function openSubmission(pl) {
+    pipelineViewing = pl;
+    try { history.pushState({ sub: anonRecordId(pl.roomId) }, "", recordUrl(pl.roomId)); } catch (e) {}
+    renderActive();
+  }
+  function closeSubmission() {
+    pipelineViewing = null;
+    try { history.pushState({}, "", location.pathname); } catch (e) {}
+    renderActive();
+  }
+  function openDoc(pl, d) {
+    try { history.replaceState({ sub: anonRecordId(pl.roomId), doc: d.id }, "", recordUrl(pl.roomId, d.id)); } catch (e) {}
+    previewDocument(d, mediaFor(ctx));
+  }
+  window.addEventListener("popstate", () => {
+    const p = new URLSearchParams(location.search);
+    const sub = p.get("sub");
+    if (!sub) { if (pipelineViewing) { pipelineViewing = null; renderActive(); } return; }
+    const match = collectPipelineData(ctx).find((pl) => anonRecordId(pl.roomId) === sub);
+    if (match) { pipelineViewing = match; renderActive(); }
+  });
   // Which column the case table is sorted by, and which way. Held here, not
   // on the table, because renderActive() throws the table away and rebuilds
   // it on every refresh (including the live ones a new answer triggers).
@@ -5871,28 +6090,68 @@ function initAdminView({ onClose }) {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
       body.appendChild(renderTable(filtered));
     } else if (active === "answers") {
-      // One list of families, and the full review of whichever one is open —
-      // the same single-submission view the queue used, rendered here so
-      // opening a family doesn't move the reviewer to another tab.
+      // An inbox: the submissions list on the left, the selected submission's
+      // profile on the right. Clicking another submitter swaps the detail
+      // alongside — no navigating away and back.
       const all = collectPipelineData(ctx);
+      publishSharedEyeTrails();
+      // A shared link (?sub=<anon>) opens its record the first time we have
+      // the pipelines to match it against.
+      if (deepLinkPending) {
+        const want = deepLinkPending; deepLinkPending = null;
+        const match = all.find((p) => anonRecordId(p.roomId) === want.sub);
+        if (match) {
+          pipelineViewing = match;
+          if (want.doc) { const doc = (match.docs || []).find((x) => x.id === want.doc); if (doc) openDoc(match, doc); }
+        } else {
+          toast("That shared record isn't readable on this device.", "warn");
+        }
+      }
+      const filtered = all
+        .filter((p) => matchesQuery(`${p.applicantName} ${p.phone} ${p.email} ${p.caseStatus}`, q))
+        .sort((a, b) => String(b.lastActivity || "").localeCompare(String(a.lastActivity || "")));
+      // Default to the first submission so the detail isn't empty.
+      if (!pipelineViewing && filtered.length) {
+        pipelineViewing = filtered[0];
+        try { history.replaceState({ sub: anonRecordId(pipelineViewing.roomId) }, "", recordUrl(pipelineViewing.roomId)); } catch (e) {}
+      }
       const viewing = pipelineViewing ? all.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
+
+      const inbox = $e("div", "inbox");
+      inbox.appendChild(renderInboxList(filtered, viewing));
+      const detail = $e("div", "inbox-detail");
       if (viewing) {
-        const bar = $e("div");
-        bar.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px";
-        const back = document.createElement("button");
-        back.textContent = "← All submissions";
-        back.className = "aclose";
-        back.onclick = () => { pipelineViewing = null; renderActive(); };
-        bar.appendChild(back);
+        const bar = $e("div", "inbox-detail-head");
         bar.appendChild($e("div", "acell-name", viewing.applicantName));
         bar.appendChild(caseStatusSelect(viewing));
-        body.appendChild(bar);
-        renderSingleSubmission(body, viewing);
+        const copy = document.createElement("button");
+        copy.className = "aview";
+        copy.textContent = "🔗 Copy link";
+        copy.title = "A pointer to this record — anonymized, no names, safe to email";
+        copy.onclick = async () => {
+          const url = recordUrl(viewing.roomId);
+          try { await navigator.clipboard.writeText(url); toast("Link copied — anonymized, no names", "success"); }
+          catch (e) { toast(url); }
+        };
+        bar.appendChild(copy);
+        const query = document.createElement("input");
+        query.type = "search";
+        query.className = "appquery";
+        query.placeholder = "Query this application — find the passages…";
+        query.title = "Searches this submission's own answers and documents only";
+        query.onkeydown = (e) => {
+          if (e.key !== "Enter") return;
+          const v = query.value.trim();
+          if (v) showPassagesModal(viewing, v, submissionPassages(viewing, v));
+        };
+        bar.appendChild(query);
+        detail.appendChild(bar);
+        renderSingleSubmission(detail, viewing);
       } else {
-        body.appendChild(renderCaseTable(
-          all.filter((p) => matchesQuery(`${p.applicantName} ${p.phone} ${p.email} ${p.caseStatus}`, q)),
-        ));
+        detail.appendChild($e("div", "inbox-empty", all.length ? "No submissions match your search." : "No submissions yet."));
       }
+      inbox.appendChild(detail);
+      body.appendChild(inbox);
     } else if (active === "kanban") {
       body.appendChild(kanbanSwitcher());
       if (kanbanBoard === "documents") {
@@ -6120,15 +6379,42 @@ function initAdminView({ onClose }) {
     return btn;
   }
 
-  // The office can read an image's text too — same on-device path, same event,
-  // with the reading attributed to the reviewer who ran it.
-  async function runAdminOcr(d, eyes = null) {
-    await readAndStoreOcr(d, mediaFor(ctx), {
-      emit: (id, attrs) => emitDocInsTo(ctx, d.roomId, id, attrs),
-      by: ctx.currentUserId,
-      eyes,
-    });
-    renderActive();
+  // The office never picks a reader: any image this device can read, it reads
+  // on its own, in the background — exactly like the family's side.
+  function autoReadImages(pl) {
+    for (const d of pl.docs || []) {
+      if (!isImageDoc(d) || d.ocrText || d.ocrStatus === "empty" || d.ocrStatus === "failed") continue;
+      if (ocrPending.has(d.id)) continue;
+      ocrPending.add(d.id);
+      readAndStoreOcr(d, mediaFor(ctx), {
+        emit: (id, attrs) => emitDocInsTo(ctx, pl.roomId, id, attrs),
+        by: ctx.currentUserId, quiet: true,
+      }).finally(() => { ocrPending.delete(d.id); setTimeout(() => renderActive(), 300); });
+    }
+  }
+  // Learn across submitters: the office sees every submission, so it aggregates
+  // which reader actually won per file-kind and publishes that shared history
+  // into the config stream every device reads. Best-effort and silent.
+  function publishSharedEyeTrails() {
+    try {
+      if (!configStore || !configStore.fold || !configStore.emit) return;
+      const agg = {};
+      for (const d of collectAllDocuments(ctx)) {
+        const k = d.ocrSourceKind, c = d.ocrChosen;
+        if (!k || !c) continue;
+        const a = (agg[k] ||= { kind: k, runs: 0, chosen: {} });
+        a.runs++; a.chosen[c] = (a.chosen[c] || 0) + 1;
+      }
+      for (const k of Object.keys(agg)) {
+        const id = "eyetrail_" + k;
+        const prev = configStore.fold().records[id];
+        const a = agg[k];
+        const pa = prev && prev.attrs;
+        if (pa && pa.runs === a.runs && JSON.stringify(pa.chosen) === JSON.stringify(a.chosen)) continue;
+        a.updatedAt = nowIso();
+        configStore.emit(OP.INS, { entity: EYE_TRAIL_ENTITY, id, attrs: a });
+      }
+    } catch (e) {}
   }
   async function editAdminOcr(d) {
     const field = { label: "Best-guess transcription (OCR)", path: d.filename || "document", type: "textarea" };
@@ -6143,12 +6429,7 @@ function initAdminView({ onClose }) {
 
   function ocrBlockFor(d, { compact = false } = {}) {
     if (!isImageDoc(d)) return null;
-    return ocrPanel(d, {
-      canRead: ocrReady(),
-      onRead: (eyes) => runAdminOcr(d, eyes),
-      onEdit: compact ? null : () => editAdminOcr(d),
-      compact,
-    });
+    return ocrPanel(d, { onEdit: compact ? null : () => editAdminOcr(d), compact });
   }
 
   function statusSelect(d) {
@@ -6277,7 +6558,7 @@ function initAdminView({ onClose }) {
     for (const c of rows) {
       const tr = document.createElement("tr");
       tr.style.cursor = "pointer";
-      tr.onclick = () => { pipelineViewing = c; renderActive(); };
+      tr.onclick = () => { openSubmission(c); };
       tr.appendChild($e("td", "acell-name", c.applicantName || "(no name yet)"));
       tr.appendChild($e("td", "acell-val", c.phone || "—"));
       tr.appendChild($e("td", "acell-mime mono", String(c.answers.length)));
@@ -6302,7 +6583,7 @@ function initAdminView({ onClose }) {
 
       const open = document.createElement("td");
       const btn = $e("button", "aview", "Open →");
-      btn.onclick = (e) => { e.stopPropagation(); pipelineViewing = c; renderActive(); };
+      btn.onclick = (e) => { e.stopPropagation(); openSubmission(c); };
       open.appendChild(btn);
       tr.appendChild(open);
       tbody.appendChild(tr);
@@ -6449,6 +6730,7 @@ function initAdminView({ onClose }) {
         const open = $e("button", "aview", "Review →");
         open.onclick = () => {
           pipelineViewing = p;
+          try { history.pushState({ sub: anonRecordId(p.roomId) }, "", recordUrl(p.roomId)); } catch (e) {}
           active = "pipeline";
           tabs.forEach((b) => b.classList.toggle("on", b.dataset.view === "pipeline"));
           renderActive();
@@ -6513,7 +6795,7 @@ function initAdminView({ onClose }) {
       const backBtn = document.createElement("button");
       backBtn.textContent = "← Back to all submissions";
       backBtn.className = "aclose";
-      backBtn.onclick = () => { pipelineViewing = null; renderActive(); };
+      backBtn.onclick = closeSubmission;
       viewBar.appendChild(backBtn);
       viewBar.appendChild($e("div", "acell-name", `Reviewing: ${viewing.applicantName}`));
       viewBar.appendChild(caseStatusSelect(viewing));
@@ -6542,7 +6824,7 @@ function initAdminView({ onClose }) {
       for (const pl of pipelines) {
         const tr = document.createElement("tr");
         tr.style.cursor = "pointer";
-        tr.onclick = () => { pipelineViewing = pl; renderActive(); };
+        tr.onclick = () => { openSubmission(pl); };
 
         const name = $e("td", "acell-name");
         name.style.cssText = "max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
@@ -6572,7 +6854,7 @@ function initAdminView({ onClose }) {
         const reviewBtn = document.createElement("button");
         reviewBtn.textContent = "Review →";
         reviewBtn.className = "aview";
-        reviewBtn.onclick = (e) => { e.stopPropagation(); pipelineViewing = pl; renderActive(); };
+        reviewBtn.onclick = (e) => { e.stopPropagation(); openSubmission(pl); };
         actions.appendChild(reviewBtn);
         tr.appendChild(actions);
         tbody.appendChild(tr);
@@ -6590,6 +6872,175 @@ function initAdminView({ onClose }) {
   // or the office), how (typed, said aloud, pasted, changed), and when. A
   // spoken answer carries its recording and the transcript the speech model
   // made of it. An edit, by anyone, is a new step; nothing earlier is erased.
+  function caseStatusChip(status) {
+    const s = (CASE_STATUSES.find((x) => x.key === status) || {}).label || status || "New";
+    return $e("span", "scase status-" + (status || "new"), s);
+  }
+
+  // The inbox's left panel: one row per submitter — name, when they submitted,
+  // how many children the case is about, and where the submission stands.
+  function renderInboxList(list, selected) {
+    const col = $e("div", "inbox-list");
+    const head = $e("div", "inbox-list-head");
+    head.appendChild($e("span", "inbox-list-title", "Submissions"));
+    head.appendChild($e("span", "count", String(list.length)));
+    col.appendChild(head);
+    const rows = $e("div", "inbox-rows");
+    if (!list.length) { rows.appendChild($e("div", "inbox-empty", "No submissions match.")); col.appendChild(rows); return col; }
+    for (const pl of list) {
+      const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+      const kids = childIndicesFromAnswers(answers).length;
+      const row = $e("div", "inbox-row" + (selected && selected.roomId === pl.roomId ? " on" : ""));
+      row.onclick = () => openSubmission(pl);
+      row.appendChild($e("div", "inbox-name", pl.applicantName));
+      row.appendChild($e("div", "inbox-when", pl.submittedAt ? "submitted " + fmtDate(pl.submittedAt) : "not submitted yet"));
+      const l3 = $e("div", "inbox-row3");
+      l3.appendChild($e("span", "inbox-kids", kids ? `${kids} ${kids === 1 ? "child" : "children"}` : "no children yet"));
+      l3.appendChild(caseStatusChip(pl.caseStatus));
+      row.appendChild(l3);
+      rows.appendChild(row);
+    }
+    col.appendChild(rows);
+    return col;
+  }
+
+  // Query one application: return its own passages that match, ranked. The
+  // units are this submission's answers (with the raw words behind them and
+  // any recording's transcript) and the text read from its own documents.
+  function submissionPassages(pl, query) {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    const labels = answerLabels();
+    const units = [];
+    for (const a of pl.answers) {
+      const parts = [`${labels(a.path)}: ${a.value == null ? "" : a.value}`];
+      if (a.source) parts.push(a.source);
+      for (const v of (a.versions || [])) {
+        if (v.voiceClip && v.voiceClip.transcript) parts.push("spoken: " + v.voiceClip.transcript);
+        if (v.source && !parts.includes(v.source)) parts.push(v.source);
+      }
+      units.push({ label: "Answer — " + labels(a.path), text: parts.join("\n") });
+    }
+    for (const d of pl.docs || []) {
+      const t = [d.title || d.filename, d.ocrText, d.imageKind ? "looks like " + d.imageKind : ""].filter(Boolean).join("\n");
+      if (t) units.push({ label: "Document — " + (d.title || d.filename), text: t, doc: d });
+    }
+    const scored = [];
+    for (const u of units) {
+      const low = u.text.toLowerCase();
+      let score = 0;
+      for (const t of terms) score += (low.match(new RegExp(escapeRe(t), "g")) || []).length;
+      if (score > 0) scored.push(Object.assign({}, u, { score }));
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 12).map((u) => Object.assign({}, u, { text: clipPassage(u.text, terms) }));
+  }
+
+  // Jump to the evidence behind a fact: an answer card (scrolled to and
+  // flashed) or a document (opened in the viewer).
+  function openEvidence(pl, src) {
+    if (!src) return;
+    if (src.kind === "doc") { openDoc(pl, src.doc); return; }
+    const el = document.getElementById("ac-" + answerAnchor(src.path));
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("flash");
+      setTimeout(() => el.classList.remove("flash"), 1400);
+    }
+  }
+
+  // Everything the application actually places in time, drawn from ALL its
+  // content: dated answers, documents received, and dates read out of the
+  // documents' own text — each with a link back to the evidence it came from.
+  function submissionTimeline(pl) {
+    const labels = answerLabels();
+    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const fields = withRepeatingRounds(base, answers);
+    const events = [];
+    for (const f of fields) {
+      const v = answers[f.path];
+      if (!v) continue;
+      const s = String(v);
+      const isDate = f.type === "date" || f.type === "date_flex";
+      const m = /(\d{4}-\d{2}(?:-\d{2})?)/.exec(s);
+      if (!(isDate || m) || !m) continue;
+      events.push({ sort: m[1], at: m[1], title: labels(f.path), detail: s, src: { kind: "answer", path: f.path } });
+    }
+    for (const d of pl.docs || []) {
+      if (d.uploadedAt) events.push({ sort: d.uploadedAt, at: d.uploadedAt.slice(0, 10), title: "Document received", detail: d.title || d.filename, src: { kind: "doc", doc: d } });
+      const seen = new Set();
+      for (const x of String(d.ocrText || "").matchAll(/\b(\d{4}-\d{2}(?:-\d{2})?)\b/g)) {
+        if (seen.has(x[1]) || seen.size >= 15) continue;
+        seen.add(x[1]);
+        events.push({ sort: x[1], at: x[1], title: "Date read in " + (d.title || d.filename), detail: x[1], src: { kind: "doc", doc: d } });
+      }
+    }
+    if (pl.submittedAt) events.push({ sort: pl.submittedAt, at: pl.submittedAt.slice(0, 10), title: "Submitted for review", detail: "", src: null });
+    events.sort((a, b) => String(a.sort).localeCompare(String(b.sort)));
+
+    const panel = $e("div", "spanel");
+    const head = $e("div", "spanel-head");
+    head.appendChild($e("span", "spanel-title", "Timeline"));
+    head.appendChild($e("span", "count", String(events.length)));
+    panel.appendChild(head);
+    const list = $e("div", "tl");
+    if (!events.length) list.appendChild($e("div", "spanel-empty", "No dated events yet."));
+    for (const e of events) {
+      const row = $e("div", "tl-row");
+      row.appendChild($e("div", "tl-when", e.at));
+      const main = $e("div", "tl-main");
+      main.appendChild($e("div", "tl-title", e.title));
+      if (e.detail) main.appendChild($e("div", "tl-detail", e.detail));
+      row.appendChild(main);
+      if (e.src) {
+        const b = $e("button", "tl-src", e.src.kind === "doc" ? "view" : "evidence");
+        b.title = e.src.kind === "doc" ? "Open the document this came from" : "Jump to the answer this came from";
+        b.onclick = () => openEvidence(pl, e.src);
+        row.appendChild(b);
+      }
+      list.appendChild(row);
+    }
+    panel.appendChild(list);
+    return panel;
+  }
+
+  // The application's information, auto-sorted into the buckets it takes to
+  // complete one — each section, with what is filled and what is missing, and
+  // a chip per field that jumps to that field's answer.
+  function submissionBuckets(pl) {
+    const labels = answerLabels();
+    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const fields = withRepeatingRounds(base, answers).filter((f) => !f.derived && !Steer.isFieldSkipped(f, answers));
+    const panel = $e("div", "spanel");
+    const head = $e("div", "spanel-head");
+    head.appendChild($e("span", "spanel-title", "Buckets"));
+    head.appendChild($e("span", "count", "info to complete the application"));
+    panel.appendChild(head);
+    for (const s of SECTIONS) {
+      const list = fields.filter((f) => (f.section || null) === s.key);
+      if (!list.length) continue;
+      const done = list.filter((f) => answers[f.path] != null && answers[f.path] !== "");
+      const bucket = $e("div", "bucket");
+      const bh = $e("div", "bucket-head");
+      bh.appendChild($e("span", "bucket-name", s.label));
+      bh.appendChild($e("span", "bucket-n", `${done.length}/${list.length}`));
+      bucket.appendChild(bh);
+      const chips = $e("div", "bucket-chips");
+      for (const f of list) {
+        const have = answers[f.path] != null && answers[f.path] !== "";
+        const chip = $e("button", "bchip" + (have ? " have" : "") + (f.required && !have ? " req" : ""), labels(f.path));
+        chip.title = have ? String(answers[f.path]).slice(0, 200) : "Not answered yet";
+        chip.onclick = () => openEvidence(pl, { kind: "answer", path: f.path });
+        chips.appendChild(chip);
+      }
+      bucket.appendChild(chips);
+      panel.appendChild(bucket);
+    }
+    return panel;
+  }
+
   function renderSingleSubmission(wrap, pl) {
     const labels = answerLabels();
     const docsByPath = new Map();
@@ -6602,14 +7053,25 @@ function initAdminView({ onClose }) {
     const withAudio = facts.filter((x) => x.hasAudio).length;
     const changed = facts.filter((x) => x.familyChanged || x.officeChanged).length;
 
-    const summary = $e("div", "asum");
-    summary.appendChild($e("b", null, pl.submittedAt ? "Submitted for review " : "Still in progress"));
-    summary.appendChild(document.createTextNode(pl.submittedAt ? fmtDate(pl.submittedAt) : " — not submitted yet"));
-    summary.appendChild(document.createTextNode(` · ${pl.answers.length} answers · ${(pl.docs || []).length} attachments · ${withAudio} with a recording · ${changed} changed after they were first given`));
-    wrap.appendChild(summary);
+    // The office never picks a reader — any image this device can read, it
+    // reads on its own, in the background.
+    autoReadImages(pl);
 
-    if ((pl.docs || []).length) wrap.appendChild(attachmentsPanel(docsByPath, labels));
+    // ── Top: a dashboard on the submission (2/3) beside its documents (1/3) ──
+    const top = $e("div", "sreview");
+    top.appendChild(submissionProgress(pl, withAudio, changed));
+    top.appendChild(submissionDocsBox(pl));
+    wrap.appendChild(top);
 
+    // ── Timeline of everything the content places in time, with provenance,
+    // beside the buckets of information the application needs. ──
+    const mid = $e("div", "srow");
+    mid.appendChild(submissionTimeline(pl));
+    mid.appendChild(submissionBuckets(pl));
+    wrap.appendChild(mid);
+
+    // ── The answers are the hero content below: all of them, expanded, so the
+    // office reads straight down and can inspect any one of them. ──
     const bar = $e("div", "afilter");
     for (const [key, label] of [["all", "All answers"], ["files", "📎 Has attachments"], ["audio", "🎙 Has a recording"], ["changed", "✎ Changed"]]) {
       const b = $e("button", "atab" + (cardFilter === key ? " on" : ""), label);
@@ -6640,20 +7102,110 @@ function initAdminView({ onClose }) {
     wrap.appendChild(letterPanel(pl));
   }
 
-  // Every file this family sent, in one place, grouped by the question that
-  // was on screen when it arrived; files sent with no question open come last.
-  function attachmentsPanel(docsByPath, labelFor) {
-    const panel = $e("div", "afiles");
-    const total = [...docsByPath.values()].reduce((n, list) => n + list.length, 0);
-    panel.appendChild($e("div", "afiles-head", `📎 Attachments (${total})`));
-    const groups = [...docsByPath.entries()].sort(([a], [b]) => (a === "") - (b === ""));
-    for (const [path, list] of groups) {
-      const group = $e("div", "afiles-group");
-      group.appendChild($e("div", "afiles-q", path ? labelFor(path) : "Other documents (not tied to a question)"));
-      for (const d of list) group.appendChild(fileRow(d));
-      panel.appendChild(group);
+  // The progress dashboard that heads a submission: how far along it is, the
+  // counts that matter, per-section completion, and the case status — the
+  // "where does this stand" an office wants before reading a single answer.
+  function submissionProgress(pl, withAudio, changed) {
+    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const fields = withRepeatingRounds(base, answers).filter((f) => !f.derived);
+    const visible = fields.filter((f) => !Steer.isFieldSkipped(f, answers));
+    const answered = visible.filter((f) => answers[f.path] != null && answers[f.path] !== "").length;
+    const missing = missingFieldsFor(pl);
+    const pct = visible.length ? Math.round((answered / visible.length) * 100) : 0;
+
+    const d = $e("div", "sdash");
+    const head = $e("div", "sdash-head");
+    head.appendChild($e("div", "sdash-title", pl.submittedAt ? "Submitted for review" : "Still in progress"));
+    head.appendChild($e("div", "sdash-when", pl.submittedAt ? fmtDate(pl.submittedAt) : (pl.lastActivity ? "last activity " + fmtDate(pl.lastActivity) : "no activity yet")));
+    d.appendChild(head);
+    const pbar = $e("div", "sdash-bar"); const pfill = $e("i"); pfill.style.width = pct + "%"; pbar.appendChild(pfill);
+    d.appendChild(pbar);
+    d.appendChild($e("div", "sdash-pct", pct + "% answered"));
+
+    const grid = $e("div", "sdash-grid");
+    const stat = (n, l, cls) => { const c = $e("div", "sstat" + (cls ? " " + cls : "")); c.appendChild($e("div", "sstat-n", String(n))); c.appendChild($e("div", "sstat-l", l)); return c; };
+    grid.append(
+      stat(`${answered}/${visible.length}`, "answered"),
+      stat(missing.filter((f) => f.required).length, "required still missing"),
+      stat((pl.docs || []).length, "documents"),
+      stat(withAudio, "with a recording"),
+      stat(changed, "changed since first given"),
+      stat((pl.letters || []).length, "drafts"),
+    );
+    d.appendChild(grid);
+
+    const secs = $e("div", "sdash-secs");
+    for (const s of SECTIONS) {
+      const list = visible.filter((f) => (f.section || null) === s.key);
+      if (!list.length) continue;
+      const done = list.filter((f) => answers[f.path] != null && answers[f.path] !== "").length;
+      const row = $e("div", "ssec");
+      row.appendChild($e("span", "ssec-l", s.label));
+      const track = $e("span", "ssec-track"); const f2 = $e("i"); f2.style.width = Math.round((done / list.length) * 100) + "%"; track.appendChild(f2);
+      row.appendChild(track);
+      row.appendChild($e("span", "ssec-n", `${done}/${list.length}`));
+      secs.appendChild(row);
     }
-    return panel;
+    if (secs.childNodes.length) d.appendChild(secs);
+
+    const st = $e("div", "sdash-status");
+    st.appendChild($e("span", "sstat-l", "Case status"));
+    st.appendChild(caseStatusSelect(pl));
+    d.appendChild(st);
+    return d;
+  }
+
+  // The documents side of the header: a scroll box with a search field that
+  // reads file names AND the text read from the files, filterable by type.
+  // Sources stay separate — each result is one document on its own.
+  function submissionDocsBox(pl) {
+    const all = pl.docs || [];
+    const box = $e("div", "sdocbox");
+    const head = $e("div", "sdocbox-head");
+    head.appendChild($e("span", "sdocbox-title", "Documents"));
+    head.appendChild($e("span", "count", String(all.length)));
+    box.appendChild(head);
+
+    const search = document.createElement("input");
+    search.type = "search"; search.className = "sdoc-search";
+    search.placeholder = "Search file names and text in the files…";
+    box.appendChild(search);
+
+    const cat = (d) => { const m = d.mimetype || ""; if (m.startsWith("image/")) return "image"; if (m.includes("pdf")) return "pdf"; if (m.startsWith("audio/")) return "audio"; return "other"; };
+    const types = [["all", "All"], ["image", "Images"], ["pdf", "PDFs"], ["audio", "Audio"], ["other", "Other"]];
+    let type = "all";
+    const chips = $e("div", "sdoc-types");
+    const list = $e("div", "sdoc-list");
+
+    const render = () => {
+      const q = search.value.trim().toLowerCase();
+      list.innerHTML = "";
+      const shown = all.filter((d) => (type === "all" || cat(d) === type)
+        && (!q || `${d.title || ""} ${d.filename || ""} ${d.ocrText || ""} ${d.imageKind || ""}`.toLowerCase().includes(q)));
+      if (!shown.length) { list.appendChild($e("div", "sdoc-empty", all.length ? "No documents match." : "No documents yet.")); return; }
+      for (const d of shown) {
+        const row = $e("div", "sdoc-row");
+        row.onclick = () => openDoc(pl, d);
+        row.appendChild($e("span", "sdoc-ic", fileIcon(d.mimetype)));
+        const main = $e("div", "sdoc-main");
+        main.appendChild($e("div", "sdoc-name", d.title || d.filename));
+        main.appendChild($e("div", "sdoc-meta", [cat(d) === "other" ? "file" : cat(d), fmtBytes(d.size), d.ocrText ? "text read" : "no text", d.imageKind || null].filter(Boolean).join(" · ")));
+        if (d.ocrText) main.appendChild($e("div", "sdoc-ocr", (String(d.ocrText).split("\n").find((l) => l.trim()) || "").slice(0, 90)));
+        row.appendChild(main);
+        list.appendChild(row);
+      }
+    };
+    for (const [key, label] of types) {
+      const b = $e("button", "sdoc-type" + (key === type ? " on" : ""), label);
+      b.type = "button";
+      b.onclick = () => { type = key; chips.querySelectorAll(".sdoc-type").forEach((n) => n.classList.remove("on")); b.classList.add("on"); render(); };
+      chips.appendChild(b);
+    }
+    search.oninput = render;
+    box.append(chips, list);
+    render();
+    return box;
   }
 
   function fileIcon(mime = "") {
@@ -6798,11 +7350,11 @@ function initAdminView({ onClose }) {
   }
 
   function answerCard(pl, a, labelFor, facts) {
-    const card = $e("div", "acard collapsed");
+    const card = $e("div", "acard");
+    card.id = "ac-" + answerAnchor(a.path);
     const head = $e("div", "acard-head");
     const q = $e("div", "acard-q", labelFor(a.path));
     q.title = a.path;
-    q.style.cursor = "pointer";
     head.appendChild(q);
     const chips = $e("div", "acard-chips");
     if (facts.files?.length) chips.appendChild($e("span", "achip files", `📎 ${facts.files.length} attached`));
@@ -6810,24 +7362,6 @@ function initAdminView({ onClose }) {
     if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
     if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
     if (chips.childNodes.length) head.appendChild(chips);
-    // Every answer loads collapsed — the office scans a submission question by
-    // question and opens only the ones it needs, instead of a wall of
-    // provenance. The final answer, the edit history and any attachments are
-    // one click away.
-    const toggleBtn = $e("button", "acard-toggle", "▸");
-    toggleBtn.type = "button";
-    toggleBtn.setAttribute("aria-expanded", "false");
-    toggleBtn.title = "Show this answer and its history";
-    const setCollapsed = (v) => {
-      card.classList.toggle("collapsed", v);
-      toggleBtn.textContent = v ? "▸" : "▾";
-      toggleBtn.setAttribute("aria-expanded", String(!v));
-      toggleBtn.title = v ? "Show this answer and its history" : "Hide this answer";
-    };
-    const toggle = () => setCollapsed(!card.classList.contains("collapsed"));
-    toggleBtn.onclick = (e) => { e.stopPropagation(); toggle(); };
-    head.appendChild(toggleBtn);
-    q.onclick = toggle;
     card.appendChild(head);
 
     const finalRow = $e("div", "acard-final");
@@ -6863,6 +7397,8 @@ function initAdminView({ onClose }) {
     // Every change is one more step on top, so undoing one is the same act:
     // put the earlier value back as the newest step.
     const record = (value, extra = {}) => {
+      // A correction that lands on the value already stored is not a change.
+      if (sameAnswer(value, a.value)) { toast("No change — nothing recorded."); return; }
       const payload = { anchor: "applicant", path: a.path, value, source: null, inputKind: "edited", voiceClipId: null, ...extra };
       if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, pl.roomId, OP.DEF, payload);
       else DemoStore.appendEvent(pl.roomId, OP.DEF, payload, ctx.currentUserId);
@@ -6870,7 +7406,7 @@ function initAdminView({ onClose }) {
     };
     save.onclick = () => {
       const next = box.value.trim();
-      if (!next || next === a.value) { editor.hidden = true; return; }
+      if (!next || sameAnswer(next, a.value)) { editor.hidden = true; if (next && sameAnswer(next, a.value)) toast("No change — nothing recorded."); return; }
       record(next);
       toast("Correction saved. To undo it, use Restore on the earlier step.", "success");
     };
@@ -8662,6 +9198,49 @@ function ocrReady() {
 function meId() { try { return loginState?.userId || (store && store.userId) || null; } catch (e) { return null; } }
 function shortWho(uid) { return String(uid || "").replace(/^@/, "").split(":")[0]; }
 
+const EYE_TRAIL_ENTITY = "eye_trail";
+// Byte sniffing: the file's own signature says what it is before a pixel is
+// decoded, and it keys the shared "what read this best" history. Same file
+// kind → the reader that has been landing the most.
+function sniffSourceKind(bytes) {
+  const b = bytes || new Uint8Array(0);
+  const at = (i) => b[i] || 0;
+  const ascii = (i, n) => { let s = ""; for (let j = 0; j < n; j++) s += String.fromCharCode(b[i + j] || 0); return s; };
+  if (b.length >= 8 && at(0) === 0x89 && ascii(1, 3) === "PNG") return "png";
+  if (b.length >= 3 && at(0) === 0xFF && at(1) === 0xD8 && at(2) === 0xFF) return "jpeg";
+  if (b.length >= 6 && (ascii(0, 6) === "GIF87a" || ascii(0, 6) === "GIF89a")) return "gif";
+  if (b.length >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") return "webp";
+  if (b.length >= 2 && at(0) === 0x42 && at(1) === 0x4D) return "bmp";
+  if (b.length >= 2 && (ascii(0, 2) === "II" || ascii(0, 2) === "MM")) return "tiff";
+  if (b.length >= 8 && ascii(4, 4) === "ftyp") return "heic";
+  if (b.length >= 4 && ascii(0, 4) === "%PDF") return "pdf";
+  return "image";
+}
+// The shared history lives in the config stream every device reads. The office
+// aggregates what actually won per file-kind across every submission, so the
+// system prefers the reader that has been landing the most — nobody is asked.
+function sharedEyeTrails() {
+  const out = {};
+  try {
+    if (!configStore) return out;
+    for (const r of Object.values(configStore.fold().records)) {
+      if (r.entity === EYE_TRAIL_ENTITY && r.attrs && r.attrs.kind) out[r.attrs.kind] = r.attrs;
+    }
+  } catch (e) {}
+  return out;
+}
+// Which eye to prefer on a tie, for this file kind. Both always run, so no
+// text is ever lost to a bad choice — this only decides the winner when the
+// two readings are close.
+function preferOrderFor(kind) {
+  const t = sharedEyeTrails()[kind];
+  if (t && (t.runs || 0) >= 3 && t.chosen) {
+    const ranked = Object.entries(t.chosen).sort((a, b) => b[1] - a[1]);
+    if (ranked[0] && ranked[0][0] === "ocr") return ["ocr", "model"];
+  }
+  return ["model", "ocr"];
+}
+
 function loadImgFromUrl(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -8820,9 +9399,11 @@ function ocrNote(doc) {
 // Decrypt one document and read its pixels through the chosen eyes (or the
 // stigmergic default). Returns the reconciled reading plus the CV guess at
 // what the image is.
-async function readDocumentText(doc, media, { eyes = null } = {}) {
+async function readDocumentText(doc, media) {
   if (!ocrReady()) return { ok: false, reason: "this browser can't read images on-device" };
   const pieces = await getDecryptedMedia(doc, media);
+  const head = new Uint8Array(pieces[0].slice(0, 16));
+  const sourceKind = sniffSourceKind(head);
   const blob = new Blob(pieces, { type: doc.mimetype || "image/*" });
   const url = URL.createObjectURL(blob);
   try {
@@ -8831,17 +9412,18 @@ async function readDocumentText(doc, media, { eyes = null } = {}) {
     const E = await ocrEyesMod();
     const canvas = prepareCanvas(img, 2200);
     const W = canvas.width, H = canvas.height;
-    const trails = E.loadTrails();
-    const chosenEyes = (eyes && eyes.length) ? eyes.slice() : E.senseEyes({ image: true, trails }).eyes;
     const screen = await S.readScreenImage(canvas, { name: doc.filename || "image" });
     if (!screen) return { ok: false, reason: "no pixels to read" };
     const content = S.contentOf(screen);
 
-    // One page in, one page out: each eye is a witness, and the reconciliation
-    // folds whichever ran into one reading, keeping the losers' distinct lines.
+    // BOTH eyes always run — no one chooses, and no text is lost to a bad
+    // choice. Each is a witness; reconciliation folds them into one reading,
+    // and (this was the bug) the flat OCR string is always available as the
+    // fallback when the positioned model comes back thin — which is exactly
+    // what a screenshot of a text conversation looks like.
     const entry = { page: 1 };
-    if (chosenEyes.includes("ocr") && screen.raw) entry.ocr = { text: screen.raw };
-    if (chosenEyes.includes("model")) entry.model = { text: content.text || "", elements: content.elements };
+    entry.ocr = { text: screen.raw || "" };
+    entry.model = { text: content.text || "", elements: content.elements || [] };
 
     // Pixels for the layer model (watermark) and the CV guess, from a small copy.
     const small = prepareCanvas(img, 512);
@@ -8850,8 +9432,8 @@ async function readDocumentText(doc, media, { eyes = null } = {}) {
     const layer = E.layerModel({ width: small.width, height: small.height, data: smallData });
     if (layer) entry.layers = layer;
 
-    const rec = E.reconcilePages([entry], { eyes: chosenEyes.length ? chosenEyes : ["model"] });
-    E.recordTrail("image", rec.pages, { order: E.EYE_IDS });
+    const rec = E.reconcilePages([entry], { eyes: ["model", "ocr"], prefer: preferOrderFor(sourceKind) });
+    E.recordTrail(sourceKind, rec.pages, { order: E.EYE_IDS });
     const page = rec.pages[0] || {};
     const stats = {
       words: screen.words || 0,
@@ -8861,12 +9443,15 @@ async function readDocumentText(doc, media, { eyes = null } = {}) {
       textAreaRatio: textCoverage(content.elements, W, H),
     };
     const guess = guessImageKind({ width: W, height: H, features, stats });
-    const text = (page.text || "").trim() || (chosenEyes.includes("ocr") ? (screen.raw || "").trim() : "");
+    // Best guess: the reconciled winner, else the flat OCR string. Never empty
+    // when either eye found anything.
+    const text = (page.text || "").trim() || (screen.raw || "").trim();
     return {
       ok: true, text,
       raw: screen.raw || "",
       elements: content.elements || [],
       width: W, height: H,
+      sourceKind,
       guess,
       eyes: rec.eyes,
       chosen: page.chosen || null,
@@ -8928,6 +9513,7 @@ function ocrAttrs(res, by) {
     ocrAt: nowIso(),
     ocrBy: by || null,
     ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
+    ocrSourceKind: res.sourceKind || null,
     // The eyes that ran, which one won, and what the losers saw — the same
     // "what actually happened" record the holodeck keeps for a scan.
     ocrEyes: res.eyes || null,
@@ -8978,9 +9564,9 @@ function emitDocInsTo(ctx, roomId, id, attrs) {
   return DemoStore.appendEvent(roomId, OP.INS, { entity: "document", id, attrs }, ctx.currentUserId);
 }
 
-async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false, eyes = null } = {}) {
+async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false } = {}) {
   try {
-    const res = await withDeadline(readDocumentText(doc, media, { eyes }), 150000, "Reading the image");
+    const res = await withDeadline(readDocumentText(doc, media), 150000, "Reading the image");
     if (!res.ok) { if (!quiet) toast("Couldn't read this image on this device — you can type the text yourself. (" + res.reason + ")", "warn"); return false; }
     const patch = ocrAttrs(res, by);
     patch.ocrRelevant = relevantOcrLines(patch.ocrText, submissionTerms());
@@ -9112,28 +9698,9 @@ function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact 
     wrap.appendChild($e("div", "ocr-note", doc.ocrHistory.length + " earlier revision" + (doc.ocrHistory.length === 1 ? "" : "s") + " kept on record"));
   }
 
-  // The eyes toggles, borrowed from the holodeck's source card: switch on the
-  // readers you want, then read the pixels again. A person's choice wins over
-  // any sensing.
-  if (canRead && onRead) {
-    const sel = new Set(doc.ocrEyes && doc.ocrEyes.length ? doc.ocrEyes : ["model"]);
-    const row = $e("div", "ocr-eyes");
-    row.appendChild($e("span", "ocr-eyeslbl", "Eyes"));
-    for (const e of IMAGE_EYES) {
-      const chip = $e("button", "ocr-chip" + (sel.has(e.id) ? " on" : ""), e.label);
-      chip.type = "button"; chip.title = e.note;
-      chip.onclick = () => {
-        if (sel.has(e.id)) { if (sel.size > 1) sel.delete(e.id); } else sel.add(e.id);
-        chip.classList.toggle("on", sel.has(e.id));
-      };
-      row.appendChild(chip);
-    }
-    const go = $e("button", "dview", "Read with these eyes");
-    go.title = "Runs on this device — the image is never sent anywhere";
-    go.onclick = () => onRead([...sel]);
-    row.appendChild(go);
-    wrap.appendChild(row);
-  }
+  // No eye chooser, anywhere: both readers always run and reconciliation
+  // picks the winner, learning from the shared history. The only thing a
+  // person can do to the text is correct it.
 
   if (onEdit) {
     const actions = $e("div", "ocr-actions");

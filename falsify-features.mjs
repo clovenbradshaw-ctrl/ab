@@ -115,7 +115,7 @@ await page.waitForTimeout(1200);
   check("panel reports which eye won and what was kept", /2D model won/.test(r.text) && /watermark layer/.test(r.text) && /disagreement/.test(r.text));
   check("panel surfaces submission-relevant lines", /match this submission/i.test(r.text));
   check("panel surfaces kept revisions", /earlier revision/i.test(r.text));
-  check("panel offers the eyes and a read control and a correction", /Read with these eyes/.test(r.text) && /Correct transcription/.test(r.text) && /Eyes/.test(r.text));
+  check("panel offers NO reader chooser, only a correction", !/Read with these eyes/.test(r.text) && !/Read this image/.test(r.text) && /Correct transcription/.test(r.text));
 }
 
 // 4b. search is scoped WITHIN one source — it never reaches into another document
@@ -195,23 +195,21 @@ await page.waitForTimeout(1200);
   check("the banner hides when not on a child", r.gone);
 }
 
-// 6. answer cards load collapsed (the CSS contract + the source that sets it)
+// 6. answer cards are EXPANDED by default (the answers are the hero content)
 {
   const r = await page.evaluate(async () => {
     const card = document.createElement("div");
-    card.className = "acard collapsed";
+    card.className = "acard";
     card.innerHTML = '<div class="acard-head">Q</div><div class="acard-answer"><div class="acard-final">A</div></div><ol class="atl"><li>x</li></ol>';
     document.body.appendChild(card);
-    const hiddenWhenCollapsed = getComputedStyle(card.querySelector(".acard-answer")).display === "none" && getComputedStyle(card.querySelector(".atl")).display === "none";
-    card.classList.remove("collapsed");
-    const shownWhenOpen = getComputedStyle(card.querySelector(".acard-answer")).display !== "none";
+    const answerShown = getComputedStyle(card.querySelector(".acard-answer")).display !== "none";
+    const timelineShown = getComputedStyle(card.querySelector(".atl")).display !== "none";
     card.remove();
     const src = await (await fetch("/index.html")).text();
-    return { hiddenWhenCollapsed, shownWhenOpen, sourceCollapsed: /"acard collapsed"/.test(src) };
+    return { answerShown, timelineShown, sourceCollapsed: /"acard collapsed"/.test(src), hasToggle: /acard-toggle/.test(src) };
   });
-  check("a collapsed card hides its answer and history", r.hiddenWhenCollapsed);
-  check("expanding shows the answer again", r.shownWhenOpen);
-  check("answerCard is built collapsed by default", r.sourceCollapsed);
+  check("answer cards show their answer and history by default", r.answerShown && r.timelineShown);
+  check("no collapse machinery remains", !r.sourceCollapsed && !r.hasToggle);
 }
 
 // 7. the end-of-interview review shows every question, no produced document, and an own-records-only notice
@@ -304,6 +302,67 @@ await page.waitForTimeout(1200);
   });
   check("the reader warms itself in the background", r.had && r.warmed);
   check("warming loads the engine with no user action", r.tess !== "undefined");
+}
+
+// 9c. byte sniffing, no-lost-text (the screenshot-of-text-messages bug), deep-link ids, inbox
+{
+  const r = await page.evaluate(async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const jpg = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const sniff = { png: sniffSourceKind(png), jpeg: sniffSourceKind(jpg) };
+    const cv = document.createElement("canvas"); cv.width = 420; cv.height = 720;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "#f2f2f7"; cx.fillRect(0, 0, 420, 720);
+    cx.fillStyle = "#e5e5ea"; cx.fillRect(30, 60, 250, 70); cx.fillRect(140, 150, 250, 70);
+    cx.fillStyle = "#000"; cx.font = "24px sans-serif";
+    cx.fillText("meet me at the courthouse", 45, 105);
+    cx.fillText("i will bring the order", 155, 195);
+    const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+    const id = newId("doc"); const stored = await putEncryptedMedia(blob, mediaBackend(), id);
+    const doc = { id, ...stored, filename: "thread.png", mimetype: "image/png" };
+    const out = await readDocumentText(doc, mediaBackend());
+    const a1 = anonRecordId("!a:hs"), a2 = anonRecordId("!a:hs"), b1 = anonRecordId("!b:hs");
+    const url = recordUrl("!room:hs", "doc_1");
+    const src = await (await fetch("/index.html")).text();
+    return {
+      sniff, ok: out.ok, text: out.text, raw: out.raw, sourceKind: out.sourceKind,
+      stable: a1 === a2, differs: a1 !== b1, url,
+      srcHasInbox: /"inbox"/.test(src) && /inbox-name/.test(src) && /inbox-kids/.test(src) && /caseStatusChip/.test(src),
+      srcHasHeader: /submissionProgress/.test(src) && /submissionDocsBox/.test(src) && /Search file names and text in the files/.test(src),
+    };
+  });
+  check("byte sniffing reads file signatures", r.sniff.png === "png" && r.sniff.jpeg === "jpeg");
+  check("a screenshot of text is read — raw fallback, the reported bug", r.ok && /courthouse|order|meet/i.test((r.text || "") + (r.raw || "")));
+  check("the reading knows its own file kind", r.sourceKind === "png");
+  check("deep-link id is stable per room, differs across rooms", r.stable && r.differs);
+  check("the deep link carries only the anonymized id, no name or room id", /[?&]sub=/.test(r.url) && !/!(room|a|b):hs/.test(r.url));
+  check("the submissions tab is an inbox: name, date, children, status per row", r.srcHasInbox);
+  check("the profile header is the dashboard + searchable documents box", r.srcHasHeader);
+}
+
+// 9e. buckets, timeline-with-provenance, and the query-passages helpers
+{
+  const r = await page.evaluate(async () => {
+    const marked = highlightPassage("DCS <b>custody</b> changed", "custody");
+    const clipped = clipPassage("alpha\nbeta\n" + "x".repeat(400) + "\ngamma custodian here\nomega", ["custodian"]);
+    const src = await (await fetch("/index.html")).text();
+    return {
+      marked,
+      clippedHasTerm: /custodian/.test(clipped) && clipped.length < 500,
+      srcHasBuckets: /submissionBuckets/.test(src) && /bchip/.test(src),
+      srcHasTimeline: /submissionTimeline/.test(src) && /tl-src/.test(src) && /openEvidence/.test(src),
+      srcHasQuery: /submissionPassages/.test(src) && /showPassagesModal/.test(src) && /appquery/.test(src) && /passage-text/.test(src),
+      srcHasAnswerAnchor: /card.id = "ac-"/.test(src) || /card\.id = "ac-/.test(src),
+      srcHasSrow: /"srow"/.test(src),
+    };
+  });
+  check("highlight marks the match and escapes the text", /<mark>custody<\/mark>/.test(r.marked) && !/<b>/.test(r.marked));
+  check("clipPassage returns a tight window around the hit", r.clippedHasTerm);
+  check("buckets organize the application's info", r.srcHasBuckets);
+  check("timeline carries provenance back to the evidence", r.srcHasTimeline);
+  check("query pops up the application's own passages", r.srcHasQuery);
+  check("answers are anchorable for evidence jumps", r.srcHasAnswerAnchor);
+  check("timeline + buckets sit in their own row", r.srcHasSrow);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
