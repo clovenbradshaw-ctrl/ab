@@ -10483,7 +10483,7 @@ function docRow(d) {
   const bottom = el("div", "drow2");
   const view = el("button", "dview", "View");
   view.onclick = () => previewDocument(d, mediaBackend(), {
-    onSaveText: (text, pages) => { commitOcr(submitterDocEmit, d, { ocrText: text, ocrPages: pages, ocrKind: "edited", ocrAt: nowIso(), ocrBy: meId() }); renderDocs(); },
+    onSaveText: (text, pages) => { commitOcr(submitterDocEmit, d, { ocrText: text, ocrPages: pages, ocrKind: "edited", ocrAt: nowIso(), ocrBy: meId() }); markFamilyLessonsDirty(); renderDocs(); },
   });
   bottom.appendChild(view);
   bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
@@ -10797,7 +10797,7 @@ async function readDocumentText(doc, media) {
     const img = await loadImgFromUrl(url);
     const S = await ocrScreenMod();
     const E = await ocrEyesMod();
-    const canvas = prepareCanvas(img, 2200);
+    const canvas = prepareCanvas(img, 4200);
     const W = canvas.width, H = canvas.height;
     const screen = await S.readScreenImage(canvas, { name: doc.filename || "image" });
     if (!screen) return { ok: false, reason: "no pixels to read" };
@@ -11096,7 +11096,7 @@ async function editDocOcr(d) {
   const by = meId();
   const patch = { ocrText: text, ocrKind: "edited", ocrStatus: text ? "done" : "empty", ocrAt: nowIso(), ocrBy: by };
   patch.ocrRelevant = relevantOcrLines(text, submissionTerms());
-  if (commitOcr(submitterDocEmit, d, patch)) { toast("Transcription updated", "success"); renderDocs(); }
+  if (commitOcr(submitterDocEmit, d, patch)) { markFamilyLessonsDirty(); toast("Transcription updated", "success"); renderDocs(); }
   else toast("No change — nothing recorded.");
 }
 
