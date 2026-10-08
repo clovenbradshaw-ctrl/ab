@@ -761,6 +761,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .da-parse-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px}
 .da-field{display:flex;gap:8px;align-items:center}
 .da-note{font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.da-preview{max-width:100%;max-height:340px;border:1px solid var(--line);border-radius:8px;background:var(--wash);display:block;margin-bottom:8px}
 .da-fkey{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);width:150px;flex:none}
 .da-fmt{font:500 9.5px "IBM Plex Mono",monospace;color:var(--muted);flex:none;width:66px;text-align:right}
 .da-fkey-state{font:500 9px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);flex:none;width:40px}
@@ -4419,7 +4420,11 @@ function docSurface(doc, nativeEl, onSaveText) {
     if ((p.elements || []).length) p.text = p.elements.map((e) => e.text).join("\n");
     onSaveText(p.text, pages);
   };
-  function draw() {
+  let _w = -1;
+  function draw(force) {
+    const bw = stage.clientWidth || (stage.parentElement && stage.parentElement.clientWidth) || 760;
+    if (!force && bw === _w) return;
+    _w = bw;
     stage.innerHTML = "";
     const p = pages[0];
     // The page's shape. Prefer the measured page (the coordinates the text was
@@ -4430,7 +4435,7 @@ function docSurface(doc, nativeEl, onSaveText) {
     let W = p.width || (nat && nat.w) || 0, H = p.height || (nat && nat.h) || 0;
     if (!W || !H) { W = 1000; H = 1000; }
     const hasPos = (p.elements || []).some((e) => e.region);
-    const boxW = stage.clientWidth || 760;
+    const boxW = stage.clientWidth || (stage.parentElement && stage.parentElement.clientWidth) || 760;
     const scale = boxW / W;
     if (mode === "page" || hasPos) stage.style.height = (H * scale) + "px";
     else stage.style.height = "auto";
@@ -4470,12 +4475,17 @@ function docSurface(doc, nativeEl, onSaveText) {
     pageTab.classList.toggle("on", mode === "page");
     textTab.classList.toggle("on", mode === "text");
   }
-  pageTab.onclick = () => { mode = "page"; draw(); };
-  textTab.onclick = () => { mode = "text"; draw(); };
-  editT.onclick = () => { if (!onSaveText) return; editing = !editing; editT.classList.toggle("on", editing); hint.textContent = editing ? "editing — click away to save" : "select to copy · edit to correct"; draw(); };
+  pageTab.onclick = () => { mode = "page"; draw(true); };
+  textTab.onclick = () => { mode = "text"; draw(true); };
+  editT.onclick = () => { if (!onSaveText) return; editing = !editing; editT.classList.toggle("on", editing); hint.textContent = editing ? "editing — click away to save" : "select to copy · edit to correct"; draw(true); };
   // The file's true shape can arrive after the first paint — redraw when it does.
   if (nativeEl.tagName === "IMG") nativeEl.addEventListener("load", draw, { once: true });
   else if (nativeEl.tagName === "VIDEO") nativeEl.addEventListener("loadedmetadata", draw, { once: true });
+  // The overlay is often built before the modal is laid out (its width is 0 at
+  // first), which put every span in the wrong place. Redraw whenever the stage
+  // actually gets a size, and on resize.
+  if (typeof ResizeObserver !== "undefined") { const ro = new ResizeObserver(() => draw()); ro.observe(stage); }
+  window.addEventListener("resize", draw);
   requestAnimationFrame(draw);
   return wrap;
 }
@@ -8125,6 +8135,8 @@ function initAdminView({ onClose }) {
     const pbody = $e("div", "da-parse-body");
     if (!selected) pbody.appendChild($e("div", "spanel-empty", "Select a document."));
     else {
+      // Show the document itself, so the parse can be read against the image.
+      if (isReadableMedia(selected)) { const prev = document.createElement("img"); prev.className = "da-preview"; prev.alt = selected.title || selected.filename || ""; pbody.appendChild(prev); loadThumb(selected, prev, mediaFor(ctx)); }
       const kindRow = $e("div", "da-field");
       kindRow.appendChild($e("span", "da-flabel", "kind"));
       const kindI = document.createElement("input"); kindI.className = "da-kindinput"; kindI.value = selected.docKind || ""; kindI.placeholder = "its kind…";
