@@ -2515,6 +2515,32 @@ function snippetAround(text, index, match) {
   const end = Math.min(text.length, index + String(match).length + 70);
   return (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ").trim() + (end < text.length ? "…" : "");
 }
+// Read a form: the label a page prints and the value beside it, line by line —
+// "ISSUE DATE: 08/11/2023", "NAME: …", "DOCUMENT NO.: …" — good enough for the
+// labelled fields of a prescription, a police report, a DCS notice.
+function extractFormFields(text) {
+  const out = [];
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (line.length < 4) continue;
+    let label, value;
+    const sep = line.indexOf(":");
+    if (sep > 1 && sep <= 32) { label = line.slice(0, sep); value = line.slice(sep + 1); }
+    else {
+      const m = /^([A-Z][A-Za-z ./()&#]{1,28}?)\s+[-–—]\s+(.+)$/.exec(line);
+      if (!m) continue;
+      label = m[1]; value = m[2];
+    }
+    label = label.replace(/[\s.:\-–—]+$/, "").trim();
+    value = value.trim();
+    const words = label.split(/\s+/).filter(Boolean);
+    if (label.length < 2 || words.length > 5 || /\d/.test(label) || !/^[A-Z]/.test(label) || !/[A-Za-z]/.test(label)) continue;
+    if (!value || /^[\W_]*$/.test(value)) continue;
+    out.push({ label, value: value.slice(0, 220) });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
 // ── a file's own date: EXIF metadata, or the name it was saved under ──
 // When a photo was taken says a lot the pixels don't. Read it from the file's
 // EXIF (DateTimeOriginal / DateTime) or, failing that, from the filename the
