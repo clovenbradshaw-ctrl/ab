@@ -1368,6 +1368,27 @@ nav .setup .rail-toggle{display:inline-flex}
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+// Fatal-error surface: if anything throws during boot, show it on the page
+// instead of a blank screen — a blank page helps no one.
+window.addEventListener("error", (ev) => {
+  try {
+    let box = document.getElementById("fatalErr");
+    if (!box) {
+      box = document.createElement("div"); box.id = "fatalErr";
+      box.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#B0402F;color:#fff;font:12px/1.45 Inter,system-ui,sans-serif;padding:11px 14px;border-radius:9px;white-space:pre-wrap;box-shadow:0 8px 30px rgba(0,0,0,.3)";
+      box.addEventListener("dblclick", () => box.remove());
+      (document.body || document.documentElement).appendChild(box);
+    }
+    const where = ev.filename ? " (" + ev.filename.split("/").pop() + ":" + ev.lineno + ")" : "";
+    box.textContent = "Something went wrong" + where + ": " + (ev.message || (ev.error && ev.error.message) || "unknown error") + "\n(double-click to dismiss)";
+  } catch (e) {}
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  try {
+    const reason = ev.reason || {};
+    window.dispatchEvent(new ErrorEvent("error", { message: (reason && reason.message) || String(reason) }));
+  } catch (e) {}
+});
 
 
 // config.js — small shared constants that don't belong to any one layer.
@@ -6363,8 +6384,8 @@ function initAdminView({ onClose }) {
     const submissions = collectSubmissions(ctx);
     const docs = submissions.flatMap((s) => s.docs.map((d) => ({ ...d, applicantName: s.applicantName })));
     // Backend auto-processing: transcribe any image/video not already read,
-    // across every submission, in the background.
-    enqueueUnreadImages();
+    // across every submission, in the background. Never let it break a render.
+    try { enqueueUnreadImages(); } catch (e) { console.warn("[ocr] queue:", e); }
     body.innerHTML = "";
     const unreadable = unreadableNotice(ctx);
     if (unreadable) body.appendChild(unreadable);
@@ -6429,7 +6450,8 @@ function initAdminView({ onClose }) {
       const viewing = pipelineViewing ? all.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
 
       const inbox = $e("div", "inbox");
-      inbox.appendChild(renderInboxList(filtered, viewing, all.filter(isTestSubmission).length));
+      try { inbox.appendChild(renderInboxList(filtered, viewing, all.filter(isTestSubmission).length)); }
+      catch (e) { console.error("[inbox] list:", e); inbox.appendChild($e("div", "inbox-empty", "Couldn't render the list: " + (e.message || e))); }
       const detail = $e("div", "inbox-detail");
       if (viewing) {
         const bar = $e("div", "inbox-detail-head");
@@ -6458,7 +6480,8 @@ function initAdminView({ onClose }) {
         bar.appendChild(query);
         bar.appendChild(noteButton(viewing, { kind: "submission" }, viewing.applicantName));
         detail.appendChild(bar);
-        renderSingleSubmission(detail, viewing);
+        try { renderSingleSubmission(detail, viewing); }
+        catch (e) { console.error("[submission] render:", e); detail.appendChild($e("div", "inbox-empty", "Couldn't render this submission: " + (e.message || e))); }
       } else {
         detail.appendChild($e("div", "inbox-empty", all.length ? "No submissions match your search." : "No submissions yet."));
       }
@@ -7411,6 +7434,24 @@ function initAdminView({ onClose }) {
     let before = s.slice(0, i).replace(/[._\-–—:=\s]+$/, "").trim();
     if (before.length > 42) before = before.slice(-42).trim();
     return /[a-z]{2,}/i.test(before) ? before : "";
+  }
+  // The application's date vocabulary: only the questions that are ABOUT a
+  // point in time, in the office's own words. Matching dates against everything
+  // (phone numbers, names) is how you get nonsense.
+  const DATE_CONCEPT_STOP = new Set(["date", "time", "your", "their", "the", "for", "and", "his", "her", "child", "children", "number", "name", "when", "what", "does", "did", "have", "has", "with", "about", "where", "which", "that", "this", "first", "last", "most", "recent"]);
+  function questionConcepts() {
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const out = [];
+    for (const f of base) {
+      const label = String(f.label || f.prompt || "").trim();
+      if (!label) continue;
+      const isTime = f.type === "date" || f.type === "date_flex" || /\b(date|when|birth|born|custody|placed|placement|incident|hearing|filed|started|began)\b/i.test(label);
+      if (!isTime) continue;
+      const concept = (label.replace(/^\s*(child|placement)\s*\d+\s*[—:-]\s*/i, "").trim() || label).replace(/\s*\(.*\)\s*$/, "");
+      const words = concept.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !DATE_CONCEPT_STOP.has(w));
+      if (words.length) out.push({ path: f.path, label, concept, words });
+    }
+    return out;
   }
   function inferDateMeaning(iso, list) {
     const fields = questionConcepts();
@@ -13870,18 +13911,10 @@ function closeQuestionWizard() {
 
 // ── Init ──
 document.addEventListener("DOMContentLoaded", () => {
-  wireLogin();
-  wireLangGate();
-  wirePasswordModal();
-  wireSectionReview();
-  wireCompose();
-  wireVoice();
-  wireDocs();
-  wireNewNav();
-  wireQPanelDirtyTracking();
-  initUserWizard();
-  initQuestionWizard();
-  initEntry();
+  const safe = (fn) => { try { fn(); } catch (e) { console.error("[wire]", (fn && fn.name) || "?", e); window.dispatchEvent(new ErrorEvent("error", { message: ((fn && fn.name) || "startup") + ": " + (e && e.message || e) })); } };
+  [wireLogin, wireLangGate, wirePasswordModal, wireSectionReview, wireCompose, wireVoice, wireDocs, wireNewNav, wireQPanelDirtyTracking, initUserWizard, initQuestionWizard].forEach(safe);
+  try { initEntry(); }
+  catch (e) { console.error("[boot]", e); window.dispatchEvent(new ErrorEvent("error", { message: "boot: " + (e && e.message || e) })); }
   // Build tag: the deployed page shows which build it is, so a stale cache is
   // obvious at a glance.
   try {
