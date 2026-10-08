@@ -97,6 +97,32 @@ export function contentOf(screen) {
   return { text, elements: out, width: screen.width, height: screen.height };
 }
 
+/** The page's positioned LINES: every text line in reading order with the exact region
+ *  [x,y,w,h] it occupies and its own font size (em). Where contentOf returns paragraph
+ *  blocks — a wrapped message bubble is ONE element whose bbox spans all its lines — this
+ *  returns the lines themselves, so an overlay can put each line where it actually is
+ *  instead of drawing the whole paragraph as one huge un-wrapped run. */
+export function linesOf(screen) {
+  const out = [];
+  (function walk(node) {
+    for (const c of (node.children || [])) {
+      if (c.type === 'text' && Array.isArray(c.lines)) {
+        for (const l of c.lines) {
+          const t = String(l.text || '').trim(); if (!t) continue;
+          out.push({
+            text: t,
+            region: [Math.round(l.x0), Math.round(l.y0), Math.round((l.x1 - l.x0)), Math.round((l.y1 - l.y0))],
+            em: Math.round((l.em || c.em || 0) * 10) / 10,
+          });
+        }
+      }
+      if (c.children) walk(c);
+    }
+  })(screen.model && screen.model.root);
+  out.sort((a, b) => a.region[1] - b.region[1] || a.region[0] - b.region[0]);
+  return { text: out.map(o => o.text).join('\n'), elements: out, width: screen.width, height: screen.height };
+}
+
 // OCR words → the line shape gapsOf expects (a line per distinct OCR line index is overkill here;
 // one line per word is enough for "did the box's text land?").
 function wordsToLines(words) {

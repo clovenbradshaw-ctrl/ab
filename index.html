@@ -4399,7 +4399,10 @@ function docSurface(doc, nativeEl, onSaveText) {
         sp.style.left = (r[0] * scale) + "px";
         sp.style.top = (r[1] * scale) + "px";
         sp.style.minWidth = (r[2] * scale) + "px";
-        sp.style.fontSize = Math.max(7, r[3] * scale * 0.82) + "px";
+        // Prefer the line's own measured font size (em, in source pixels) — the
+        // box height alone drags a multi-line paragraph's font far too large.
+        const em = (el.em && el.em > 0) ? el.em : r[3] * 0.82;
+        sp.style.fontSize = Math.max(7, em * scale) + "px";
         sp.contentEditable = editing ? "true" : "false";
         sp.addEventListener("blur", () => { el.text = sp.textContent; save(); });
         stage.appendChild(sp);
@@ -6889,15 +6892,16 @@ function initAdminView({ onClose }) {
   const ocrQueued = new Set();   // attempted this session — never retried in a loop
   let ocrQueueRunning = false;
   // A document wants (re)reading when it is readable media and either was never
-  // read, or was read but has no positioned reading on record. The latter is a
-  // legacy doc (read before positions were kept) — re-reading it lays the text
-  // back on the page. `ocrStatus` empty/failed means a read already decided this
-  // device gets nothing useful out of it; don't spin on that.
+  // read, or was read without a usable positioned reading: no geography at all,
+  // or the old paragraph-block geometry (no per-line font size) that draws a
+  // wrapped bubble as one oversized un-wrapped run. Re-reading it lays the text
+  // back on the page line by line. `ocrStatus` empty/failed means a read already
+  // decided this device gets nothing useful out of it; don't spin on that.
   function wantsReading(d) {
     if (!isReadableMedia(d)) return false;
     if (d.ocrStatus === "empty" || d.ocrStatus === "failed") return false;
     if (!d.ocrText) return true;
-    return isImageDoc(d) && !(Array.isArray(d.ocrPages) && d.ocrPages.length);
+    return docNeedsPositions(d);
   }
   function enqueueUnreadImages() {
     let added = false;
@@ -10230,19 +10234,31 @@ function renderDocs() {
   backfillPositions();
 }
 
+// Does this uploaded image have text but no usable positioned reading? True
+// when there is no geography at all, or only the old paragraph-block geometry
+// (no per-line font size) that draws a wrapped bubble as one oversized run.
+function docNeedsPositions(d) {
+  if (!isImageDoc(d) || !d.ocrText) return false;
+  const pages = d.ocrPages;
+  if (!(Array.isArray(pages) && pages.length)) return true;
+  const els = (pages[0] && pages[0].elements) || [];
+  if (!els.length) return false;              // nothing measured to position
+  return els.some((e) => !e.em);              // paragraph blocks, not lines
+}
+
 // On refresh, a family document read before positions were kept was stored as
 // flat text only — it opens in the single-view surface, but with no geography
 // to lay the text back on. Re-read it once, quietly, so its text can be shown
-// at the pixel positions it was read from. Each document is attempted at most
-// once per session (the `_posBackfilled` guard), and only when the device can
-// actually run the reader.
+// line by line at the pixel positions it was read from. Each document is
+// attempted at most once per session (the `_posBackfilled` guard), and only
+// when the device can actually run the reader.
 const _posBackfilled = new Set();
 function backfillPositions() {
   if (!store || !ocrReady() || !ocrAutoAllowed()) return;
   for (const [id, r] of Object.entries(store.fold().records)) {
     if (r.entity !== "document") continue;
     const d = { id, ...r.attrs };
-    if (!isImageDoc(d) || !d.ocrText || (Array.isArray(d.ocrPages) && d.ocrPages.length)) continue;
+    if (!docNeedsPositions(d)) continue;
     if (_posBackfilled.has(id)) continue;
     _posBackfilled.add(id);
     autoReadDoc(d, mediaBackend(), submitterDocEmit, meId());
@@ -10617,6 +10633,10 @@ async function readDocumentText(doc, media) {
     const screen = await S.readScreenImage(canvas, { name: doc.filename || "image" });
     if (!screen) return { ok: false, reason: "no pixels to read" };
     const content = S.contentOf(screen);
+    // The positioned LINES, not the paragraph blocks: a wrapped message bubble
+    // is one paragraph whose bbox spans every line, so anchoring to it draws the
+    // whole thing as one oversized un-wrapped run. Each line gets its own box.
+    const lines = (typeof S.linesOf === "function" ? S.linesOf(screen) : null) || content;
 
     // BOTH eyes always run — no one chooses, and no text is lost to a bad
     // choice. Each is a witness; reconciliation folds them into one reading,
@@ -10665,10 +10685,10 @@ async function readDocumentText(doc, media) {
       capturedAt, capturedFrom,
       ignored,
       docKind: classifyDocKind((content.text || "") + " " + (screen.raw || "")),
-      // The positioned reading, page by page: each text region with where it
-      // sits. This is what lets the text be laid back ON the page, selectable
-      // and editable, in the same geography it was read from.
-      pages: [{ page: 1, width: W, height: H, text: content.text || "", elements: (content.elements || []).map((e) => ({ text: e.text, region: e.region })) }],
+      // The positioned reading, page by page: each line with where it sits and
+      // its own font size. This is what lets the text be laid back ON the page,
+      // selectable and editable, in the same geography it was read from.
+      pages: [{ page: 1, width: W, height: H, text: lines.text || content.text || "", elements: (lines.elements || []).map((e) => ({ text: e.text, region: e.region, em: e.em || null })) }],
       guess,
       eyes: rec.eyes,
       chosen: page.chosen || null,

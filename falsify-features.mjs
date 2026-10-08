@@ -432,6 +432,32 @@ await page.waitForTimeout(1200);
   check("the page uses contain, never fill", r.contain);
 }
 
+// 9f2. positioned text comes back per LINE, not as oversized paragraph blocks —
+//      the wrapped-message-screenshot case
+{
+  const r = await page.evaluate(async () => {
+    const cv = document.createElement("canvas"); cv.width = 420; cv.height = 720;
+    const cx = cv.getContext("2d"); cx.fillStyle = "#f2f2f7"; cx.fillRect(0, 0, 420, 720);
+    cx.fillStyle = "#e5e5ea"; cx.fillRect(20, 60, 300, 110);
+    cx.fillStyle = "#0b84ff"; cx.fillRect(120, 240, 280, 110);
+    cx.fillStyle = "#000"; cx.font = "22px sans-serif";
+    cx.fillText("meet me at the", 36, 95); cx.fillText("courthouse tomorrow", 36, 125);
+    cx.fillStyle = "#fff";
+    cx.fillText("i will bring the", 136, 275); cx.fillText("custody order with me", 136, 305);
+    const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+    const id = newId("doc"); const stored = await putEncryptedMedia(blob, mediaBackend(), id);
+    const doc = { id, ...stored, filename: "thread.png", mimetype: "image/png" };
+    const out = await readDocumentText(doc, mediaBackend());
+    const els = (out.pages && out.pages[0] && out.pages[0].elements) || [];
+    // Every placed element is a single line: its box is about one line tall and
+    // sized by its own em. A paragraph block would be ~2.5em tall.
+    const perLine = els.length >= 2 && els.every((e) => e.em > 0 && e.region[3] <= e.em * 1.6);
+    return { ok: out.ok, n: els.length, perLine, text: (out.text || "").replace(/\s+/g, " ").trim() };
+  });
+  check("a wrapped text screenshot is positioned per line, not one huge block", r.ok && r.perLine, JSON.stringify(r));
+  check("the wrapped lines read back", /courthouse/.test(r.text) && /custody/.test(r.text), r.text);
+}
+
 // 9g. lessons learned improve comprehension of a form (handprint / clinical)
 {
   const r = await page.evaluate(() => {
