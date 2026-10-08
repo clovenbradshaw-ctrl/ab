@@ -2617,6 +2617,20 @@ function inventTuples(text) {
 }
 // Invent and record rules from a reading: a candidate key lesson per field, and
 // a structure lesson saying whether it is nested (columns become column keys).
+// A local pass reads the structure and proposes rules about what it is seeing:
+// keys (canonicalized), value types, the kind's name, and nesting (columns).
+// Deterministic and offline; a real local model may replace it when available.
+function titleLine(text) { return (String(text || "").split("\n").map((s) => s.trim()).filter(Boolean)[0] || "").slice(0, 60); }
+function structuralProposer(text) {
+  const inv = inventTuples(text);
+  const rules = [];
+  for (const t of inv.tuples) rules.push({ type: "key", label: t.label, canonical: t.canonical, valueType: t.format, value: t.value });
+  if (inv.nested) {
+    for (const c of inv.columns) rules.push({ type: "key", label: c, canonical: snake(c), valueType: "column" });
+    rules.push({ type: "struct", structure: "table", nested: true, columns: inv.columns });
+  }
+  return { kindName: titleLine(text) || "unknown", structure: inv.kind, nested: inv.nested, rules };
+}
 function inventRules(text, docKind) {
   const inv = inventTuples(text);
   for (const t of inv.tuples) recordKeyLesson(t.label, t.format, docKind);
@@ -7981,7 +7995,21 @@ function initAdminView({ onClose }) {
       toast("Invented " + r.tuples.length + " tuple" + (r.tuples.length === 1 ? "" : "s") + " · " + (r.nested ? "nested (table)" : r.kind), "success");
       renderActive();
     };
-    btns.append(drop, pull, cbtn, invBtn);
+    const passBtn = $e("button", "aview", "Model pass (local)");
+    passBtn.title = "A local pass proposes keys, types and structure as rules to review";
+    passBtn.onclick = () => {
+      if (!selected) { toast("Select a document first", "warn"); return; }
+      const prop = structuralProposer(selected.ocrText || "");
+      const kind = selected.docKind || prop.kindName;
+      let n = 0;
+      for (const r of prop.rules) {
+        if (r.type === "key") { recordKeyLesson(r.label, r.valueType, kind); recordLesson({ kind, label: r.label, from: "", to: r.canonical, text: `key "${r.label}" → ${r.canonical} (${r.valueType})` }); n++; }
+        else if (r.type === "struct") { recordLesson({ kind, label: "structure", from: "", to: r.structure, text: `structure: ${r.structure}${r.columns ? " · columns: " + r.columns.join(", ") : ""}` }); n++; }
+      }
+      toast(n ? "Local pass proposed " + n + " rule" + (n === 1 ? "" : "s") + " — review below" : "Nothing proposed (no keys found)", n ? "success" : "warn");
+      renderActive();
+    };
+    btns.append(drop, pull, cbtn, invBtn, passBtn);
     head.appendChild(btns);
     const ig = $e("div", "da-ignore");
     ig.appendChild($e("span", "da-flabel", "ignore"));

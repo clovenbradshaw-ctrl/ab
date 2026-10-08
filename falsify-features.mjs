@@ -478,6 +478,21 @@ await page.waitForTimeout(1200);
   check("a structure lesson is recorded", r.structLesson === true);
 }
 
+// 9i. a local pass proposes rules that get applied
+{
+  const r = await page.evaluate(() => {
+    const text = "Adherence Counseling Record\nVisit Date: 03/24/2010\nParticipant ID: 102\nCounselor: J. Hale";
+    const prop = structuralProposer(text);
+    const records = {};
+    configStore = { roomId: "!cfg", fold: () => ({ records }), emit: (op, payload) => { records[payload.id] = { entity: payload.entity, attrs: payload.attrs }; return { id: payload.id }; } };
+    for (const rule of prop.rules) if (rule.type === "key") recordKeyLesson(rule.label, rule.valueType, prop.kindName);
+    const after = applyKeyLessons(text, prop.kindName).map((f) => ({ k: f.label, known: f.known }));
+    return { kindName: prop.kindName, rules: prop.rules.length, after };
+  });
+  check("a local pass proposes rules (key / type / kind name)", r.rules >= 3 && /Adherence/.test(r.kindName), JSON.stringify(r).slice(0, 120));
+  check("accepted proposals are applied on the next read", r.after.length > 0 && r.after.every((x) => x.known));
+}
+
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
 //     read returns cleanly, and auto-reading can be switched off entirely.
 {
