@@ -519,6 +519,26 @@ await page.waitForTimeout(1200);
   check("accepted proposals are applied on the next read", r.after.length > 0 && r.after.every((x) => x.known));
 }
 
+// 9j. grid forms: header row -> columns; each row binds to them
+{
+  const r = await page.evaluate(() => {
+    const els = [
+      { text: "Date (mm/dd/yyyy)", region: [40, 100, 120, 14] },
+      { text: "Last Name", region: [220, 100, 90, 14] },
+      { text: "First Name", region: [330, 100, 90, 14] },
+      { text: "01/10/2023", region: [40, 140, 90, 14] },
+      { text: "Pei", region: [220, 140, 60, 14] },
+      { text: "Lee", region: [330, 140, 60, 14] },
+    ];
+    const g = readGridFromElements(els);
+    const t = readGridFromText(["Name   Service No   Rank", "W.D. Ranjan   008249   Tech", "H.C. Jayawardena   068301   Tk"]);
+    return { geoCols: g.columns, geoRec: g.records, txtCols: t.columns, txtRec: t.records.length };
+  });
+  check("grid (geometry): a header row becomes the columns", r.geoCols.length === 3 && /Date/.test(r.geoCols[0]), JSON.stringify(r.geoCols));
+  check("grid (geometry): a data row binds its cells to the columns", r.geoRec.length === 1 && r.geoRec[0]["Last Name"] === "Pei" && r.geoRec[0]["Date (mm/dd/yyyy)"] === "01/10/2023");
+  check("grid (text fallback): a whitespace table is read", r.txtCols.length === 3 && r.txtRec === 2);
+}
+
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
 //     read returns cleanly, and auto-reading can be switched off entirely.
 {

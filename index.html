@@ -2602,18 +2602,66 @@ function applyKeyLessons(text, kind) {
 // plus whether the reading is NESTED (a table of records) and its columns. Local
 // and deterministic — a model may propose richer rules, but this never blocks.
 function snake(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
-function inventTuples(text) {
+function inventTuples(text, elements) {
   const lines = String(text || "").split("\n").map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim());
   const tuples = [];
   for (const line of lines) {
     const f = extractFormFields(line)[0];
     if (f) { const fmt = valueFormat(f.value); tuples.push({ label: f.label, value: f.value, canonical: snake(f.label), format: fmt, type: fmt }); }
   }
+  // Grid forms (label row on top, value rows beneath) — read the grid by
+  // geometry when we have positioned words, else by whitespace runs.
+  let grid = elements && elements.length ? readGridFromElements(elements) : { columns: [], records: [] };
+  if (!grid.records.length) grid = readGridFromText(lines);
   const cellLines = lines.filter((l) => l.trim().split(/\s{2,}|\t/).filter(Boolean).length >= 3);
-  const nested = cellLines.length >= 3;
+  const nested = grid.records.length > 0 || cellLines.length >= 3;
   const kind = nested ? "table" : (tuples.length >= 3 ? "form" : "prose");
-  const columns = nested ? cellLines[0].trim().split(/\s{2,}|\t/).filter(Boolean) : [];
-  return { nested, kind, tuples, columns };
+  const columns = grid.columns.length ? grid.columns : (nested ? cellLines[0].trim().split(/\s{2,}|\t/).filter(Boolean) : []);
+  return { nested, kind, tuples, columns, records: grid.records, header: grid.columns };
+}
+// The grid by geometry: rows by vertical proximity, columns by the header row's
+// x positions; each following row binds its cells to those column keys. This is
+// how a form whose labels sit in a header and values sit beneath gets read.
+function readGridFromElements(els) {
+  const items = (els || []).filter((e) => e && e.text && e.region && String(e.text).trim())
+    .map((e) => ({ t: String(e.text).trim(), x: e.region[0], y: e.region[1], w: e.region[2], h: e.region[3] }));
+  if (items.length < 6) return { columns: [], records: [] };
+  items.sort((a, b) => a.y - b.y);
+  const rows = [];
+  for (const it of items) {
+    const cy = it.y + it.h / 2, r = rows[rows.length - 1];
+    if (r && Math.abs(cy - r.cy) < Math.max(9, it.h * 0.6)) { r.items.push(it); r.cy = (r.cy * (r.items.length - 1) + cy) / r.items.length; }
+    else rows.push({ cy, items: [it] });
+  }
+  if (rows.length < 2) return { columns: [], records: [] };
+  const head = rows[0].items.slice().sort((a, b) => a.x - b.x);
+  const colX = head.map((h) => h.x);
+  const records = [];
+  for (const r of rows.slice(1)) {
+    const rec = {};
+    for (const it of r.items) {
+      let bi = 0, bd = 1e9;
+      colX.forEach((cx, i) => { const d = Math.abs(cx - it.x); if (d < bd) { bd = d; bi = i; } });
+      const key = head[bi] ? head[bi].t : ("col" + (bi + 1));
+      rec[key] = rec[key] ? rec[key] + " " + it.t : it.t;
+    }
+    if (Object.keys(rec).length >= 2) records.push(rec);
+  }
+  return { columns: head.map((h) => h.t), records };
+}
+// Text fallback: a line of short phrases is a header; following lines with 2+
+// whitespace-separated cells are records.
+function readGridFromText(lines) {
+  let header = null; const records = [];
+  for (const line of lines) {
+    const cells = line.trim().split(/\s{2,}|\t/).map((s) => s.trim()).filter(Boolean);
+    if (cells.length < 3) continue;
+    if (!header && cells.every((c) => /[A-Za-z]/.test(c) && c.length <= 28)) { header = cells; continue; }
+    if (header && cells.length >= Math.max(2, header.length - 1)) {
+      const rec = {}; for (let i = 0; i < header.length; i++) rec[header[i]] = cells[i] || ""; records.push(rec);
+    }
+  }
+  return { columns: header || [], records };
 }
 // Invent and record rules from a reading: a candidate key lesson per field, and
 // a structure lesson saying whether it is nested (columns become column keys).
@@ -2621,8 +2669,8 @@ function inventTuples(text) {
 // keys (canonicalized), value types, the kind's name, and nesting (columns).
 // Deterministic and offline; a real local model may replace it when available.
 function titleLine(text) { return (String(text || "").split("\n").map((s) => s.trim()).filter(Boolean)[0] || "").slice(0, 60); }
-function structuralProposer(text) {
-  const inv = inventTuples(text);
+function structuralProposer(text, elements) {
+  const inv = inventTuples(text, elements);
   const rules = [];
   for (const t of inv.tuples) rules.push({ type: "key", label: t.label, canonical: t.canonical, valueType: t.format, value: t.value });
   if (inv.nested) {
@@ -6562,6 +6610,8 @@ function initAdminView({ onClose }) {
     // Backend auto-processing: transcribe any image/video not already read,
     // across every submission, in the background.
     enqueueUnreadImages();
+    // And re-read every reading through the lessons when a lesson has changed.
+    if (_lessonsDirty) runLessonPass("refresh");
     body.innerHTML = "";
 
     const searchBar = document.createElement("div");
@@ -6927,6 +6977,27 @@ function initAdminView({ onClose }) {
       }
     } finally { ocrQueueRunning = false; }
   }
+  // The office's side of the lesson loop: re-derive every reading through the
+  // shared lessons (see reapplyLessonsEverywhere), writing back only changes and
+  // tracking each machine alteration. Runs once on first render, and again
+  // whenever a lesson changes — never on a person's pinned text or kind.
+  let _lessonsDirty = true;
+  let _lessonPassRunning = false;
+  function markLessonsDirty() { _lessonsDirty = true; }
+  async function runLessonPass(source = "refresh") {
+    if (!configStore || _lessonPassRunning) return 0;
+    _lessonPassRunning = true;
+    _lessonsDirty = false;
+    try {
+      const docs = collectAllDocuments(ctx);
+      const n = await reapplyLessonsEverywhere(docs, (d, patch) => {
+        try { emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), patch)); } catch (e) {}
+      }, { source });
+      if (n) { try { renderActive(); } catch (e) {} toast("Re-read " + n + " reading" + (n === 1 ? "" : "s") + " through the lessons", "success"); }
+      return n;
+    } finally { _lessonPassRunning = false; }
+  }
+  function runLessonPassSoon(source = "lessons") { setTimeout(() => { runLessonPass(source); }, 400); }
   // Learn across submitters: the office sees every submission, so it aggregates
   // which reader actually won per file-kind and publishes that shared history
   // into the config stream every device reads. Best-effort and silent.
@@ -7899,7 +7970,7 @@ function initAdminView({ onClose }) {
       }
     } catch (e) {}
     for (const d of docs) if (d._kind && d._kind !== d.docKind) {
-      try { emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: d._kind })); } catch (e) {}
+      try { emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: d._kind, docKindSource: "learned", docKindAssertedBy: null })); } catch (e) {}
     }
     return [...byName.values()].sort((a, b) => b.count - a.count);
   }
@@ -7918,7 +7989,7 @@ function initAdminView({ onClose }) {
       const toks = docTokens(d.ocrText);
       const merged = [...new Set([...(((prev && prev.attrs && prev.attrs.tokens) || [])), ...toks])].slice(0, 40);
       configStore.emit(OP.INS, { entity: DOC_KIND_ENTITY, id, attrs: { name: kind, tokens: merged, count: (((prev && prev.attrs && prev.attrs.count) || 0) + 1), source: "confirmed", updatedAt: nowIso() } });
-      emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: kind }));
+      emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: kind, docKindSource: "asserted", docKindAssertedBy: ctx.currentUserId, docKindAt: nowIso() }));
     } catch (e) {}
   }
   function emitDocLearn(d, kind) {
@@ -7997,13 +8068,14 @@ function initAdminView({ onClose }) {
       if (!selected) { toast("Select a document first", "warn"); return; }
       const r = inventRules(selected.ocrText || "", selected.docKind || "");
       toast("Invented " + r.tuples.length + " tuple" + (r.tuples.length === 1 ? "" : "s") + " · " + (r.nested ? "nested (table)" : r.kind), "success");
+      markLessonsDirty(); runLessonPassSoon("learn");
       renderActive();
     };
     const passBtn = $e("button", "aview", "Model pass (local)");
     passBtn.title = "A local pass proposes keys, types and structure as rules to review";
     passBtn.onclick = () => {
       if (!selected) { toast("Select a document first", "warn"); return; }
-      const prop = structuralProposer(selected.ocrText || "");
+      const prop = structuralProposer(selected.ocrText || "", selected.ocrPages && selected.ocrPages[0] && selected.ocrPages[0].elements || null);
       const kind = selected.docKind || prop.kindName;
       let n = 0;
       for (const r of prop.rules) {
@@ -8011,6 +8083,7 @@ function initAdminView({ onClose }) {
         else if (r.type === "struct") { recordLesson({ kind, label: "structure", from: "", to: r.structure, text: `structure: ${r.structure}${r.columns ? " · columns: " + r.columns.join(", ") : ""}` }); n++; }
       }
       toast(n ? "Local pass proposed " + n + " rule" + (n === 1 ? "" : "s") + " — review below" : "Nothing proposed (no keys found)", n ? "success" : "warn");
+      markLessonsDirty(); runLessonPassSoon("learn");
       renderActive();
     };
     btns.append(drop, pull, cbtn, invBtn, passBtn);
@@ -8021,7 +8094,7 @@ function initAdminView({ onClose }) {
     ig.appendChild(igI);
     const igB = $e("button", "aview", "Add rule");
     igB.title = "Blank this phrase in readings from now on (length-preserving; reversible)";
-    igB.onclick = async () => { const t = igI.value.trim(); if (!t) return; try { const I = await ignoreMod(); I.addRule({ text: t }); toast("Ignoring “" + t + "” from now on", "success"); igI.value = ""; } catch (e) { toast("Couldn't save the rule", "warn"); } };
+    igB.onclick = async () => { const t = igI.value.trim(); if (!t) return; try { const I = await ignoreMod(); I.addRule({ text: t }); toast("Ignoring “" + t + "” from now on", "success"); igI.value = ""; markLessonsDirty(); runLessonPassSoon("ignore"); } catch (e) { toast("Couldn't save the rule", "warn"); } };
     ig.appendChild(igB);
     head.appendChild(ig);
     wrap.appendChild(head);
@@ -8053,7 +8126,7 @@ function initAdminView({ onClose }) {
       const kindI = document.createElement("input"); kindI.className = "da-kindinput"; kindI.value = selected.docKind || ""; kindI.placeholder = "its kind…";
       kindRow.appendChild(kindI); pbody.appendChild(kindRow);
       const working = extractFormFields(selected.ocrText || "").map((f) => ({ label: f.label, origLabel: f.label, value: f.value, orig: f.value }));
-      { const inv0 = inventTuples(selected.ocrText || ""); pbody.appendChild($e("div", "da-note", "structure: " + (inv0.nested ? "nested · columns: " + inv0.columns.join(" | ") : inv0.kind) + " · " + inv0.tuples.length + " tuples")); }
+      { const inv0 = inventTuples(selected.ocrText || "", selected.ocrPages && selected.ocrPages[0] && selected.ocrPages[0].elements || null); pbody.appendChild($e("div", "da-note", "structure: " + (inv0.nested ? "nested · columns: " + inv0.columns.join(" | ") : inv0.kind) + " · " + inv0.tuples.length + " tuples")); }
       if (!working.length) pbody.appendChild($e("div", "spanel-empty", "No labelled fields found — unresolved. You can still set the kind."));
       else pbody.appendChild($e("div", "da-note", "Keys are guesses too — fix the label and the value; DocAI learns keys and formats, never the values."));
       for (const w of working) {
@@ -8083,6 +8156,7 @@ function initAdminView({ onClose }) {
         }
         if (kind !== (selected.docKind || "")) { recordLesson({ kind, label: "kind", from: selected.docKind || "", to: kind, text: `kind set to "${kind}"` }); n++; }
         emitDocLearn(selected, kind); learnFromDoc(selected, kind);
+        markLessonsDirty(); runLessonPassSoon("learn");
         toast(n ? "Recorded " + n + " change" + (n === 1 ? "" : "s") + " — it will learn keys and formats" : "No changes", n ? "success" : undefined);
         renderActive();
       };
@@ -8104,7 +8178,7 @@ function initAdminView({ onClose }) {
       const row = $e("div", "da-lesson");
       row.appendChild($e("div", "da-lesson-text", l.text || ((l.label || "") + " → " + (l.to || ""))));
       const acts = $e("div", "da-lesson-acts");
-      const ok = $e("button", "note-btn", "✓"); ok.title = "Accept — applies to future reads"; ok.onclick = () => { setLessonStatus(l, "active"); renderActive(); };
+      const ok = $e("button", "note-btn", "✓"); ok.title = "Accept — applies to future reads"; ok.onclick = () => { setLessonStatus(l, "active"); markLessonsDirty(); runLessonPassSoon("lesson"); renderActive(); };
       const no = $e("button", "note-btn", "✗"); no.title = "Reject"; no.onclick = () => { setLessonStatus(l, "rejected"); renderActive(); };
       acts.append(ok, no); row.appendChild(acts);
       lb.appendChild(row);
@@ -10232,6 +10306,7 @@ function renderDocs() {
   $("docsCount").textContent = docs.length ? String(docs.length) : "";
   for (const d of docs.reverse()) list.appendChild(docRow(d));
   backfillPositions();
+  if (_familyLessonsDirty) runFamilyLessonPass("refresh");
 }
 
 // Does this uploaded image have text but no usable positioned reading? True
@@ -10264,6 +10339,100 @@ function backfillPositions() {
     autoReadDoc(d, mediaBackend(), submitterDocEmit, meId());
   }
 }
+
+// ── the lesson loop: a correction teaches every other reading ──
+//
+// A reading is the measured text PLUS what the lessons make of it — the kind the
+// signatures give, the keys/formats the shared lexicon canonicalizes, the
+// furniture the ignore rules blank, the lines relevant to this submission. When
+// a lesson changes, every OTHER reading is re-derived through it, recursively to
+// a fixpoint (a document re-read under a new kind can move another's kind).
+//
+// PROVENANCE is the rule. A person's assertion is authoritative and is never
+// re-derived: corrected text (ocrKind "edited") is left exactly as typed, and a
+// kind a person set (docKindAssertedBy) outranks the classifier. Only the
+// MACHINE-asserted values — the classifier's kind, the derived fields, ignored
+// and relevant lines — are subject to the recursion. Every machine change is
+// TRACKED on the document (ocrDerivedHistory) with what it changed and why, and
+// since an INS event is the log, it is attributable and reversible like any edit.
+function humanAssertedKind(doc) { return !!doc.docKindAssertedBy; }
+
+function deriveDocReading(doc) {
+  const text = doc.ocrText || "";
+  if (!text.trim()) return {};
+  const patch = {};
+  // Kind: the machine may (re)classify only when a person hasn't pinned one.
+  if (!humanAssertedKind(doc)) {
+    const learned = classifyDocKind(text);
+    if (learned && learned !== (doc.docKind || "")) { patch.docKind = learned; patch.docKindSource = "learned"; }
+  }
+  const kind = patch.docKind || doc.docKind || "";
+  // Relevant lines: machine, re-derived from this submission's own facts.
+  const rel = relevantOcrLines(text, submissionTerms());
+  if (JSON.stringify(rel) !== JSON.stringify(doc.ocrRelevant || [])) patch.ocrRelevant = rel;
+  // Keys/formats: the shared lexicon (person-accepted lessons) applied to this text.
+  const fields = applyKeyLessons(text, kind).map((f) => ({ label: f.label, format: f.format, known: !!f.known, canonical: f.canonical || null }));
+  if (JSON.stringify(fields) !== JSON.stringify(doc.ocrFields || [])) patch.ocrFields = fields;
+  return patch;
+}
+
+async function deriveIgnored(text) {
+  try {
+    const I = await ignoreMod();
+    const ig = I.planIgnores(text, { pages: 1, dry: true });
+    const names = (ig.ignored || []).map((x) => x.text);
+    return names.length ? names : null;
+  } catch (e) { return undefined; }
+}
+
+// Re-derive every reading through all lessons, recursively, writing back only
+// what changes. `write(doc, patch)` persists one document. Returns the count.
+async function reapplyLessonsEverywhere(docs, write, { rounds = 4, source = "lessons" } = {}) {
+  const work = docs.slice();
+  let total = 0;
+  for (let r = 0; r < rounds; r++) {
+    let changed = 0;
+    for (const d of work) {
+      if (!d.ocrText || !String(d.ocrText).trim()) continue;
+      const patch = deriveDocReading(d);
+      const ig = await deriveIgnored(d.ocrText);
+      if (ig !== undefined && JSON.stringify(ig) !== JSON.stringify(d.ocrIgnored || null)) patch.ocrIgnored = ig;
+      if (!Object.keys(patch).length) continue;
+      // Track the machine alteration on the document itself.
+      patch.ocrDerivedAt = nowIso();
+      patch.ocrDerivedBy = "machine";
+      patch.ocrDerivedFrom = source;
+      patch.ocrDerivedHistory = [...(d.ocrDerivedHistory || []), { at: patch.ocrDerivedAt, by: "machine", from: source, changes: Object.keys(patch).filter((k) => k !== "ocrDerivedHistory") }].slice(-20);
+      write(d, patch);
+      Object.assign(d, patch);
+      changed++; total++;
+    }
+    if (!changed) break;
+  }
+  return total;
+}
+
+// The family's side of the loop. Guarded to once per session and skipped where
+// the shared lessons aren't readable on this device.
+let _familyLessonsDirty = true;
+let _familyLessonPassRunning = false;
+async function runFamilyLessonPass(source = "refresh") {
+  if (!store || !configStore || _familyLessonPassRunning) return 0;
+  _familyLessonPassRunning = true;
+  _familyLessonsDirty = false;
+  try {
+    const docs = Object.entries(store.fold().records)
+      .filter(([, r]) => r.entity === "document")
+      .map(([id, r]) => ({ id, ...r.attrs }));
+    const n = await reapplyLessonsEverywhere(docs, (d, patch) => {
+      const { id, uploadedAt, ...attrs } = d;
+      store.emit(OP.INS, { entity: "document", id: d.id, attrs: Object.assign(attrs, patch) });
+    }, { source });
+    if (n) { try { renderDocs(); } catch (e) {} }
+    return n;
+  } finally { _familyLessonPassRunning = false; }
+}
+function markFamilyLessonsDirty() { _familyLessonsDirty = true; }
 
 // Re-emits OP.INS for the same document id with updated attrs — INS is
 // last-write-wins per id in fold() (see the OP.INS branch above), so this
@@ -10676,6 +10845,11 @@ async function readDocumentText(doc, media) {
       ignored = (ig.ignored || []).map((x) => x.text);
       if (!ignored.length) ignored = null;
     } catch (e) {}
+    // The learned reads: the kind the signatures give, and the keys/formats the
+    // shared lesson lexicon canonicalizes. This is where a correction made on
+    // one document reaches every later reading of the same shape.
+    const docKind = classifyDocKind((content.text || "") + " " + (screen.raw || ""));
+    const fields = applyKeyLessons(text, docKind);
     return {
       ok: true, text,
       raw: screen.raw || "",
@@ -10684,7 +10858,8 @@ async function readDocumentText(doc, media) {
       sourceKind,
       capturedAt, capturedFrom,
       ignored,
-      docKind: classifyDocKind((content.text || "") + " " + (screen.raw || "")),
+      docKind,
+      fields,
       // The positioned reading, page by page: each line with where it sits and
       // its own font size. This is what lets the text be laid back ON the page,
       // selectable and editable, in the same geography it was read from.
@@ -10813,6 +10988,7 @@ function ocrAttrs(res, by) {
     ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
     ocrSourceKind: res.sourceKind || null,
     ocrIgnored: res.ignored || null,
+    ocrFields: res.fields || null,
     ...(res.docKind ? { docKind: res.docKind } : {}),
     ocrPages: res.pages || null,
     capturedAt: res.capturedAt || null,
