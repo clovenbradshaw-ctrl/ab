@@ -2530,23 +2530,24 @@ function snippetAround(text, index, match) {
 function extractFormFields(text) {
   const out = [];
   for (const raw of String(text || "").split("\n")) {
-    const line = raw.replace(/\s+/g, " ").trim();
+    const line = raw.replace(/\s+$/, "").trim();
     if (line.length < 4) continue;
     let label, value;
     const sep = line.indexOf(":");
-    if (sep > 1 && sep <= 32) { label = line.slice(0, sep); value = line.slice(sep + 1); }
+    if (sep > 1 && sep <= 40) { label = line.slice(0, sep); value = line.slice(sep + 1); }
     else {
-      const m = /^([A-Z][A-Za-z ./()&#]{1,28}?)\s+[-–—]\s+(.+)$/.exec(line);
+      // label then 2+ spaces (or " - ") then the value — many forms have no colon.
+      const m = /^([A-Za-z][A-Za-z ./()&#,\-]{1,40}?)(?:\s{2,}|\s+[-–—]\s+)(\S.*)$/.exec(line);
       if (!m) continue;
       label = m[1]; value = m[2];
     }
     label = label.replace(/[\s.:\-–—]+$/, "").trim();
     value = value.trim();
     const words = label.split(/\s+/).filter(Boolean);
-    if (label.length < 2 || words.length > 5 || /\d/.test(label) || !/^[A-Z]/.test(label) || !/[A-Za-z]/.test(label)) continue;
+    if (label.length < 2 || words.length > 6 || /\d/.test(label) || !/[A-Za-z]/.test(label)) continue;
     if (!value || /^[\W_]*$/.test(value)) continue;
     out.push({ label, value: value.slice(0, 220) });
-    if (out.length >= 40) break;
+    if (out.length >= 60) break;
   }
   return out;
 }
@@ -10437,6 +10438,23 @@ function prepareCanvas(img, max) {
   const w = Math.max(1, Math.round(W * scale)), h = Math.max(1, Math.round(H * scale));
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
   cv.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+  return cv;
+}
+// Documents scan badly when they're faint or low-contrast: grayscale and Otsu-
+// binarize before the eyes read it. Measured on a faded clinical form this took
+// the reading from 0 fields to several (its step labels).
+function binarizeCanvas(cv) {
+  try {
+    const cx = cv.getContext("2d", { willReadFrequently: true });
+    const im = cx.getImageData(0, 0, cv.width, cv.height), d = im.data;
+    const hist = new Array(256).fill(0), gray = new Uint8ClampedArray(d.length / 4);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0; gray[j] = g; hist[g]++; }
+    const total = gray.length; let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sumB = 0, wB = 0, max = 0, thr = 127;
+    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = total - wB; if (!wF) break; sumB += t * hist[t]; const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > max) { max = v; thr = t; } }
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { const v = gray[j] > thr ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    cx.putImageData(im, 0, 0);
+  } catch (e) {}
   return cv;
 }
 

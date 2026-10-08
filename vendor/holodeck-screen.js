@@ -21,6 +21,27 @@ async function loadTess(base) {
   return (_tess = window.Tesseract);
 }
 
+// Faint or low-contrast scans read poorly. Grayscale + Otsu-binarize the page
+// before the eyes read it — but only when the page reads as a document (a light
+// background), so a dark/colourful UI screenshot is left alone. Measured on a
+// faded clinical form this took the read from 0 fields to several.
+function binarize(cv) {
+  try {
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    const im = cx.getImageData(0, 0, cv.width, cv.height), d = im.data;
+    const hist = new Array(256).fill(0), gray = new Uint8ClampedArray(d.length / 4);
+    let sumL = 0;
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { const g = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0; gray[j] = g; hist[g]++; sumL += g; }
+    if (sumL / gray.length < 120) return cv;
+    const total = gray.length; let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sumB = 0, wB = 0, max = 0, thr = 127;
+    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = total - wB; if (!wF) break; sumB += t * hist[t]; const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > max) { max = v; thr = t; } }
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) { const v = gray[j] > thr ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+    cx.putImageData(im, 0, 0);
+  } catch (e) {}
+  return cv;
+}
+
 // tesseract.js word → the pipeline's word shape ({ text, conf, bbox:{x0,y0,x1,y1} }).
 function wordsFromTess(data) {
   const words = [];
@@ -37,6 +58,7 @@ export async function readScreenImage(img, opts = {}) {
   if (!W || !H) return null;
   const cv = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H });
   const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0, W, H);
+  if (opts.binarize !== false) binarize(cv);
   const { data } = cx.getImageData(0, 0, W, H);
   tr('screen', 'decode', 'Decoded ' + W + ' × ' + H + ' pixels for the 2D model', { w: W, h: H });
   let words = [], raw = '';
