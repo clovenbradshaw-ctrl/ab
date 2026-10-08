@@ -191,17 +191,18 @@
   // luminance + colour + sharpness, measured over the whole frame
   function frameStats(data, w, h) {
     const n = w * h; let sum = 0, sumSq = 0, sat = 0, dark = 0, light = 0;
-    let gx = 0, gxp = 0;
+    let gx = 0, gxp = 0; const seen = new Set();
     for (let i = 0, j = 0; j < n; i += 4, j++) {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const L = _lum(r, g, b); sum += L; sumSq += L * L; sat += _sat(r, g, b);
       if (L < 60) dark++; if (L > 200) light++;
+      seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
       const x = j % w; if (x) gx += Math.abs(L - gxp); gxp = L;
     }
     const mean = sum / n, std = Math.sqrt(Math.max(0, sumSq / n - mean * mean));
     return { mean: +mean.toFixed(1), std: +std.toFixed(1), saturation: +(sat / n).toFixed(3),
              darkShare: +(dark / n).toFixed(3), lightShare: +(light / n).toFixed(3),
-             edge: +(gx / n).toFixed(1) };
+             colors: seen.size, edge: +(gx / n).toFixed(1) };
   }
 
   // the frame's palette: the k most-covered colours (quantized to 4 bits/channel)
@@ -285,11 +286,11 @@
 
   // classify the whole frame — the sceneKind is a PROPOSAL, not a fact
   function classifyScene(fs, bg, inkShare, pal, regionCounts) {
-    const colors = pal.filter((p) => p.share > 0.02).length;
-    const colorful = fs.saturation > 0.22 || (colors > 12 && fs.saturation > 0.1);
+    const colors = fs.colors || pal.filter((p) => p.share > 0.02).length;
+    const colorful = fs.saturation > 0.22;
     if (inkShare < 0.003 && fs.std < 10) return "blank";
-    if (colorful && regionCounts.text < 3) return "photograph";
-    if (bg.lum <= 110 && fs.lightShare < 0.5) return "screenshot";       // dark UI
+    if (colorful && colors > 16 && fs.std > 25) return "photograph";   // many distinct tones, no flat page
+    if (bg.lum <= 110 && fs.lightShare < 0.5) return "screenshot";     // dark UI
     if (bg.lum > 190 && colors <= 8 && regionCounts.rule >= 10 && regionCounts.text < 10) return "chart";
     if (bg.lum > 190 && colors <= 8 && regionCounts.rule >= 6 && regionCounts.text < 6) return "diagram";
     if (bg.lum > 170 && colors <= 16) return "document";
@@ -437,9 +438,10 @@
     const n = w * h, faintT = opts.faint == null ? 40 : opts.faint, inkT = opts.ink == null ? 120 : opts.ink;
     const roll = { paper: null, faint: null, wash: null, ink: null };
     const acc = {};
-    const bump = (k, x, y, r, g, b) => {
+    const bump = (k, x, y, r, g, b, dist) => {
       const a = acc[k] || (acc[k] = { n: 0, x0: w, y0: h, x1: 0, y1: 0, r: 0, g: 0, b: 0, op: 0 });
       a.n++; if (x < a.x0) a.x0 = x; if (x > a.x1) a.x1 = x; if (y < a.y0) a.y0 = y; if (y > a.y1) a.y1 = y; a.r += r; a.g += g; a.b += b;
+      a.op += Math.min(1, dist / 255);
     };
     for (let i = 0, j = 0; j < n; i += 4, j++) {
       const r = data[i], g = data[i + 1], b = data[i + 2], x = j % w, y = (j - x) / w;
@@ -449,14 +451,13 @@
       else if (sat > 0.25) k = "wash";
       else if (d > inkT) k = "ink";
       else k = "faint";
-      a.op[k] = (a.op[k] || 0) + Math.min(1, d / 255);
-      bump(k, x, y, r, g, b);
+      bump(k, x, y, r, g, b, d);
     }
     const order = ["paper", "faint", "wash", "figure", "ink"];
     const layers = order.filter((k) => acc[k] && acc[k].n).map((k) => {
       const a = acc[k];
       return { role: k, share: +(a.n / n).toFixed(4), region: [a.x0, a.y0, a.x1 - a.x0 + 1, a.y1 - a.y0 + 1],
-               color: _hex(a.r / a.n, a.g / a.n, a.b / a.n), opacity: +(a.op[k] / a.n).toFixed(3) };
+               color: _hex(a.r / a.n, a.g / a.n, a.b / a.n), opacity: +(a.op / a.n).toFixed(3) };
     });
     return { schema: "AlhazenLayers@1", width: w, height: h, background: bg.hex, layers, zOrder: order,
              note: "a 2D image read as stacked z-planes; z is a role ordering, not a measured depth" };
@@ -609,18 +610,32 @@
       if (eyes.length > 1 && vals.length > 1) deltas.push({ kind: "value_conflict", key, eyes, values: vals, magnitude: vals.length });
       else if (eyes.length > 1) agreement.push({ key, eyes, value: cs.find((c) => c.value != null)?.value ?? null, region: cs[0].region });
     }
-    // region deltas: different eyes, overlapping regions, disagreeing roles
+    // region deltas: different eyes, overlapping regions, disagreeing roles.
+    // Aggregated per (eye-pair, role-class pair) so the dissent is MEANINGFUL —
+    // one named disagreement with its count and worst case, never 200 echoes.
+    // A FIELD claim (background/paper, a full-frame meta claim) is not a
+    // competitor about a sub-region; it is excluded rather than faked into a
+    // conflict with everything it contains.
+    const frame = (readings || []).reduce((m, r) => Math.max(m, (r.data && r.data.width && r.data.height) ? r.data.width * r.data.height : 0), 0);
+    const isField = (c) => !c.region || c.kind === "meta" || c.kind === "paper" || (frame && c.region[2] * c.region[3] > 0.5 * frame);
+    const rc = new Map();
     for (let i = 0; i < claims.length; i++) for (let j = i + 1; j < claims.length; j++) {
       const a = claims[i], b = claims[j];
-      if (a.eye === b.eye || !a.region || !b.region) continue;
-      if (overlapFrac(a.region, b.region) > 0.45 && roleClass(a.kind) !== roleClass(b.kind))
-        deltas.push({ kind: "role_conflict", eyes: [a.eye, b.eye], region: a.region, kinds: [a.kind, b.kind], magnitude: +overlapFrac(a.region, b.region).toFixed(2) });
+      if (a.eye === b.eye || !a.region || !b.region || isField(a) || isField(b)) continue;
+      const ov = overlapFrac(a.region, b.region);
+      if (ov <= 0.45 || roleClass(a.kind) === roleClass(b.kind)) continue;
+      const ca = roleClass(a.kind), cb = roleClass(b.kind);
+      const key = [a.eye, b.eye].sort().join("|") + ":" + [ca, cb].sort().join(">");
+      const e = rc.get(key) || { kind: "role_conflict", eyes: [a.eye, b.eye].sort(), classes: [ca, cb], n: 0, maxOverlap: 0, region: a.region };
+      e.n++; if (ov > e.maxOverlap) { e.maxOverlap = ov; e.region = a.region; }
+      rc.set(key, e);
     }
+    for (const e of rc.values()) deltas.push({ ...e, magnitude: +e.maxOverlap.toFixed(2) });
     const gaps = (readings || []).filter((r) => r.gap).map((r) => ({ eye: r.eye, gap: r.gap, because: r.because || null }));
     const coverage = (readings || []).reduce((m, r) => Math.max(m, r.coverage || 0), 0);
     return { schema: "AlhazenReconcile@1", eyes: (readings || []).map((r) => r.eye), claims: claims.length,
              agreement, deltas, gaps, coverage: +coverage.toFixed(3), converged: deltas.length === 0,
-             dissent: deltas.length ? deltas.map((d) => `${d.eyes.join(" vs ")} disagree (${d.kind}${d.key ? " " + d.key : ""})`) : [] };
+             dissent: deltas.length ? deltas.map((d) => `${d.eyes.join(" vs ")} disagree (${d.kind}${d.key ? ":" + d.key : ""}${d.classes ? " " + d.classes.join("~") : ""}${d.n ? " ×" + d.n : ""}${d.magnitude != null ? " mag " + d.magnitude : ""})`) : [] };
   }
 
   // ── LOOK: sniff → open the right eyes → reconcile into one reading ───────
@@ -649,6 +664,116 @@
     for (let j = 0; j < w * h; j++) { const v = Math.round(255 * Math.min(1, trail[j])); out[j * 4] = 255; out[j * 4 + 1] = v; out[j * 4 + 2] = Math.max(0, 140 - v); out[j * 4 + 3] = 255; }
     return out;
   }
+  // track OBJECTS (not just motion) across frames of a static-camera scene:
+  // foreground = pixels that differ from the frame's own background; each blob
+  // carries a learned identity signature (its colour) and a size. Association
+  // combines a scale-invariant POSITION gate with an APPEARANCE distance, so the
+  // reader discovers which blob is which — it is never told how many there are,
+  // what colours they are, or that size may change. Identity survives growth,
+  // shrinkage and occlusion (coast + re-identify).
+  function trackObjects(frames, opts) {
+    opts = opts || {};
+    const w = frames[0].width, h = frames[0].height;
+    const maxOcc = opts.maxOcclusion == null ? Math.max(6, Math.round(frames.length * 0.6)) : opts.maxOcclusion;
+    const baseR = opts.radius || Math.max(10, Math.hypot(w, h) * 0.09);
+    const minArea = opts.minArea || Math.max(4, Math.round(w * h / 60000));
+    const fgT = opts.fgThreshold == null ? 110 : opts.fgThreshold;
+    const tracks = [];
+    for (let k = 0; k < frames.length; k++) {
+      const d = frames[k].data, bg = backgroundOf(d, w, h);
+      const bgR = parseHex(bg.hex, 0), bgG = parseHex(bg.hex, 1), bgB = parseHex(bg.hex, 2);
+      const fg = new Uint8Array(w * h);
+      for (let j = 0; j < w * h; j++) { const i = j * 4; if (Math.abs(d[i] - bgR) + Math.abs(d[i + 1] - bgG) + Math.abs(d[i + 2] - bgB) > fgT) fg[j] = 1; }
+      const comps = segmentMask(fg, w, h, minArea).map((c) => ({ cx: c.region[0] + c.region[2] / 2, cy: c.region[1] + c.region[3] / 2, area: c.area, region: c.region, size: Math.sqrt(c.area), color: _meanColor(d, w, c.region), used: false }));
+      for (const t of tracks) { if (t.dead) continue; t.px = t.x + (t.vx || 0); t.py = t.y + (t.vy || 0); t._m = false; }
+      // cost: appearance (learned colour) first, position second — scale-agnostic
+      const pairs = [];
+      for (const t of tracks) { if (t.dead) continue; const gate = t.hidden ? baseR * 3.5 : baseR * 1.8;
+        for (const c of comps) { if (c.used) continue; const dd = Math.hypot(c.cx - t.px, c.cy - t.py), cd = _colDist(c.color, t.color);
+          if (dd <= gate || cd < 70) pairs.push({ t, c, score: cd / 765 + dd / (gate * 2) }); } }
+      pairs.sort((A, B) => A.score - B.score);
+      for (const { t, c } of pairs) {
+        if (t._m || c.used) continue;
+        const dx = c.cx - t.x, dy = c.cy - t.y; t.vx = t.vx == null ? dx : 0.6 * t.vx + 0.4 * dx; t.vy = t.vy == null ? dy : 0.6 * t.vy + 0.4 * dy;
+        t.x = c.cx; t.y = c.cy; t.last = k; t._m = true; c.used = true;
+        t.color = _mix(t.color, c.color, 0.5);
+        t.areas.push(c.area); t.path.push([+c.cx.toFixed(1), +c.cy.toFixed(1)]);
+        if (t.hidden) { t.occlusions.push({ from: t.hiddenSince, to: k, frames: k - t.hiddenSince, entry: t.hiddenAt, exit: [+c.cx.toFixed(1), +c.cy.toFixed(1)] }); t.hidden = false; t.reappeared = true; t.hiddenCount = 0; }
+      }
+      for (const c of comps) { if (c.used) continue; tracks.push({ id: tracks.length, path: [[+c.cx.toFixed(1), +c.cy.toFixed(1)]], areas: [c.area], x: c.cx, y: c.cy, vx: 0, vy: 0, color: c.color, start: k, last: k, hidden: false, hiddenCount: 0, occlusions: [], reappeared: false, _m: true }); }
+      for (const t of tracks) { if (t.dead || t._m) continue;
+        t.hiddenCount = (t.hiddenCount || 0) + 1;
+        if (!t.hidden) { t.hidden = true; t.hiddenSince = k; t.hiddenAt = [+t.x.toFixed(1), +t.y.toFixed(1)]; }
+        t.x = t.px; t.y = t.py;
+        if (t.hiddenCount > maxOcc) { t.dead = true; t.lost = true; }
+      }
+    }
+    for (const t of tracks) {
+      t.span = t.last - t.start;
+      if (t.path.length >= 2) { const dx = t.path[t.path.length - 1][0] - t.path[0][0], dy = t.path[t.path.length - 1][1] - t.path[0][1]; t.displacement = +Math.hypot(dx, dy).toFixed(1); } else t.displacement = 0;
+      t.speed = +(t.displacement / Math.max(1, t.span)).toFixed(2);
+      const a = t.areas || [0]; t.areaMin = Math.min(...a); t.areaMax = Math.max(...a); t.sizeChange = +(t.areaMax / Math.max(1, t.areaMin)).toFixed(2);
+      t.occludedFrames = (t.occlusions || []).reduce((s, o) => s + o.frames, 0);
+      t.permanent = t.occlusions && t.occlusions.length > 0 && t.reappeared;
+      t.color = t.color.map((v) => Math.round(v));
+      t.colorHex = _hex(t.color[0], t.color[1], t.color[2]);
+    }
+    return tracks.filter((t) => !t.lost && (t.path.length >= 3 || (t.occlusions && t.occlusions.length)));
+  }
+  // associated into tracks (id, path, velocity, colour signature). A track that
+  // loses its blob is not killed — it COASTS on its last velocity (hidden), and
+  // when a blob reappears near the predicted position with a matching colour it
+  // is re-identified as the SAME object. Occlusion events are recorded, so a
+  // ball that goes behind something and returns keeps one identity throughout.
+  const _meanColor = (data, w, region) => { const [x0, y0, rw, rh] = region; let r = 0, g = 0, b = 0, n = 0; for (let y = y0; y < y0 + rh; y++) for (let x = x0; x < x0 + rw; x++) { const i = (y * w + x) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; } return n ? [r / n, g / n, b / n] : [0, 0, 0]; };
+  const _colDist = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+  const _mix = (a, b, al) => [a[0] * (1 - al) + b[0] * al, a[1] * (1 - al) + b[1] * al, a[2] * (1 - al) + b[2] * al];
+  function trackMotions(frames, opts) {
+    opts = opts || {};
+    const w = frames[0].width, h = frames[0].height, thr = opts.threshold == null ? 60 : opts.threshold;
+    const maxOcc = opts.maxOcclusion == null ? Math.max(6, Math.round(frames.length * 0.5)) : opts.maxOcclusion;
+    const baseR = Math.max(12, Math.hypot(w, h) * 0.12), minArea = Math.max(6, Math.round(w * h / 40000));
+    const tracks = [];
+    for (let k = 1; k < frames.length; k++) {
+      const a = frames[k - 1].data, b = frames[k].data, mask = new Uint8Array(w * h);
+      for (let j = 0; j < w * h; j++) { const i = j * 4; if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > thr) mask[j] = 1; }
+      const comps = segmentMask(mask, w, h, minArea).map((c) => ({ cx: c.region[0] + c.region[2] / 2, cy: c.region[1] + c.region[3] / 2, area: c.area, region: c.region, used: false, color: _meanColor(b, w, c.region) }));
+      // predict each live track forward on its own velocity
+      for (const t of tracks) { if (t.dead) continue; t.px = t.x + (t.vx || 0); t.py = t.y + (t.vy || 0); t._m = false; }
+      // 1) associate blobs to tracks by predicted position + colour (a hidden
+      //    track gets a wider gate, which is how a returning object is reclaimed)
+      const pairs = [];
+      for (const t of tracks) { if (t.dead) continue; const r = t.hidden ? baseR * 2.4 : baseR;
+        for (const c of comps) { if (c.used) continue; const d = Math.hypot(c.cx - t.px, c.cy - t.py); if (d <= r) pairs.push({ t, c, score: d / r + _colDist(c.color, t.color) * 0.0015 }); } }
+      pairs.sort((A, B) => A.score - B.score);
+      for (const { t, c } of pairs) {
+        if (t._m || c.used) continue;
+        const dx = c.cx - t.x, dy = c.cy - t.y;
+        t.vx = t.vx == null ? dx : 0.6 * t.vx + 0.4 * dx; t.vy = t.vy == null ? dy : 0.6 * t.vy + 0.4 * dy;
+        t.x = c.cx; t.y = c.cy; t.last = k; t._m = true; c.used = true;
+        t.color = _mix(t.color, c.color, 0.5);
+        t.path.push([+c.cx.toFixed(1), +c.cy.toFixed(1)]);
+        if (t.hidden) { t.occlusions.push({ from: t.hiddenSince, to: k, frames: k - t.hiddenSince, entry: t.hiddenAt, exit: [+c.cx.toFixed(1), +c.cy.toFixed(1)] }); t.hidden = false; t.reappeared = true; t.hiddenCount = 0; }
+      }
+      // 2) unmatched blobs → new tracks
+      for (const c of comps) { if (c.used) continue; tracks.push({ id: tracks.length, path: [[+c.cx.toFixed(1), +c.cy.toFixed(1)]], x: c.cx, y: c.cy, vx: 0, vy: 0, color: c.color, start: k, last: k, hidden: false, hiddenCount: 0, occlusions: [], reappeared: false, _m: true }); }
+      // 3) unmatched tracks → HIDE and coast (permanence), die only if lost too long
+      for (const t of tracks) { if (t.dead || t._m) continue;
+        t.hiddenCount = (t.hiddenCount || 0) + 1;
+        if (!t.hidden) { t.hidden = true; t.hiddenSince = k; t.hiddenAt = [+t.x.toFixed(1), +t.y.toFixed(1)]; }
+        t.x = t.px; t.y = t.py;                                    // coast on velocity
+        if (t.hiddenCount > maxOcc) { t.dead = true; t.lost = true; }
+      }
+    }
+    for (const t of tracks) {
+      if (t.path.length >= 2) { const dx = t.path[t.path.length - 1][0] - t.path[0][0], dy = t.path[t.path.length - 1][1] - t.path[0][1]; t.displacement = +Math.hypot(dx, dy).toFixed(1); t.heading = +(Math.atan2(dy, dx) * 180 / Math.PI).toFixed(1); }
+      else { t.displacement = 0; t.heading = null; }
+      t.span = t.last - t.start; t.speed = +(t.displacement / Math.max(1, t.span)).toFixed(2);
+      t.occludedFrames = (t.occlusions || []).reduce((s, o) => s + o.frames, 0);
+      t.permanent = t.occlusions && t.occlusions.length > 0 && t.reappeared;   // survived being hidden
+    }
+    return tracks.filter((t) => (t.path.length >= 2 || (t.occlusions && t.occlusions.length)) && !t.lost);
+  }
   function read4D(input) {
     const frames = (input && input.frames) || [];
     if (frames.length < 2) return { schema: "Alhazen4D@1", gap: "needs_frames", because: "4D needs at least two frames (x, y, t)" };
@@ -675,14 +800,21 @@
     const speed = vmean ? Math.hypot(vmean[0], vmean[1]) : 0;
     const angle = vmean && (vmean[0] || vmean[1]) ? +(Math.atan2(vmean[1], vmean[0]) * 180 / Math.PI).toFixed(1) : null;
     const persisted = trailRegions.reduce((s, r) => s + r.area, 0) / (w * h);
+    const tracks = trackMotions(frames, { threshold: thr });
+    const trackClaims = tracks.map((t, i) => {
+      const xs = t.path.map((p) => p[0]), ys = t.path.map((p) => p[1]);
+      const region = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs) + 1, Math.max(...ys) - Math.min(...ys) + 1];
+      return { key: "track_" + i, kind: "trail", region, value: t.displacement };
+    });
     return {
       schema: "Alhazen4D@1", width: w, height: h,
       time: { frames: n, movedPerFrame: frameMoved },
       motion: { centroids: centroids.map((c) => (c ? c.map((x) => +x.toFixed(1)) : null)), netVelocity: vmean ? vmean.map((x) => +x.toFixed(2)) : null, speed: +speed.toFixed(2) },
       trails: { regions: trailRegions, count: trailRegions.length, persistence: +persisted.toFixed(4) },
+      tracks: tracks.map((t) => ({ id: t.id, start: t.start, last: t.last, path: t.path, displacement: t.displacement, heading: t.heading, speed: t.speed, span: t.span, occlusions: t.occlusions || [], occludedFrames: t.occludedFrames || 0, reappeared: !!t.reappeared, permanent: !!t.permanent })),
       motionBlur: { direction: vmean ? vmean.map((x) => +x.toFixed(2)) : null, angleDeg: angle, length: +speed.toFixed(2), basis: "edge smear ≈ inter-frame displacement" },
       longExposure: { data: trailToRGBA(trail, w, h), width: w, height: h },
-      claims: trailRegions.map((r, i) => ({ key: "trail_" + i, kind: "trail", region: r.region, value: r.area })),
+      claims: trackClaims,
     };
   }
   // motion blur from a SINGLE still: gradient-orientation anisotropy fixes the
@@ -763,5 +895,5 @@
            frameStats, palette, backgroundOf, inkMask, segmentMask, classifyRegion, textBands, classifyScene, readImage,
            learnFrom, applyRules, scoreRead, createRuleLedger,
            overlapFrac, roleClass, layersOf, read3D, readPointCloud, liftTo3D, EYES, sniff, reconcile, look,
-           trailToRGBA, read4D, motionBlurOfImage, createPheromone, prepare, runEye, swarm };
+           trailToRGBA, read4D, trackMotions, motionBlurOfImage, createPheromone, prepare, runEye, swarm };
 });
