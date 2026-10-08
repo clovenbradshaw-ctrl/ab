@@ -1,0 +1,16 @@
+{
+  "name": "ab-resync-bot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node resync-bot.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@matrix-org/matrix-sdk-crypto-nodejs": "^0.6.6",
+    "matrix-js-sdk": "^43.0.0"
+  }
+}

@@ -5254,20 +5254,16 @@ async function _dbLoadAndMerge() {
   for (const s of dbSubmissions) if (s && s.room_id) dbByRoom.set(s.room_id, s);
 }
 
-// One stable id per applicant, so the office's database copy and Matrix copy
-// fold into the same submission. Recovered from the room's own log on any
-// device; created (and emitted as an inert `submission` record) the first
-// time the family opens their form.
+// One stable id per applicant, so the office's database copy, Matrix copy, and
+// the server-side resync bot all fold into the same submission. A room's own
+// `submission` record wins when present; otherwise the id is derived from the
+// room id itself, so every writer (family, office device, bot) agrees without
+// anyone having to stamp the room first.
 function _dbEnsureSubmissionId(store) {
   if (!store || !store.roomId) return null;
   const folded = fold(store.timeline());
-  const existing = Object.values(folded.records).find((r) => r.entity === "submission");
-  let id = existing?.attrs?.submission_id
-    || (window.ABDB && window.ABDB.submissionId(store.roomId));
-  if (!id) {
-    id = window.ABDB?.newSubmissionId?.() || ("sub_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10));
-    store.emit(OP.INS, { id, entity: "submission", attrs: { submission_id: id, created_at: nowIso() } });
-  }
+  const existing = Object.values(folded.records).find((r) => r.entity === "submission")?.attrs?.submission_id;
+  const id = existing || ("room:" + store.roomId);
   if (window.ABDB) window.ABDB.setSubmissionId(store.roomId, id);
   return id;
 }
@@ -5318,19 +5314,12 @@ async function _dbMirrorRooms(client) {
       if (_dbMirrorSig.get(roomId) === sig) continue;
       _dbMirrorSig.set(roomId, sig);
 
-      // One stable id per room; recovered from the room's own log, or stamped
-      // in so a later family flush reuses the same id instead of forking.
+      // One stable id per room; recovered from the room's own log, else derived
+      // from the room id (same rule as _dbEnsureSubmissionId), so the bot and
+      // any later family flush land on the same submission instead of forking.
       const folded = fold(events);
-      let sid = Object.values(folded.records).find((r) => r.entity === "submission")?.attrs?.submission_id;
+      const sid = Object.values(folded.records).find((r) => r.entity === "submission")?.attrs?.submission_id || ("room:" + roomId);
       const toSend = events.map(({ id, op, payload, at, by }) => ({ id, op, payload, at, by }));
-      if (!sid) {
-        sid = window.ABDB.newSubmissionId();
-        const ins = { id: sid, op: OP.INS, payload: { id: sid, entity: "submission", attrs: { submission_id: sid, created_at: nowIso() } }, at: nowIso(), by: me };
-        toSend.push(ins);
-        try { await client.sendEvent(roomId, EVENT_TYPE, { op: OP.INS, payload: ins.payload, eid: sid }); } catch (e) {
-          console.warn("[db] mirror: couldn't stamp submission id on", roomId, e);
-        }
-      }
       // The family is the owner, whoever first wrote the room — so it keeps
       // the right to flush after this device is gone.
       const owner = events.find((e) => e.by && e.by !== me)?.by || null;
