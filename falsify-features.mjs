@@ -340,29 +340,38 @@ await page.waitForTimeout(1200);
   check("the profile header is the dashboard + searchable documents box", r.srcHasHeader);
 }
 
-// 9e. buckets, timeline-with-provenance, and the query-passages helpers
+// 9e. timeline (answers + free text), query helpers, inbox progress, native+transcript view
 {
   const r = await page.evaluate(async () => {
     const marked = highlightPassage("DCS <b>custody</b> changed", "custody");
     const clipped = clipPassage("alpha\nbeta\n" + "x".repeat(400) + "\ngamma custodian here\nomega", ["custodian"]);
+    const dates = extractDatesFromText("we met on March 5, 2025 and again 4/6/25, plus 2024-01-02").map((d) => d.iso);
     const src = await (await fetch("/index.html")).text();
     return {
-      marked,
-      clippedHasTerm: /custodian/.test(clipped) && clipped.length < 500,
-      srcHasBuckets: /submissionBuckets/.test(src) && /bchip/.test(src),
-      srcHasTimeline: /submissionTimeline/.test(src) && /tl-src/.test(src) && /openEvidence/.test(src),
+      marked, clippedHasTerm: /custodian/.test(clipped) && clipped.length < 500, dates,
+      srcHasTimeline: /submissionTimeline/.test(src) && /tl-src/.test(src) && /openEvidence/.test(src) && /extractDatesFromText/.test(src),
+      srcNoBuckets: !/submissionBuckets/.test(src) && !/"srow"/.test(src) && !/bchip/.test(src),
+      srcTimelineRightOfAnswers: /"sbody"|sbody/.test(src) && /sbody-side/.test(src) && /submissionTimeline\(pl\)/.test(src),
       srcHasQuery: /submissionPassages/.test(src) && /showPassagesModal/.test(src) && /appquery/.test(src) && /passage-text/.test(src),
-      srcHasAnswerAnchor: /card.id = "ac-"/.test(src) || /card\.id = "ac-/.test(src),
-      srcHasSrow: /"srow"/.test(src),
+      srcHasAnswerAnchor: /card\.id = "ac-/.test(src),
+      srcInboxProgress: /submissionPct/.test(src) && /ib-progress/.test(src),
+      srcNativeTranscript: /docTranscriptView/.test(src) && /docview-native/.test(src),
+      srcVideoRead: /readVideoText/.test(src) && /isVideoDoc/.test(src) && /readMediaText/.test(src),
+      srcDedupeSteps: /Collapse runs of the same value/.test(src),
     };
   });
   check("highlight marks the match and escapes the text", /<mark>custody<\/mark>/.test(r.marked) && !/<b>/.test(r.marked));
   check("clipPassage returns a tight window around the hit", r.clippedHasTerm);
-  check("buckets organize the application's info", r.srcHasBuckets);
+  check("dates are pulled from free text (answers, texts, transcripts)", ["2025-03-05", "2025-04-06", "2024-01-02"].every((d) => r.dates.includes(d)), JSON.stringify(r.dates));
   check("timeline carries provenance back to the evidence", r.srcHasTimeline);
+  check("the bucket thing is gone", r.srcNoBuckets);
+  check("the timeline sits in the right column beside the answers", r.srcTimelineRightOfAnswers);
   check("query pops up the application's own passages", r.srcHasQuery);
   check("answers are anchorable for evidence jumps", r.srcHasAnswerAnchor);
-  check("timeline + buckets sit in their own row", r.srcHasSrow);
+  check("the inbox card shows completion progress", r.srcInboxProgress);
+  check("image/video pop-ups show native + transcription", r.srcNativeTranscript);
+  check("video is auto-transcribed from its frames", r.srcVideoRead);
+  check("duplicate same-value steps are collapsed", r.srcDedupeSteps);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed

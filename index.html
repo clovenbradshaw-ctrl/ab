@@ -669,8 +669,10 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .inbox-detail-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .inbox-empty{padding:18px;color:var(--muted);font-size:13px;text-align:center}
 /* Timeline + buckets row, and the query/passages surface */
-.srow{display:grid;grid-template-columns:1.25fr 1fr;gap:14px;align-items:start;margin-bottom:16px}
-@media(max-width:900px){.srow{grid-template-columns:1fr}}
+.sbody{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr);gap:14px;align-items:start}
+@media(max-width:900px){.sbody{grid-template-columns:1fr}}
+.sbody-main{min-width:0;display:flex;flex-direction:column}
+.sbody-side{min-width:0;position:sticky;top:8px}
 .spanel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
 .spanel-head{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .spanel-title{font-family:Fraunces,serif;font-weight:560;font-size:14px}
@@ -685,21 +687,19 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .tl-detail{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-src{flex:none;font:500 10.5px Inter;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
 .tl-src:hover{border-color:var(--seal);color:var(--seal)}
-.bucket{padding:9px 12px;border-bottom:1px solid var(--line)}
-.bucket:last-child{border-bottom:none}
-.bucket-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
-.bucket-name{font:600 12.5px Inter;color:var(--ink)}
-.bucket-n{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted)}
-.bucket-chips{display:flex;flex-wrap:wrap;gap:5px}
-.bchip{font:500 10.5px Inter;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
-.bchip.have{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
-.bchip.req{background:var(--turn-soft);border-color:var(--turn);color:var(--turn)}
 .acard.flash{box-shadow:0 0 0 3px var(--turn);transition:box-shadow .2s ease}
 mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .appquery{flex:1;min-width:180px;font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .docbody .passage{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:8px}
 .docbody .passage-meta{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
 .docbody .passage-text{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.ib-progress{height:5px;border-radius:99px;background:var(--wash);overflow:hidden;margin-top:6px}
+.ib-progress i{display:block;height:100%;background:var(--seal);border-radius:99px}
+.ib-pct{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);margin-left:auto}
+.docview{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+@media(max-width:720px){.docview{grid-template-columns:1fr}}
+.docview-native{min-width:0}
+.docview-text{min-width:0}
 .afile{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px;min-width:0}
 .afile-icon{font-size:16px;flex:none}
 .afile-main{flex:1;min-width:0}
@@ -2383,6 +2383,36 @@ function highlightPassage(text, query) {
   try { return escaped.replace(new RegExp("(" + terms.join("|") + ")", "gi"), "<mark>$1</mark>"); }
   catch (e) { return escaped; }
 }
+// Natural-language dates pulled out of free text — an answer's own words, a
+// voice transcript, or the text read from a screenshot of a text conversation.
+const NL_MONTH = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre";
+const NL_DATE_RES = [
+  /\b\d{4}-\d{2}-\d{2}\b/g,
+  /\b\d{4}\/\d{1,2}\/\d{1,2}\b/g,
+  /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
+  new RegExp("\\b(?:" + NL_MONTH + ")\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{4}\\b", "gi"),
+  new RegExp("\\b\\d{1,2}\\s+(?:" + NL_MONTH + ")\\.?\\s+\\d{4}\\b", "gi"),
+  new RegExp("\\b(?:" + NL_MONTH + ")\\.?\\s+\\d{4}\\b", "gi"),
+];
+function extractDatesFromText(text) {
+  const s = String(text || "");
+  const out = [];
+  for (const re of NL_DATE_RES) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(s))) {
+      const p = Steer.parseDateFlexible(m[0]);
+      if (p && p.iso) out.push({ iso: p.iso, match: m[0], index: m.index });
+    }
+  }
+  const seen = new Set();
+  return out.filter((x) => { const k = x.iso + "@" + x.index; if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => a.index - b.index);
+}
+function snippetAround(text, index, match) {
+  const start = Math.max(0, index - 50);
+  const end = Math.min(text.length, index + String(match).length + 70);
+  return (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ").trim() + (end < text.length ? "…" : "");
+}
 // "Query this application": the passages in ONE submission that match — its
 // own answers, what was said, and the text read from its own documents. Never
 // another family's content.
@@ -3994,6 +4024,17 @@ function closeDoc() {
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDoc(); });
 
+// A file that was read is shown two ways at once: its native format (the
+// image, the video) and its transcription, side by side. Sources stay separate
+// — the transcription belongs to this one file.
+function docTranscriptView(nativeEl, doc) {
+  const wrap = $e("div", "docview");
+  const left = $e("div", "docview-native"); left.appendChild(nativeEl);
+  const right = $e("div", "docview-text"); right.appendChild(ocrPanel(doc, {}));
+  wrap.append(left, right);
+  return wrap;
+}
+
 async function previewDocument(doc, media) {
   const scrim = ensureModal();
   const head = scrim.querySelector(".dochead");
@@ -4016,14 +4057,19 @@ async function previewDocument(doc, media) {
     const mime = doc.mimetype || "";
     if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
-      body.appendChild(img);
-      // The best-guess transcription, linked to the image it was read from.
-      body.appendChild(ocrPanel(doc, {}));
+      // Native, beside the best-guess transcription read from it.
+      body.appendChild(docTranscriptView(img, doc));
     } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
       body.appendChild(frame);
-    } else if (mime.startsWith("audio/") || mime.startsWith("video/")) {
-      const player = document.createElement(mime.startsWith("audio/") ? "audio" : "video");
+    } else if (mime.startsWith("video/")) {
+      const player = document.createElement("video");
+      player.controls = true; player.src = objUrl;
+      player.style.cssText = "width:100%;display:block;margin:4px 0;max-height:60vh";
+      // The video, beside the text transcribed from its frames.
+      body.appendChild(docTranscriptView(player, doc));
+    } else if (mime.startsWith("audio/")) {
+      const player = document.createElement("audio");
       player.controls = true; player.src = objUrl;
       player.style.cssText = "width:100%;display:block;margin:4px 0 10px;max-height:60vh";
       body.appendChild(player);
@@ -6068,6 +6114,9 @@ function initAdminView({ onClose }) {
     const q = searchQuery;
     const submissions = collectSubmissions(ctx);
     const docs = submissions.flatMap((s) => s.docs.map((d) => ({ ...d, applicantName: s.applicantName })));
+    // Backend auto-processing: transcribe any image/video not already read,
+    // across every submission, in the background.
+    enqueueUnreadImages();
     body.innerHTML = "";
     const unreadable = unreadableNotice(ctx);
     if (unreadable) body.appendChild(unreadable);
@@ -6379,18 +6428,36 @@ function initAdminView({ onClose }) {
     return btn;
   }
 
-  // The office never picks a reader: any image this device can read, it reads
-  // on its own, in the background — exactly like the family's side.
-  function autoReadImages(pl) {
-    for (const d of pl.docs || []) {
-      if (!isImageDoc(d) || d.ocrText || d.ocrStatus === "empty" || d.ocrStatus === "failed") continue;
-      if (ocrPending.has(d.id)) continue;
-      ocrPending.add(d.id);
-      readAndStoreOcr(d, mediaFor(ctx), {
-        emit: (id, attrs) => emitDocInsTo(ctx, pl.roomId, id, attrs),
-        by: ctx.currentUserId, quiet: true,
-      }).finally(() => { ocrPending.delete(d.id); setTimeout(() => renderActive(), 300); });
+  // The office never picks a reader: on the backend, every image or video this
+  // device can read is transcribed on its own if it hasn't been already —
+  // across ALL submissions, not just the open one. One at a time, in the
+  // background, so a stack of files doesn't thrash the device.
+  const ocrQueue = [];
+  const ocrQueued = new Set();   // attempted this session — never retried in a loop
+  let ocrQueueRunning = false;
+  function enqueueUnreadImages() {
+    let added = false;
+    for (const d of collectAllDocuments(ctx)) {
+      if (!isReadableMedia(d) || d.ocrText || d.ocrStatus === "empty" || d.ocrStatus === "failed") continue;
+      if (ocrQueued.has(d.id)) continue;
+      ocrQueued.add(d.id);
+      ocrQueue.push(d);
+      added = true;
     }
+    if (added && !ocrQueueRunning) runOcrQueue();
+  }
+  async function runOcrQueue() {
+    ocrQueueRunning = true;
+    try {
+      while (ocrQueue.length) {
+        const d = ocrQueue.shift();
+        await readAndStoreOcr(d, mediaFor(ctx), {
+          emit: (id, attrs) => emitDocInsTo(ctx, d.roomId, id, attrs),
+          by: ctx.currentUserId, quiet: true,
+        });
+        try { renderActive(); } catch (e) {}
+      }
+    } finally { ocrQueueRunning = false; }
   }
   // Learn across submitters: the office sees every submission, so it aggregates
   // which reader actually won per file-kind and publishes that shared history
@@ -6428,7 +6495,7 @@ function initAdminView({ onClose }) {
   }
 
   function ocrBlockFor(d, { compact = false } = {}) {
-    if (!isImageDoc(d)) return null;
+    if (!isReadableMedia(d)) return null;
     return ocrPanel(d, { onEdit: compact ? null : () => editAdminOcr(d), compact });
   }
 
@@ -6482,7 +6549,7 @@ function initAdminView({ onClose }) {
         // a per-source search, and the eyes controls — so the office can read
         // and correct a file from the Documents list, not only from inside a
         // submission. Sources stay separate: each block reads only its own file.
-        if (isImageDoc(d)) {
+        if (isReadableMedia(d)) {
           const dr = document.createElement("tr");
           dr.className = "atr-ocr";
           const td = document.createElement("td");
@@ -6890,18 +6957,33 @@ function initAdminView({ onClose }) {
     for (const pl of list) {
       const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
       const kids = childIndicesFromAnswers(answers).length;
+      const pct = submissionPct(pl);
       const row = $e("div", "inbox-row" + (selected && selected.roomId === pl.roomId ? " on" : ""));
       row.onclick = () => openSubmission(pl);
       row.appendChild($e("div", "inbox-name", pl.applicantName));
       row.appendChild($e("div", "inbox-when", pl.submittedAt ? "submitted " + fmtDate(pl.submittedAt) : "not submitted yet"));
+      // Completion progress, right on the card.
+      const prog = $e("div", "ib-progress"); const fill = $e("i"); fill.style.width = pct + "%"; prog.appendChild(fill);
+      row.appendChild(prog);
       const l3 = $e("div", "inbox-row3");
       l3.appendChild($e("span", "inbox-kids", kids ? `${kids} ${kids === 1 ? "child" : "children"}` : "no children yet"));
       l3.appendChild(caseStatusChip(pl.caseStatus));
+      l3.appendChild($e("span", "ib-pct", pct + "%"));
       row.appendChild(l3);
       rows.appendChild(row);
     }
     col.appendChild(rows);
     return col;
+  }
+
+  // How complete a submission is: the visible (non-skipped, non-derived)
+  // questions that have an answer over the total. Same basis the dashboard uses.
+  function submissionPct(pl) {
+    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const fields = withRepeatingRounds(base, answers).filter((f) => !f.derived && !Steer.isFieldSkipped(f, answers));
+    const answered = fields.filter((f) => answers[f.path] != null && answers[f.path] !== "").length;
+    return fields.length ? Math.round((answered / fields.length) * 100) : 0;
   }
 
   // Query one application: return its own passages that match, ranked. The
@@ -6958,23 +7040,40 @@ function initAdminView({ onClose }) {
     const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
     const fields = withRepeatingRounds(base, answers);
     const events = [];
+    const pushDates = (blob, title, src, seen) => {
+      let n = 0;
+      for (const d of extractDatesFromText(blob)) {
+        if (seen.has(d.iso) || n >= 8) continue;
+        seen.add(d.iso); n++;
+        events.push({ sort: d.iso, at: d.iso, title, detail: snippetAround(blob, d.index, d.match), src, fromText: true });
+      }
+    };
     for (const f of fields) {
       const v = answers[f.path];
       if (!v) continue;
       const s = String(v);
       const isDate = f.type === "date" || f.type === "date_flex";
-      const m = /(\d{4}-\d{2}(?:-\d{2})?)/.exec(s);
-      if (!(isDate || m) || !m) continue;
-      events.push({ sort: m[1], at: m[1], title: labels(f.path), detail: s, src: { kind: "answer", path: f.path } });
+      const own = isDate ? (/^(\d{4}-\d{2}(?:-\d{2})?)/.exec(s) || [])[1] : null;
+      const seen = new Set();
+      if (own) { seen.add(own); events.push({ sort: own, at: own, title: labels(f.path), detail: s, src: { kind: "answer", path: f.path } }); }
+      // Dates the answer's own words (or the recording behind it) mention —
+      // "in March 2025 the caseworker…" becomes an event too.
+      const a = pl.answers.find((x) => x.path === f.path);
+      const blobs = [s];
+      if (a) {
+        if (a.source) blobs.push(a.source);
+        for (const ver of (a.versions || [])) {
+          if (ver.source) blobs.push(ver.source);
+          if (ver.voiceClip && ver.voiceClip.transcript) blobs.push("spoken: " + ver.voiceClip.transcript);
+        }
+      }
+      for (const blob of blobs) pushDates(blob, labels(f.path), { kind: "answer", path: f.path }, seen);
     }
     for (const d of pl.docs || []) {
       if (d.uploadedAt) events.push({ sort: d.uploadedAt, at: d.uploadedAt.slice(0, 10), title: "Document received", detail: d.title || d.filename, src: { kind: "doc", doc: d } });
-      const seen = new Set();
-      for (const x of String(d.ocrText || "").matchAll(/\b(\d{4}-\d{2}(?:-\d{2})?)\b/g)) {
-        if (seen.has(x[1]) || seen.size >= 15) continue;
-        seen.add(x[1]);
-        events.push({ sort: x[1], at: x[1], title: "Date read in " + (d.title || d.filename), detail: x[1], src: { kind: "doc", doc: d } });
-      }
+      // Dates read out of the document's own text — including a screenshot of a
+      // text conversation, where the dates are the story.
+      pushDates(d.ocrText || "", "Date read in " + (d.title || d.filename), { kind: "doc", doc: d }, new Set());
     }
     if (pl.submittedAt) events.push({ sort: pl.submittedAt, at: pl.submittedAt.slice(0, 10), title: "Submitted for review", detail: "", src: null });
     events.sort((a, b) => String(a.sort).localeCompare(String(b.sort)));
@@ -7008,39 +7107,6 @@ function initAdminView({ onClose }) {
   // The application's information, auto-sorted into the buckets it takes to
   // complete one — each section, with what is filled and what is missing, and
   // a chip per field that jumps to that field's answer.
-  function submissionBuckets(pl) {
-    const labels = answerLabels();
-    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
-    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
-    const fields = withRepeatingRounds(base, answers).filter((f) => !f.derived && !Steer.isFieldSkipped(f, answers));
-    const panel = $e("div", "spanel");
-    const head = $e("div", "spanel-head");
-    head.appendChild($e("span", "spanel-title", "Buckets"));
-    head.appendChild($e("span", "count", "info to complete the application"));
-    panel.appendChild(head);
-    for (const s of SECTIONS) {
-      const list = fields.filter((f) => (f.section || null) === s.key);
-      if (!list.length) continue;
-      const done = list.filter((f) => answers[f.path] != null && answers[f.path] !== "");
-      const bucket = $e("div", "bucket");
-      const bh = $e("div", "bucket-head");
-      bh.appendChild($e("span", "bucket-name", s.label));
-      bh.appendChild($e("span", "bucket-n", `${done.length}/${list.length}`));
-      bucket.appendChild(bh);
-      const chips = $e("div", "bucket-chips");
-      for (const f of list) {
-        const have = answers[f.path] != null && answers[f.path] !== "";
-        const chip = $e("button", "bchip" + (have ? " have" : "") + (f.required && !have ? " req" : ""), labels(f.path));
-        chip.title = have ? String(answers[f.path]).slice(0, 200) : "Not answered yet";
-        chip.onclick = () => openEvidence(pl, { kind: "answer", path: f.path });
-        chips.appendChild(chip);
-      }
-      bucket.appendChild(chips);
-      panel.appendChild(bucket);
-    }
-    return panel;
-  }
-
   function renderSingleSubmission(wrap, pl) {
     const labels = answerLabels();
     const docsByPath = new Map();
@@ -7053,39 +7119,33 @@ function initAdminView({ onClose }) {
     const withAudio = facts.filter((x) => x.hasAudio).length;
     const changed = facts.filter((x) => x.familyChanged || x.officeChanged).length;
 
-    // The office never picks a reader — any image this device can read, it
-    // reads on its own, in the background.
-    autoReadImages(pl);
-
     // ── Top: a dashboard on the submission (2/3) beside its documents (1/3) ──
     const top = $e("div", "sreview");
     top.appendChild(submissionProgress(pl, withAudio, changed));
     top.appendChild(submissionDocsBox(pl));
     wrap.appendChild(top);
 
-    // ── Timeline of everything the content places in time, with provenance,
-    // beside the buckets of information the application needs. ──
-    const mid = $e("div", "srow");
-    mid.appendChild(submissionTimeline(pl));
-    mid.appendChild(submissionBuckets(pl));
-    wrap.appendChild(mid);
+    // ── The answers are the hero content on the left — all of them, expanded
+    // and inspectable — with the timeline of everything the content places in
+    // time on the right, each row linked back to its evidence. ──
+    const sbody = $e("div", "sbody");
+    const main = $e("div", "sbody-main");
+    const side = $e("div", "sbody-side");
 
-    // ── The answers are the hero content below: all of them, expanded, so the
-    // office reads straight down and can inspect any one of them. ──
     const bar = $e("div", "afilter");
     for (const [key, label] of [["all", "All answers"], ["files", "📎 Has attachments"], ["audio", "🎙 Has a recording"], ["changed", "✎ Changed"]]) {
       const b = $e("button", "atab" + (cardFilter === key ? " on" : ""), label);
       b.onclick = () => { cardFilter = key; renderActive(); };
       bar.appendChild(b);
     }
-    wrap.appendChild(bar);
+    main.appendChild(bar);
 
     const matches = { all: () => true, files: (x) => x.files.length, audio: (x) => x.hasAudio, changed: (x) => x.familyChanged || x.officeChanged };
     const shown = facts.filter(matches[cardFilter] || matches.all);
     const cards = $e("div", "acards");
     for (const x of shown) cards.appendChild(answerCard(pl, x.a, labels, x));
     if (!shown.length) cards.appendChild(pipelineEmpty(pl.answers.length ? "No answers match this filter." : "No answers yet."));
-    wrap.appendChild(cards);
+    main.appendChild(cards);
 
     // Everything the family hasn't reached yet, still visible to answer
     // directly here — e.g. finishing an intake by phone. Shown regardless of
@@ -7093,11 +7153,16 @@ function initAdminView({ onClose }) {
     // are shown, not whether unanswered ones exist.
     const missing = missingFieldsFor(pl);
     if (missing.length) {
-      wrap.appendChild($e("div", "afiles-head", `Not answered yet (${missing.length})`));
+      main.appendChild($e("div", "afiles-head", `Not answered yet (${missing.length})`));
       const missingCards = $e("div", "acards");
       for (const f of missing) missingCards.appendChild(blankCard(pl, f, labels));
-      wrap.appendChild(missingCards);
+      main.appendChild(missingCards);
     }
+
+    side.appendChild(submissionTimeline(pl));
+    sbody.appendChild(main);
+    sbody.appendChild(side);
+    wrap.appendChild(sbody);
 
     wrap.appendChild(letterPanel(pl));
   }
@@ -7412,7 +7477,18 @@ function initAdminView({ onClose }) {
     };
     box.addEventListener("keydown", (e) => { if (e.key === "Escape") editor.hidden = true; });
 
-    const steps = stepsOf(a);
+    // Collapse runs of the same value: a repeated identical answer (recorded
+    // more than once, e.g. before the write guard existed) is one step, not
+    // several. Distinct values, voice takes, and restores are all kept.
+    const rawSteps = stepsOf(a);
+    const steps = [];
+    for (const v of rawSteps) {
+      const prev = steps[steps.length - 1];
+      const dup = prev && sameAnswer(prev.value, v.value)
+        && v.inputKind !== "voice" && v.inputKind !== "derived" && !v.restoredFrom && !prev.restoredFrom;
+      if (dup) continue;
+      steps.push(v);
+    }
     const timeline = $e("ol", "atl");
     steps.forEach((v, i) => {
       const latest = i === steps.length - 1;
@@ -9077,7 +9153,7 @@ async function handleFiles(fileList) {
       // upload and the whole interview move on regardless — a photo with no
       // legible text, or a reader that can't run, is not an upload error and
       // never blocks submitting. It can always be fixed by hand.
-      if (isImageDoc({ mimetype: attrs.mimetype }) && ocrReady() && ocrAutoAllowed()) {
+      if (isReadableMedia({ mimetype: attrs.mimetype }) && ocrReady() && ocrAutoAllowed()) {
         autoReadDoc({ id, ...attrs }, mediaBackend(), submitterDocEmit, meId());
       }
     } catch (e) { status.textContent = "Failed: " + e.message; row.classList.add("error"); }
@@ -9147,7 +9223,7 @@ function docRow(d) {
   bottom.appendChild(view);
   bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
   li.appendChild(bottom);
-  if (isImageDoc(d)) {
+  if (isReadableMedia(d)) {
     // The family's view: no eyes to choose, no read button, no engine jargon —
     // the reading runs on its own and this is just the text, with a way to
     // fix it. "quiet" is the whole point: they never asked for an OCR.
@@ -9250,6 +9326,9 @@ function loadImgFromUrl(url) {
   });
 }
 function isImageDoc(d) { return (d?.mimetype || "").startsWith("image/"); }
+function isVideoDoc(d) { return (d?.mimetype || "").startsWith("video/"); }
+// Both are read on-device: an image from its pixels, a video from frames of it.
+function isReadableMedia(d) { return isImageDoc(d) || isVideoDoc(d); }
 
 // OCR/CV is an ENHANCEMENT, never a dependency. A phone on a bad connection, a
 // device without WASM or a worker, or someone who turned it off must still be
@@ -9468,10 +9547,66 @@ async function readDocumentText(doc, media) {
   }
 }
 
-// What the submission is actually about, as a set of words to look for in a
-// reading. Kept to the identity facts a document is likely to confirm — the
-// child's name/initials, the case number, the county, the key dates — so the
-// match stays meaningful instead of lighting up on common words.
+// A video is transcribed the same way an image is read — in this tab, from its
+// frames: seek through it, OCR each sampled frame with the same eyes, and keep
+// the distinct lines in time order. Nothing is uploaded; only the text is
+// stored (encrypted), exactly like the video.
+function loadVideoFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "metadata"; v.src = url;
+    v.onloadedmetadata = () => resolve(v);
+    v.onerror = () => reject(new Error("couldn't decode this video"));
+  });
+}
+function seekVideo(v, t) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; v.removeEventListener("seeked", finish); resolve(); };
+    v.addEventListener("seeked", finish);
+    try { v.currentTime = t; } catch (e) { finish(); }
+    setTimeout(finish, 4000);
+  });
+}
+async function readVideoText(doc, media) {
+  if (!ocrReady()) return { ok: false, reason: "this browser can't read videos on-device" };
+  const pieces = await getDecryptedMedia(doc, media);
+  const blob = new Blob(pieces, { type: doc.mimetype || "video/*" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const v = await loadVideoFromUrl(url);
+    const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+    const frames = Math.max(1, Math.min(12, dur ? Math.ceil(dur / 2) : 4));
+    const S = await ocrScreenMod();
+    const lines = [];
+    const seen = new Set();
+    for (let i = 0; i < frames; i++) {
+      const t = dur ? (i + 0.5) * (dur / frames) : 0;
+      await seekVideo(v, t);
+      const cv = prepareCanvas(v, 1600);
+      let raw = "";
+      try { const sc = await S.readScreenImage(cv, { name: "frame " + (i + 1) }); if (sc) raw = (S.contentOf(sc).text || sc.raw || ""); }
+      catch (e) { raw = ""; }
+      for (const ln of String(raw).split("\n")) {
+        const s = ln.trim();
+        if (s.length < 2 || seen.has(s)) continue;
+        seen.add(s);
+        lines.push(dur ? `[${Math.round(t)}s] ${s}` : s);
+      }
+    }
+    const text = lines.join("\n");
+    return { ok: true, text, raw: text, elements: [], width: v.videoWidth || 0, height: v.videoHeight || 0, sourceKind: "video", frames };
+  } catch (e) {
+    return { ok: false, reason: e.message || String(e) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+// One entry point: an image is read from its pixels, a video from its frames.
+function readMediaText(doc, media) {
+  return isVideoDoc(doc) ? readVideoText(doc, media) : readDocumentText(doc, media);
+}
+
 const OCR_FACT_PATHS = [
   "complainant_name",
   "child_1_name", "child_1_initials", "child_2_name", "child_2_initials",
@@ -9566,15 +9701,16 @@ function emitDocInsTo(ctx, roomId, id, attrs) {
 
 async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false } = {}) {
   try {
-    const res = await withDeadline(readDocumentText(doc, media), 150000, "Reading the image");
-    if (!res.ok) { if (!quiet) toast("Couldn't read this image on this device — you can type the text yourself. (" + res.reason + ")", "warn"); return false; }
+    const isVid = isVideoDoc(doc);
+    const res = await withDeadline(readMediaText(doc, media), isVid ? 600000 : 150000, isVid ? "Reading the video" : "Reading the image");
+    if (!res.ok) { if (!quiet) toast("Couldn't read this file on this device — you can type the text yourself. (" + res.reason + ")", "warn"); return false; }
     const patch = ocrAttrs(res, by);
     patch.ocrRelevant = relevantOcrLines(patch.ocrText, submissionTerms());
     const wrote = commitOcr(emit, doc, patch);
-    if (!quiet) toast(patch.ocrText ? (wrote ? "Read the image — " + (patch.imageKind || "transcription attached") : "Already up to date") : "No legible text found", wrote ? "success" : undefined);
+    if (!quiet) toast(patch.ocrText ? (wrote ? "Read the file — " + (patch.imageKind || "transcription attached") : "Already up to date") : "No legible text found", wrote ? "success" : undefined);
     return wrote;
   } catch (e) {
-    if (!quiet) toast("Couldn't read this image on this device — you can type the text yourself.", "warn");
+    if (!quiet) toast("Couldn't read this file on this device — you can type the text yourself.", "warn");
     return false;
   }
 }
