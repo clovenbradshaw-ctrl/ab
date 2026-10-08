@@ -462,6 +462,22 @@ await page.waitForTimeout(1200);
   check("the lesson generalizes across label variants", r.variant.every((x) => x.known));
 }
 
+// 9h. invent the tuple of everything, including nesting (a table)
+{
+  const r = await page.evaluate(() => {
+    const table = "No.  Name  Service No.  Job Title\n01  W.D. Ranjan  008249  Tech Mugr\n02  H.C. Jayawardena  068301  Tk Ordm\n03  H.P. Dharmadasa  058293  TM Ord\n04  C.B.T. De Silva  011430  SAE";
+    const inv = inventTuples(table);
+    const records = {};
+    configStore = { roomId: "!cfg", fold: () => ({ records }), emit: (op, payload) => { records[payload.id] = { entity: payload.entity, attrs: payload.attrs }; return { id: payload.id }; } };
+    inventRules(table, "table");
+    return { nested: inv.nested, kind: inv.kind, columns: inv.columns, nameKnown: !!keyLesson("Name", "table"), structLesson: !!records["struct_table"] };
+  });
+  check("a table reading is detected as nested", r.nested === true && r.kind === "table", JSON.stringify(r));
+  check("its columns are found", r.columns.length >= 3);
+  check("columns are learned as keys", r.nameKnown === true);
+  check("a structure lesson is recorded", r.structLesson === true);
+}
+
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
 //     read returns cleanly, and auto-reading can be switched off entirely.
 {

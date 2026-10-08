@@ -2597,6 +2597,38 @@ function applyKeyLessons(text, kind) {
   }
   return out;
 }
+// Invent the tuple of everything: for each field, {key, canonical, format, type},
+// plus whether the reading is NESTED (a table of records) and its columns. Local
+// and deterministic — a model may propose richer rules, but this never blocks.
+function snake(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
+function inventTuples(text) {
+  const lines = String(text || "").split("\n").map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim());
+  const tuples = [];
+  for (const line of lines) {
+    const f = extractFormFields(line)[0];
+    if (f) { const fmt = valueFormat(f.value); tuples.push({ label: f.label, value: f.value, canonical: snake(f.label), format: fmt, type: fmt }); }
+  }
+  const cellLines = lines.filter((l) => l.trim().split(/\s{2,}|\t/).filter(Boolean).length >= 3);
+  const nested = cellLines.length >= 3;
+  const kind = nested ? "table" : (tuples.length >= 3 ? "form" : "prose");
+  const columns = nested ? cellLines[0].trim().split(/\s{2,}|\t/).filter(Boolean) : [];
+  return { nested, kind, tuples, columns };
+}
+// Invent and record rules from a reading: a candidate key lesson per field, and
+// a structure lesson saying whether it is nested (columns become column keys).
+function inventRules(text, docKind) {
+  const inv = inventTuples(text);
+  for (const t of inv.tuples) recordKeyLesson(t.label, t.format, docKind);
+  // A nested reading's columns are keys too.
+  for (const c of inv.columns) recordKeyLesson(c, "text", docKind);
+  try {
+    if (configStore && configStore.emit) {
+      const id = "struct_" + snake(docKind || inv.kind).slice(0, 24);
+      configStore.emit(OP.INS, { entity: "doc_struct", id, attrs: { kind: docKind || inv.kind, structure: inv.kind, nested: inv.nested, columns: inv.columns, by: (typeof ctx !== "undefined" && ctx && ctx.currentUserId) || null, at: nowIso() } });
+    }
+  } catch (e) {}
+  return inv;
+}
 // Record a key lesson as a CANDIDATE — the label is a guess until confirmed.
 function recordKeyLesson(label, format, kind) {
   try {
@@ -7940,7 +7972,15 @@ function initAdminView({ onClose }) {
         induceDocKinds(blocks); toast("Learned from " + blocks.length + " corpus items", "success"); renderActive();
       } catch (e) { toast("No corpus yet — run: node corpus/fetch.mjs", "warn"); }
     };
-    btns.append(drop, pull, cbtn);
+    const invBtn = $e("button", "aview", "Invent rules");
+    invBtn.title = "Locally propose keys, formats and nesting for this reading";
+    invBtn.onclick = () => {
+      if (!selected) { toast("Select a document first", "warn"); return; }
+      const r = inventRules(selected.ocrText || "", selected.docKind || "");
+      toast("Invented " + r.tuples.length + " tuple" + (r.tuples.length === 1 ? "" : "s") + " · " + (r.nested ? "nested (table)" : r.kind), "success");
+      renderActive();
+    };
+    btns.append(drop, pull, cbtn, invBtn);
     head.appendChild(btns);
     const ig = $e("div", "da-ignore");
     ig.appendChild($e("span", "da-flabel", "ignore"));
@@ -7980,6 +8020,7 @@ function initAdminView({ onClose }) {
       const kindI = document.createElement("input"); kindI.className = "da-kindinput"; kindI.value = selected.docKind || ""; kindI.placeholder = "its kind…";
       kindRow.appendChild(kindI); pbody.appendChild(kindRow);
       const working = extractFormFields(selected.ocrText || "").map((f) => ({ label: f.label, origLabel: f.label, value: f.value, orig: f.value }));
+      { const inv0 = inventTuples(selected.ocrText || ""); pbody.appendChild($e("div", "da-note", "structure: " + (inv0.nested ? "nested · columns: " + inv0.columns.join(" | ") : inv0.kind) + " · " + inv0.tuples.length + " tuples")); }
       if (!working.length) pbody.appendChild($e("div", "spanel-empty", "No labelled fields found — unresolved. You can still set the kind."));
       else pbody.appendChild($e("div", "da-note", "Keys are guesses too — fix the label and the value; DocAI learns keys and formats, never the values."));
       for (const w of working) {
