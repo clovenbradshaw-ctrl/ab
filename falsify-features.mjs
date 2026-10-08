@@ -358,6 +358,9 @@ await page.waitForTimeout(1200);
       srcNativeTranscript: /docTranscriptView/.test(src) && /docview-native/.test(src),
       srcVideoRead: /readVideoText/.test(src) && /isVideoDoc/.test(src) && /readMediaText/.test(src),
       srcDedupeSteps: /Collapse runs of the same value/.test(src),
+      srcInboxSearch: /inbox-search/.test(src) && /inbox-filters/.test(src) && /submissionSearchBlob/.test(src),
+      srcTestDefaultOff: /let showTest = false;/.test(src) && /isTestSubmission/.test(src) && /Test \(/.test(src),
+      srcCardShrink: /minmax\(0,1fr\) minmax\(0,1\.2fr\)/.test(src) && /\.acard>\*\{min-width:0\}/.test(src),
     };
   });
   check("highlight marks the match and escapes the text", /<mark>custody<\/mark>/.test(r.marked) && !/<b>/.test(r.marked));
@@ -372,6 +375,9 @@ await page.waitForTimeout(1200);
   check("image/video pop-ups show native + transcription", r.srcNativeTranscript);
   check("video is auto-transcribed from its frames", r.srcVideoRead);
   check("duplicate same-value steps are collapsed", r.srcDedupeSteps);
+  check("the inbox has search + status/phase filters", r.srcInboxSearch);
+  check("test submissions (before today) are hidden by default", r.srcTestDefaultOff);
+  check("answer cards shrink instead of overflowing", r.srcCardShrink);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed

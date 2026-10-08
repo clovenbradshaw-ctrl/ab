@@ -591,10 +591,12 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .asum b{color:var(--ink)}
 .afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,1.25fr) minmax(260px,2fr);gap:16px;align-items:start;box-shadow:var(--shadow)}
+.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1.8fr);gap:14px;align-items:start;box-shadow:var(--shadow)}
+.acard>*{min-width:0}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
 .acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
-.acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4}
+.acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
+.atl-line{overflow-wrap:anywhere}
 .acard-chips{display:flex;gap:4px;flex-wrap:wrap}
 .achip{font:600 10px Inter;border-radius:999px;padding:2px 8px;background:var(--wash);color:var(--muted);border:1px solid var(--line)}
 .achip.audio{background:var(--seal-soft);color:var(--seal);border-color:#C9E0D5}
@@ -668,6 +670,12 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .inbox-detail{min-width:0}
 .inbox-detail-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .inbox-empty{padding:18px;color:var(--muted);font-size:13px;text-align:center}
+.inbox-tools{padding:8px 10px 7px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.inbox-search{font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.inbox-filters{display:flex;flex-wrap:wrap;gap:4px}
+.fchip{font:500 10.5px Inter;padding:2px 8px;border-radius:99px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.fchip.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
+.fchip.test.on{background:var(--turn-soft);border-color:var(--turn);color:var(--turn)}
 /* Timeline + buckets row, and the query/passages surface */
 .sbody{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr);gap:14px;align-items:start}
 @media(max-width:900px){.sbody{grid-template-columns:1fr}}
@@ -6031,6 +6039,21 @@ function initAdminView({ onClose }) {
   let ctx = null;
   let searchQuery = "";
   let searchTimer = null;
+  // The inbox's own search + filter, over submissions (name, answers, what was
+  // said, and the text read from their documents).
+  let inboxQuery = "";
+  let inboxFilter = "all";
+  // Submissions dated before today are treated as TEST data and hidden by
+  // default; the "Test" chip brings them back.
+  let showTest = false;
+  function isTestSubmission(pl) {
+    const t = pl.submittedAt || pl.lastActivity;
+    if (!t) return false;
+    const d = new Date(t);
+    if (isNaN(d)) return false;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return d < today;
+  }
   // Which applicant the Pipeline tab's single-submission (inbox detail) view
   // is showing, if any. Lives here — not on the div renderPipeline builds —
   // because that div is thrown away and rebuilt every renderActive() call,
@@ -6133,7 +6156,7 @@ function initAdminView({ onClose }) {
       searchTimer = setTimeout(() => { searchQuery = searchInput.value; renderActive(); }, 200);
     };
     searchBar.appendChild(searchInput);
-    if (active !== "eval") body.appendChild(searchBar);
+    if (active !== "eval" && active !== "answers") body.appendChild(searchBar);
 
     if (active === "table") {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
@@ -6156,8 +6179,17 @@ function initAdminView({ onClose }) {
           toast("That shared record isn't readable on this device.", "warn");
         }
       }
+      const q = inboxQuery;
       const filtered = all
-        .filter((p) => matchesQuery(`${p.applicantName} ${p.phone} ${p.email} ${p.caseStatus}`, q))
+        .filter((p) => showTest || !isTestSubmission(p))
+        .filter((p) => {
+          if (inboxFilter === "all") return true;
+          if (inboxFilter === "submitted") return !!p.submittedAt;
+          if (inboxFilter === "in_progress") return !p.submittedAt;
+          if (inboxFilter === "test") return isTestSubmission(p);
+          return p.caseStatus === inboxFilter;
+        })
+        .filter((p) => !q || matchesQuery(submissionSearchBlob(p), q))
         .sort((a, b) => String(b.lastActivity || "").localeCompare(String(a.lastActivity || "")));
       // Default to the first submission so the detail isn't empty.
       if (!pipelineViewing && filtered.length) {
@@ -6167,7 +6199,7 @@ function initAdminView({ onClose }) {
       const viewing = pipelineViewing ? all.find((p) => p.roomId === pipelineViewing.roomId) || null : null;
 
       const inbox = $e("div", "inbox");
-      inbox.appendChild(renderInboxList(filtered, viewing));
+      inbox.appendChild(renderInboxList(filtered, viewing, all.filter(isTestSubmission).length));
       const detail = $e("div", "inbox-detail");
       if (viewing) {
         const bar = $e("div", "inbox-detail-head");
@@ -6946,12 +6978,42 @@ function initAdminView({ onClose }) {
 
   // The inbox's left panel: one row per submitter — name, when they submitted,
   // how many children the case is about, and where the submission stands.
-  function renderInboxList(list, selected) {
+  function renderInboxList(list, selected, hiddenTest = 0) {
     const col = $e("div", "inbox-list");
     const head = $e("div", "inbox-list-head");
     head.appendChild($e("span", "inbox-list-title", "Submissions"));
     head.appendChild($e("span", "count", String(list.length)));
     col.appendChild(head);
+
+    // Search across submissions + filter by phase/status, with test data
+    // (anything dated before today) off by default.
+    const tools = $e("div", "inbox-tools");
+    const si = document.createElement("input");
+    si.type = "search"; si.className = "inbox-search"; si.placeholder = "Search submissions…"; si.value = inboxQuery;
+    si.oninput = () => {
+      inboxQuery = si.value;
+      const pos = si.selectionStart;
+      renderActive();
+      const ni = document.querySelector(".inbox-search");
+      if (ni) { ni.focus(); try { ni.setSelectionRange(pos, pos); } catch (e) {} }
+    };
+    tools.appendChild(si);
+    const chips = $e("div", "inbox-filters");
+    const opts = [["all", "All"], ["submitted", "Submitted"], ["in_progress", "In progress"], ...CASE_STATUSES.map((s) => [s.key, s.label])];
+    for (const [key, label] of opts) {
+      const c = $e("button", "fchip" + (inboxFilter === key ? " on" : ""), label);
+      c.type = "button";
+      c.onclick = () => { inboxFilter = key; renderActive(); };
+      chips.appendChild(c);
+    }
+    const tchip = $e("button", "fchip test" + (showTest ? " on" : ""), hiddenTest && !showTest ? `Test (${hiddenTest})` : "Test");
+    tchip.type = "button";
+    tchip.title = "Submissions dated before today — test data, hidden by default";
+    tchip.onclick = () => { showTest = !showTest; renderActive(); };
+    chips.appendChild(tchip);
+    tools.appendChild(chips);
+    col.appendChild(tools);
+
     const rows = $e("div", "inbox-rows");
     if (!list.length) { rows.appendChild($e("div", "inbox-empty", "No submissions match.")); col.appendChild(rows); return col; }
     for (const pl of list) {
@@ -6984,6 +7046,23 @@ function initAdminView({ onClose }) {
     const fields = withRepeatingRounds(base, answers).filter((f) => !f.derived && !Steer.isFieldSkipped(f, answers));
     const answered = fields.filter((f) => answers[f.path] != null && answers[f.path] !== "").length;
     return fields.length ? Math.round((answered / fields.length) * 100) : 0;
+  }
+
+  // Everything searchable in a submission: the submitter, their answers (and
+  // the words behind them), and the text read from their own documents. Each
+  // submission is searched on its own — sources never bleed across.
+  function submissionSearchBlob(pl) {
+    const parts = [pl.applicantName, pl.phone, pl.email, pl.caseStatus, pl.submittedAt ? "submitted" : "in progress"];
+    for (const a of pl.answers) {
+      parts.push(a.value);
+      if (a.source) parts.push(a.source);
+      for (const v of (a.versions || [])) {
+        if (v.source) parts.push(v.source);
+        if (v.voiceClip && v.voiceClip.transcript) parts.push(v.voiceClip.transcript);
+      }
+    }
+    for (const d of pl.docs || []) parts.push(d.title, d.filename, d.ocrText, d.imageKind);
+    return parts.filter(Boolean).join(" \n ");
   }
 
   // Query one application: return its own passages that match, ranked. The
