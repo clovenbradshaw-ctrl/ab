@@ -456,15 +456,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .docs-list .doc.status-in_review .dstatus{background:var(--turn-soft);color:var(--turn)}
 .docscrim{position:fixed;inset:0;background:rgba(22,36,43,.4);backdrop-filter:blur(3px);z-index:40;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s ease}
 .docscrim.on{opacity:1;pointer-events:auto}
-.docmodal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow-lg);width:min(660px,94vw);max-height:88vh;overflow:auto;padding:22px;position:relative;animation:modalIn .25s var(--ease-out)}
+.docmodal{background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow-lg);width:min(1200px,96vw);max-height:94vh;overflow:auto;padding:18px 22px;position:relative;animation:modalIn .25s var(--ease-out)}
 @keyframes modalIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
 .docclose{position:absolute;top:10px;right:10px;border:1px solid var(--line);background:var(--surface);border-radius:7px;width:30px;height:30px;font-size:16px;cursor:pointer;color:var(--muted);display:grid;place-items:center}
 .dochead{font-family:Fraunces,serif;font-weight:560;font-size:17px;margin:0 30px 10px 0;word-break:break-word}
-.docbody{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.docbody{display:flex;flex-direction:column;gap:12px;align-items:stretch;width:100%}
 .docstatus{font-size:12.5px;color:var(--muted);margin:0}
 .docstatus.error{color:var(--red)}
-.docimg{max-width:100%;max-height:55vh;border-radius:9px;border:1px solid var(--line)}
-.docframe{width:100%;height:55vh;border:1px solid var(--line);border-radius:9px}
+.docimg{max-width:100%;max-height:82vh;border-radius:9px;border:1px solid var(--line)}
+.docframe{width:100%;height:82vh;border:1px solid var(--line);border-radius:9px}
 .docdownload{font:600 12.5px Inter;color:#fff;background:var(--ink);padding:8px 15px;border-radius:8px;text-decoration:none}
 
 /* Toast */
@@ -702,6 +702,24 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .te-field input,.te-field textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .te-field textarea{min-height:70px;resize:vertical}
 .te-btns{display:flex;gap:8px;margin-top:6px}
+.note-btn{font:500 10px Inter;padding:2px 7px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.note-btn:hover{border-color:var(--seal);color:var(--seal)}
+.note-row{padding:8px 10px;border-bottom:1px solid var(--line)}
+.note-row:last-child{border-bottom:none}
+.note-top{display:flex;gap:8px;align-items:baseline;font-size:10.5px;color:var(--muted)}
+.note-where{color:var(--seal)}
+.note-text{font-size:12.5px;color:var(--ink);white-space:pre-wrap;margin-top:3px;overflow-wrap:anywhere}
+.da-intro{font-size:13px;line-height:1.5;color:var(--ink);background:var(--wash);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;max-width:860px}
+.da-kinds{padding:6px}
+.da-kind{padding:9px 10px;border-bottom:1px solid var(--line)}
+.da-kind:last-child{border-bottom:none}
+.da-kind-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.da-kind-name{font:600 13px Inter;color:var(--ink)}
+.da-kind-src{font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted)}
+.da-kind-sig{font-size:11px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.da-templates{width:calc(100% - 20px);min-height:150px;font:12.5px/1.5 "IBM Plex Mono",monospace;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px;background:var(--surface);color:var(--ink);resize:vertical}
+.da-sources{display:flex;flex-direction:column;gap:5px;padding:10px 12px}
+.da-sources a{color:var(--seal);font-size:12.5px}
 .tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
 .tl-row:hover{background:var(--wash)}
 .tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
@@ -719,10 +737,21 @@ mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .ib-progress{height:5px;border-radius:99px;background:var(--wash);overflow:hidden;margin-top:6px}
 .ib-progress i{display:block;height:100%;background:var(--seal);border-radius:99px}
 .ib-pct{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);margin-left:auto}
-.docview{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.docview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
 @media(max-width:720px){.docview{grid-template-columns:1fr}}
 .docview-native{min-width:0}
 .docview-text{min-width:0}
+.docsurface{width:100%}
+.ds-tabs{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.ds-tab{font:500 11px Inter;padding:3px 10px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.ds-tab.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
+.ds-hint{font-size:10.5px;color:var(--muted);margin-left:auto}
+.ds-stage{position:relative;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--wash)}
+.ds-span{position:absolute;white-space:pre;line-height:1.05;color:transparent;cursor:text}
+.ds-span.editing{color:var(--ink);background:rgba(182,122,46,.12);outline:1px dashed var(--turn)}
+.ds-span.textonly{color:var(--ink)}
+.ds-span:hover{background:rgba(46,111,94,.12)}
+.ds-span::selection{background:rgba(46,111,94,.35)}
 .afile{display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surface);border:1px solid var(--line);border-radius:9px;min-width:0}
 .afile-icon{font-size:16px;flex:none}
 .afile-main{flex:1;min-width:0}
@@ -1317,7 +1346,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button><button class="atab" data-view="docai">DocAI</button></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm" title="Opens the questions in a demo — nothing is saved or sent">Try the questions (demo) ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -4110,7 +4139,66 @@ function docTranscriptView(nativeEl, doc) {
   return wrap;
 }
 
-async function previewDocument(doc, media) {
+// A file that was read, with its text laid back ON the page in the same
+// geography it was read from: selectable, editable, and in a second view the
+// same positioned text alone. `onSaveText(text, pages)` persists an edit.
+function docSurface(doc, nativeEl, onSaveText) {
+  const pages = Array.isArray(doc.ocrPages) && doc.ocrPages.length ? doc.ocrPages : [{ page: 1, width: doc.width || 1000, height: doc.height || 1000, text: doc.ocrText || "", elements: [] }];
+  const wrap = $e("div", "docsurface");
+  const tabs = $e("div", "ds-tabs");
+  let mode = "page", editing = false;
+  const pageTab = $e("button", "ds-tab on", "Page");
+  const textTab = $e("button", "ds-tab", "Text");
+  const editT = $e("button", "ds-tab", onSaveText ? "✎ Edit text" : "text");
+  if (!onSaveText) editT.style.display = "none";
+  tabs.append(pageTab, textTab, editT);
+  const hint = $e("span", "ds-hint", "select to copy · edit to correct");
+  tabs.appendChild(hint);
+  wrap.appendChild(tabs);
+  const stage = $e("div", "ds-stage");
+  wrap.appendChild(stage);
+
+  const save = () => {
+    if (!onSaveText) return;
+    const p = pages[0];
+    p.text = (p.elements || []).map((e) => e.text).join("\n");
+    onSaveText(p.text, pages);
+  };
+  function draw() {
+    stage.innerHTML = "";
+    const p = pages[0];
+    const W = p.width || 1000, H = p.height || 1000;
+    const boxW = stage.clientWidth || 760;
+    const scale = boxW / W;
+    stage.style.height = (H * scale) + "px";
+    if (mode === "page") {
+      nativeEl.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill";
+      stage.appendChild(nativeEl);
+    }
+    for (const el of (p.elements || [])) {
+      const r = el.region; if (!r) continue;
+      const sp = document.createElement("span");
+      sp.className = "ds-span" + (editing ? " editing" : "") + (mode === "text" ? " textonly" : "");
+      sp.textContent = el.text;
+      sp.style.left = (r[0] * scale) + "px";
+      sp.style.top = (r[1] * scale) + "px";
+      sp.style.minWidth = (r[2] * scale) + "px";
+      sp.style.fontSize = Math.max(7, r[3] * scale * 0.82) + "px";
+      sp.contentEditable = editing ? "true" : "false";
+      sp.addEventListener("blur", () => { el.text = sp.textContent; save(); });
+      stage.appendChild(sp);
+    }
+    pageTab.classList.toggle("on", mode === "page");
+    textTab.classList.toggle("on", mode === "text");
+  }
+  pageTab.onclick = () => { mode = "page"; draw(); };
+  textTab.onclick = () => { mode = "text"; draw(); };
+  editT.onclick = () => { if (!onSaveText) return; editing = !editing; editT.classList.toggle("on", editing); hint.textContent = editing ? "editing — click away to save" : "select to copy · edit to correct"; draw(); };
+  requestAnimationFrame(draw);
+  return wrap;
+}
+
+async function previewDocument(doc, media, opts = {}) {
   const scrim = ensureModal();
   const head = scrim.querySelector(".dochead");
   const body = scrim.querySelector(".docbody");
@@ -4132,8 +4220,10 @@ async function previewDocument(doc, media) {
     const mime = doc.mimetype || "";
     if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
-      // Native, beside the best-guess transcription read from it.
-      body.appendChild(docTranscriptView(img, doc));
+      // The text laid back on the page, positioned, selectable, editable —
+      // alongside the plain text view.
+      if (Array.isArray(doc.ocrPages) && doc.ocrPages.length) body.appendChild(docSurface(doc, img, opts.onSaveText));
+      else body.appendChild(docTranscriptView(img, doc));
     } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
       body.appendChild(frame);
@@ -5990,6 +6080,12 @@ function collectPipelineData({ storeKind, client }) {
       .filter(([, r]) => r.entity === "timeline")
       .map(([id, r]) => ({ id, ...r.attrs }));
 
+    // Notes, anchored to whatever they are about.
+    const notes = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "note")
+      .map(([id, r]) => ({ id, ...r.attrs }))
+      .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+
     const lastActivity = defs.length ? defs.reduce((max, e) => (e.at || "") > (max || "") ? e.at : max, "") : null;
 
     const caseStatus = folded.anchors?.case?.status?.value || "new";
@@ -6153,7 +6249,15 @@ function initAdminView({ onClose }) {
   }
   function openDoc(pl, d) {
     try { history.replaceState({ sub: anonRecordId(pl.roomId), doc: d.id }, "", recordUrl(pl.roomId, d.id)); } catch (e) {}
-    previewDocument(d, mediaFor(ctx));
+    previewDocument(d, mediaFor(ctx), { onSaveText: adminSaveText(d) });
+  }
+  // Persist an edit made by dragging through the positioned text on the page.
+  function adminSaveText(d) {
+    return (text, pages) => {
+      commitOcr((id, attrs) => emitDocInsTo(ctx, d.roomId, id, attrs), d, { ocrText: text, ocrPages: pages, ocrKind: "edited", ocrAt: nowIso(), ocrBy: ctx.currentUserId })
+        ? toast("Transcription updated", "success") : toast("No change — nothing recorded.");
+      renderActive();
+    };
   }
   window.addEventListener("popstate", () => {
     const p = new URLSearchParams(location.search);
@@ -6300,6 +6404,7 @@ function initAdminView({ onClose }) {
           if (v) showPassagesModal(viewing, v, submissionPassages(viewing, v));
         };
         bar.appendChild(query);
+        bar.appendChild(noteButton(viewing, { kind: "submission" }, viewing.applicantName));
         detail.appendChild(bar);
         renderSingleSubmission(detail, viewing);
       } else {
@@ -6325,6 +6430,8 @@ function initAdminView({ onClose }) {
       body.appendChild(renderLetters(filtered));
     } else if (active === "access") {
       body.appendChild(renderAccessLog());
+    } else if (active === "docai") {
+      body.appendChild(renderDocAI());
     } else if (active === "pipeline") {
       const pipelineData = collectPipelineData(ctx);
       body.appendChild(renderPipeline(pipelineData));
@@ -6530,7 +6637,7 @@ function initAdminView({ onClose }) {
 
   function viewBtn(d) {
     const btn = $e("button", "aview", "View");
-    btn.onclick = () => previewDocument(d, mediaFor(ctx));
+    btn.onclick = () => previewDocument(d, mediaFor(ctx), { onSaveText: adminSaveText(d) });
     return btn;
   }
 
@@ -7331,6 +7438,7 @@ function initAdminView({ onClose }) {
         ed.title = "Correct or edit this timeline item";
         ed.onclick = () => openTimelineEditor(pl, e);
         acts.appendChild(ed);
+        acts.appendChild(noteButton(pl, { kind: "timeline", key: e.key }, e.title));
         row.appendChild(acts);
         list.appendChild(row);
       }
@@ -7377,9 +7485,194 @@ function initAdminView({ onClose }) {
     scrim.classList.add("on");
   }
 
+  // Notes: attach one to anything (an answer, a document, a timeline item, or
+  // the submission), and roll them all up in one widget.
+  function addNoteEditor(pl, anchor, label) {
+    const scrim = ensureModal();
+    const head = scrim.querySelector(".dochead");
+    const body = scrim.querySelector(".docbody");
+    head.textContent = "Add a note" + (label ? " — " + label : "");
+    body.innerHTML = "";
+    const ta = document.createElement("textarea");
+    ta.setAttribute("rows", "4");
+    ta.style.cssText = "font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;min-height:90px;width:100%";
+    body.appendChild(ta);
+    const btns = $e("div", "te-btns");
+    const save = $e("button", "aview", "Save note"), cancel = $e("button", "aview", "Cancel");
+    btns.append(save, cancel); body.appendChild(btns);
+    cancel.onclick = closeDoc;
+    save.onclick = () => {
+      const text = ta.value.trim();
+      if (!text) { closeDoc(); return; }
+      emitNoteTo(ctx, pl.roomId, { text, anchor, label });
+      closeDoc(); toast("Note added", "success"); setTimeout(() => renderActive(), 300);
+    };
+    scrim.classList.add("on");
+    setTimeout(() => ta.focus(), 60);
+  }
+  function noteButton(pl, anchor, label) {
+    const b = $e("button", "note-btn", "＋ note");
+    b.title = "Add a note about this";
+    b.onclick = (e) => { e.stopPropagation(); addNoteEditor(pl, anchor, label); };
+    return b;
+  }
+  function notesWidget(pl) {
+    const list = pl.notes || [];
+    const panel = $e("div", "spanel");
+    const head = $e("div", "spanel-head");
+    head.appendChild($e("span", "spanel-title", "Notes"));
+    head.appendChild($e("span", "count", String(list.length)));
+    const add = $e("button", "tl-tool", "＋ Add note");
+    add.onclick = () => addNoteEditor(pl, { kind: "submission" }, pl.applicantName);
+    head.appendChild(add);
+    panel.appendChild(head);
+    const box = $e("div", "sdoc-list");
+    if (!list.length) box.appendChild($e("div", "spanel-empty", "No notes yet."));
+    for (const n of list) {
+      const row = $e("div", "note-row");
+      const top = $e("div", "note-top");
+      top.appendChild($e("span", "note-when", fmtDate(n.at)));
+      if (n.label) top.appendChild($e("span", "note-where", n.label));
+      row.appendChild(top);
+      row.appendChild($e("div", "note-text", n.text));
+      const a = n.anchor || {};
+      if (a.kind === "answer" && a.path) { const b = $e("button", "tl-src", "evidence"); b.onclick = () => openEvidence(pl, { kind: "answer", path: a.path }); row.appendChild(b); }
+      else if (a.kind === "doc" && a.id) { const doc = (pl.docs || []).find((x) => x.id === a.id); if (doc) { const b = $e("button", "tl-src", "view"); b.onclick = () => openDoc(pl, doc); row.appendChild(b); } }
+      box.appendChild(row);
+    }
+    panel.appendChild(box);
+    return panel;
+  }
+
   // The application's information, auto-sorted into the buckets it takes to
   // complete one — each section, with what is filled and what is missing, and
   // a chip per field that jumps to that field's answer.
+  // ── DocAI: learn the shape of the documents that reach this office ──
+  // Fed templates up front, and taught by everything actually uploaded over
+  // time. The learned kinds (their signatures) live in the shared question
+  // room, so the office's collective reading gets more competent as it goes.
+  const DOC_KIND_ENTITY = "doc_kind";
+  const DOC_STOP = new Set("the a an of to for and or in on is are was were be been being with by as at this that these those from it its their his her they them we you your our us not no yes do does did has have had will would can could should may might must shall page state tennessee county united states department form report date signature signed".split(" "));
+  function docTokens(text) {
+    const counts = new Map();
+    for (const w of String(text || "").toLowerCase().split(/[^a-z0-9]+/)) {
+      if (w.length < 4 || DOC_STOP.has(w) || /^\d+$/.test(w)) continue;
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map((x) => x[0]);
+  }
+  function loadDocKinds() {
+    const out = [];
+    try {
+      if (!configStore) return out;
+      for (const r of Object.values(configStore.fold().records)) if (r.entity === DOC_KIND_ENTITY && r.attrs && r.attrs.name) out.push(r.attrs);
+    } catch (e) {}
+    return out;
+  }
+  function docKindScore(kind, tokens) {
+    const set = new Set(kind.tokens || []);
+    let hit = 0;
+    for (const t of tokens) if (set.has(t)) hit++;
+    return hit / Math.max(1, Math.min(tokens.length, set.size));
+  }
+  function parseTemplates(text) {
+    const out = []; let cur = null;
+    for (const line of String(text || "").split("\n")) {
+      const m = /^\s*(?:===\s*(.+?)\s*===|##\s*(.+?))\s*$/.exec(line);
+      if (m) { cur = { name: (m[1] || m[2]).trim(), text: "" }; out.push(cur); }
+      else if (cur) cur.text += line + "\n";
+    }
+    return out.filter((t) => t.name && t.text.trim());
+  }
+  function induceDocKinds(templates) {
+    const byName = new Map();
+    for (const k of loadDocKinds()) byName.set(k.name, { name: k.name, tokens: (k.tokens || []).slice(), count: k.count || 0, source: k.source || "learned" });
+    const merge = (name, toks, source) => {
+      const k = byName.get(name) || (byName.set(name, { name, tokens: [], count: 0, source }), byName.get(name));
+      k.tokens = [...new Set([...k.tokens, ...toks])].slice(0, 40);
+      if (source === "template") k.source = "template";
+      k.count++;
+      return k;
+    };
+    for (const t of templates) merge(t.name, docTokens(t.text), "template");
+    const docs = collectAllDocuments(ctx).filter((d) => d.ocrText && String(d.ocrText).trim());
+    for (const d of docs) {
+      const toks = docTokens(d.ocrText);
+      if (!toks.length) continue;
+      let best = null, bestScore = 0;
+      for (const k of byName.values()) { const s = docKindScore(k, toks); if (s > bestScore) { bestScore = s; best = k; } }
+      if (best && bestScore >= 0.12) { best.tokens = [...new Set([...best.tokens, ...toks])].slice(0, 40); best.count++; d._kind = best.name; }
+      else {
+        const header = (String(d.ocrText).split("\n").map((s) => s.trim()).filter(Boolean)[0] || d.title || d.filename || "").slice(0, 44);
+        const name = header.length > 3 ? header : "kind " + (byName.size + 1);
+        merge(name, toks, "learned");
+        d._kind = name;
+      }
+    }
+    try {
+      if (configStore && configStore.emit) for (const k of byName.values()) {
+        const id = "kind_" + k.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 48);
+        configStore.emit(OP.INS, { entity: DOC_KIND_ENTITY, id, attrs: { name: k.name, tokens: k.tokens.slice(0, 40), count: k.count, source: k.source, updatedAt: nowIso() } });
+      }
+    } catch (e) {}
+    for (const d of docs) if (d._kind && d._kind !== d.docKind) {
+      try { emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: d._kind })); } catch (e) {}
+    }
+    return [...byName.values()].sort((a, b) => b.count - a.count);
+  }
+  function renderDocAI() {
+    const wrap = $e("div");
+    wrap.appendChild($e("div", "da-intro", "DocAI learns the shape of the documents that reach this office — Tennessee police reports, DCS letters, court orders and the rest. Feed it templates now; it keeps learning from everything actually uploaded, and its memory lives in the shared question room, so it grows more competent over time."));
+    const kbox = $e("div", "spanel");
+    const khead = $e("div", "spanel-head");
+    khead.appendChild($e("span", "spanel-title", "Document kinds it knows"));
+    const run = $e("button", "tl-tool", "Learn from uploads");
+    khead.appendChild(run);
+    kbox.appendChild(khead);
+    const klist = $e("div", "da-kinds");
+    kbox.appendChild(klist);
+    wrap.appendChild(kbox);
+    const tbox = $e("div", "spanel");
+    const thead = $e("div", "spanel-head"); thead.appendChild($e("span", "spanel-title", "Templates to learn from"));
+    tbox.appendChild(thead);
+    const ta = document.createElement("textarea"); ta.className = "da-templates";
+    ta.placeholder = "Paste templates, each headed by a line like:\n=== Dickson Police Department Incident Report ===\n<text of the template>\n=== TN DCS Letter ===\n<text>";
+    tbox.appendChild(ta);
+    const tbtn = $e("button", "aview", "Learn from templates"); tbox.appendChild(tbtn);
+    wrap.appendChild(tbox);
+    const sbox = $e("div", "spanel");
+    const shead = $e("div", "spanel-head"); shead.appendChild($e("span", "spanel-title", "Reference sources"));
+    sbox.appendChild(shead);
+    const src = $e("div", "da-sources");
+    for (const [label, url] of [["TN Dept. of Children's Services", "https://www.tn.gov/dcs.html"], ["TN DCS — program areas", "https://www.tn.gov/dcs/program-areas.html"], ["TN courts", "https://www.tncourts.gov/"]]) {
+      const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = label; src.appendChild(a);
+    }
+    sbox.appendChild(src);
+    wrap.appendChild(sbox);
+    const draw = (kinds) => {
+      klist.innerHTML = "";
+      if (!kinds || !kinds.length) { klist.appendChild($e("div", "spanel-empty", "Nothing learned yet — paste templates or learn from uploads.")); return; }
+      for (const k of kinds) {
+        const row = $e("div", "da-kind");
+        const top = $e("div", "da-kind-top");
+        top.appendChild($e("span", "da-kind-name", k.name));
+        top.appendChild($e("span", "da-kind-src", (k.source === "template" ? "from template" : "learned") + " · " + (k.count || 0) + " docs"));
+        row.appendChild(top);
+        row.appendChild($e("div", "da-kind-sig", (k.tokens || []).slice(0, 12).join(" · ")));
+        klist.appendChild(row);
+      }
+    };
+    draw(loadDocKinds().sort((a, b) => (b.count || 0) - (a.count || 0)));
+    const learn = (templates) => { draw(induceDocKinds(templates)); toast("DocAI updated", "success"); };
+    run.onclick = () => learn([]);
+    tbtn.onclick = () => {
+      const blocks = parseTemplates(ta.value);
+      if (!blocks.length) { toast("Add a template headed like '=== Name ==='.", "warn"); return; }
+      learn(blocks);
+    };
+    return wrap;
+  }
+
   function renderSingleSubmission(wrap, pl) {
     const labels = answerLabels();
     const docsByPath = new Map();
@@ -7433,6 +7726,7 @@ function initAdminView({ onClose }) {
     }
 
     side.appendChild(submissionTimeline(pl));
+    side.appendChild(notesWidget(pl));
     sbody.appendChild(main);
     sbody.appendChild(side);
     wrap.appendChild(sbody);
@@ -7707,6 +8001,7 @@ function initAdminView({ onClose }) {
     if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
     if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
     if (chips.childNodes.length) head.appendChild(chips);
+    head.appendChild(noteButton(pl, { kind: "answer", path: a.path }, labelFor(a.path)));
     card.appendChild(head);
 
     const finalRow = $e("div", "acard-final");
@@ -9499,7 +9794,10 @@ function docRow(d) {
     li.appendChild(titleRow);
   }
   const bottom = el("div", "drow2");
-  const view = el("button", "dview", "View"); view.onclick = () => previewDocument(d, mediaBackend());
+  const view = el("button", "dview", "View");
+  view.onclick = () => previewDocument(d, mediaBackend(), {
+    onSaveText: (text, pages) => { commitOcr(submitterDocEmit, d, { ocrText: text, ocrPages: pages, ocrKind: "edited", ocrAt: nowIso(), ocrBy: meId() }); renderDocs(); },
+  });
   bottom.appendChild(view);
   bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
   li.appendChild(bottom);
@@ -9834,6 +10132,10 @@ async function readDocumentText(doc, media) {
       width: W, height: H,
       sourceKind,
       capturedAt, capturedFrom,
+      // The positioned reading, page by page: each text region with where it
+      // sits. This is what lets the text be laid back ON the page, selectable
+      // and editable, in the same geography it was read from.
+      pages: [{ page: 1, width: W, height: H, text: content.text || "", elements: (content.elements || []).map((e) => ({ text: e.text, region: e.region })) }],
       guess,
       eyes: rec.eyes,
       chosen: page.chosen || null,
@@ -9953,6 +10255,7 @@ function ocrAttrs(res, by) {
     ocrBy: by || null,
     ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
     ocrSourceKind: res.sourceKind || null,
+    ocrPages: res.pages || null,
     capturedAt: res.capturedAt || null,
     capturedFrom: res.capturedFrom || null,
     // The eyes that ran, which one won, and what the losers saw — the same
@@ -10007,6 +10310,15 @@ function emitDocInsTo(ctx, roomId, id, attrs) {
 function emitTimelineIns(ctx, roomId, id, attrs) {
   if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.INS, { entity: "timeline", id, attrs });
   return DemoStore.appendEvent(roomId, OP.INS, { entity: "timeline", id, attrs }, ctx.currentUserId);
+}
+// A note can be attached to anything: an answer, a document, a timeline item,
+// or the submission as a whole. Stored as its own event, anchored so the
+// rollup can jump straight back to what it's about.
+function emitNoteTo(ctx, roomId, note) {
+  const id = note.id || newId("note");
+  const attrs = { text: note.text, at: nowIso(), by: ctx.currentUserId, anchor: note.anchor || { kind: "submission" }, label: note.label || "" };
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.INS, { entity: "note", id, attrs });
+  return DemoStore.appendEvent(roomId, OP.INS, { entity: "note", id, attrs }, ctx.currentUserId);
 }
 
 async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false } = {}) {

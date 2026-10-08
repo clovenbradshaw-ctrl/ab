@@ -367,6 +367,10 @@ await page.waitForTimeout(1200);
       srcThumbs: /sdoc-thumb/.test(src) && /loadThumb/.test(src),
       srcCapture: /fileHeadDate/.test(src) && /filenameDate/.test(src) && /capturedAt/.test(src),
       srcTimelineEntity: /entity: "timeline"/.test(src) && /r\.entity === "timeline"/.test(src),
+      srcDocAI: /data-view="docai"/.test(src) && /renderDocAI/.test(src) && /induceDocKinds/.test(src) && /DOC_KIND_ENTITY/.test(src),
+      srcNotes: /addNoteEditor/.test(src) && /notesWidget/.test(src) && /entity: "note"/.test(src),
+      srcSurface: /docSurface/.test(src) && /ds-span/.test(src) && /ocrPages/.test(src),
+      srcBigModal: /width:min\(1200px/.test(src) && /max-height:82vh/.test(src),
     };
   });
   check("highlight marks the match and escapes the text", /<mark>custody<\/mark>/.test(r.marked) && !/<b>/.test(r.marked));
@@ -390,6 +394,10 @@ await page.waitForTimeout(1200);
   check("documents list shows real thumbnails", r.srcThumbs);
   check("image/video dates come from metadata or file name", r.srcCapture);
   check("timeline edits/additions persist as room events", r.srcTimelineEntity);
+  check("DocAI page learns document kinds from templates + uploads", r.srcDocAI);
+  check("notes attach anywhere and roll up", r.srcNotes);
+  check("positioned, editable OCR text over the page", r.srcSurface);
+  check("the document modal is large", r.srcBigModal);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
