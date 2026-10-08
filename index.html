@@ -791,9 +791,9 @@ mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .ds-tab.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
 .ds-hint{font-size:10.5px;color:var(--muted);margin-left:auto}
 .ds-stage{position:relative;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--wash)}
-.ds-span{position:absolute;white-space:pre;line-height:1.05;color:transparent;cursor:text}
+.ds-span{position:absolute;white-space:pre;line-height:1.05;color:var(--ink);background:rgba(255,255,255,.62);border-radius:2px;cursor:text}
 .ds-span.editing{color:var(--ink);background:rgba(182,122,46,.12);outline:1px dashed var(--turn)}
-.ds-span.textonly{color:var(--ink)}
+.ds-span.textonly{color:var(--ink);background:transparent}
 .ds-span.ignored{color:var(--muted);text-decoration:line-through;opacity:.45}
 .ds-span:hover{background:rgba(46,111,94,.12)}
 .ds-span::selection{background:rgba(46,111,94,.35)}
@@ -2574,6 +2574,23 @@ function normLabel(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+
 function keyLesson(label, kind) {
   const n = normLabel(label);
   return loadKeyLessons().find((l) => normLabel(l.label) === n && (!kind || !l.kind || l.kind === kind)) || null;
+}
+// Apply the lessons to a reading: each field's key is matched against the
+// learned lexicon and its value reduced to a format. This is what makes a
+// reading better than the raw OCR — and it runs at read time, not just in the UI.
+function applyKeyLessons(text, kind) {
+  const out = [];
+  for (const f of extractFormFields(text)) {
+    const lesson = keyLesson(f.label, kind);
+    out.push({
+      label: f.label,
+      value: f.value,
+      format: valueFormat(f.value),
+      known: !!lesson,
+      canonical: lesson && lesson.status === "active" ? lesson.label : null,
+    });
+  }
+  return out;
 }
 // Record a key lesson as a CANDIDATE — the label is a guess until confirmed.
 function recordKeyLesson(label, format, kind) {
