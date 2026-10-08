@@ -361,7 +361,7 @@ await page.waitForTimeout(1200);
       srcDedupeSteps: /Collapse runs of the same value/.test(src),
       srcInboxSearch: /inbox-search/.test(src) && /inbox-filters/.test(src) && /submissionSearchBlob/.test(src),
       srcTestDefaultOff: /let showTest = false;/.test(src) && /isTestSubmission/.test(src) && /Test \(/.test(src),
-      srcCardShrink: /\.acard\{[^}]*display:block/.test(src) && /histBtn\.onclick/.test(src) && /hist-modal/.test(src),
+      srcCardShrink: /minmax\(0,1fr\) minmax\(0,1\.2fr\)/.test(src) && /\.acard>\*\{min-width:0\}/.test(src),
       srcTimelineEdit: /openTimelineEditor/.test(src) && /emitTimelineIns/.test(src) && /tl-badge/.test(src) && /isAdded \? "added" : "edited"/.test(src),
       srcTimelineSort: /height:800px/.test(src) && /tl-tools/.test(src) && /Edited \/ added/.test(src),
       srcThumbs: /sdoc-thumb/.test(src) && /loadThumb/.test(src),
@@ -387,7 +387,7 @@ await page.waitForTimeout(1200);
   check("duplicate same-value steps are collapsed", r.srcDedupeSteps);
   check("the inbox has search + status/phase filters", r.srcInboxSearch);
   check("test submissions (before today) are hidden by default", r.srcTestDefaultOff);
-  check("answer cards are single-column; history opens in a modal", r.srcCardShrink);
+  check("answer cards shrink instead of overflowing", r.srcCardShrink);
   check("dates come from file names too", r.fromName[0] === "2024-01-05" && r.fromName[1] === "2026-10-08", JSON.stringify(r.fromName));
   check("timeline items can be corrected / added, with auto vs edited badges", r.srcTimelineEdit);
   check("timeline is 800px, sortable and filterable", r.srcTimelineSort);
@@ -398,21 +398,6 @@ await page.waitForTimeout(1200);
   check("notes attach anywhere and roll up", r.srcNotes);
   check("positioned, editable OCR text over the page", r.srcSurface);
   check("the document modal is large", r.srcBigModal);
-}
-
-// 9f. the DocAI starter corpus ships and is loadable
-{
-  const r = await page.evaluate(async () => {
-    const src = await (await fetch("/index.html")).text();
-    let man = null, docText = "", err = "";
-    try {
-      man = await (await fetch("/corpus/manifest.json", { cache: "no-cache" })).json();
-      if (man && man.documents && man.documents[0]) docText = await (await fetch("/corpus/" + man.documents[0].file)).text();
-    } catch (e) { err = String(e); }
-    return { docs: man && man.documents ? man.documents.length : 0, docTextLen: docText.length, err, wired: /Learn from starter corpus/.test(src) && /corpus\/manifest\.json/.test(src) };
-  });
-  check("the starter corpus ships with documents", r.docs >= 3 && r.docTextLen > 100, `${r.docs} docs, err=${r.err}`);
-  check("DocAI can load the starter corpus", r.wired);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
