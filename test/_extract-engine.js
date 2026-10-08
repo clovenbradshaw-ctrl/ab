@@ -84,6 +84,8 @@ function loadEngine() {
     exports.COVERAGE_FRAMEWORKS = COVERAGE_FRAMEWORKS;
     exports.placementRoundFields = placementRoundFields;
     exports.childRoundFields = childRoundFields;
+    exports.childRoundNumbers = childRoundNumbers;
+    exports.childIndicesFromAnswers = childIndicesFromAnswers;
     exports.withRepeatingRounds = withRepeatingRounds;
     exports.withAnsweredFollowups = withAnsweredFollowups;
     exports.SECTIONS = SECTIONS;

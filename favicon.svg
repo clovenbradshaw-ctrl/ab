@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="A family">
+  <g fill="#16242B">
+    <!-- left adult -->
+    <circle cx="38" cy="20" r="14"/>
+    <path d="M38 32C27 32 20 41 20 54V96H46L50 60C50 44 47 32 38 32Z"/>
+    <!-- right adult -->
+    <circle cx="62" cy="20" r="14"/>
+    <path d="M62 32C73 32 80 41 80 54V96H54L50 60C50 44 53 32 62 32Z"/>
+    <!-- left child -->
+    <circle cx="15" cy="54" r="11"/>
+    <path d="M15 65C6 65 1 73 1 86V96H29L32 74C32 68 26 65 15 65Z"/>
+    <!-- right child -->
+    <circle cx="85" cy="54" r="11"/>
+    <path d="M85 65C94 65 99 73 99 86V96H71L68 74C68 68 74 65 85 65Z"/>
+  </g>
+</svg>

@@ -577,28 +577,133 @@
       : { min: `${MIN_YEAR}-01-01`, max: `${maxYear()}-12-31` };
   }
 
+  // ---- flexible dates -------------------------------------------------------
+  // A birthday is something a person already knows; the question is only
+  // whether the app can read how they wrote it. Rather than force one shape
+  // (a native date picker, which silently refuses "April 3 2016"), this reads
+  // the common shapes — "April 3 2016", "4/3/16", "3 Apr 2016", "2016-04-03",
+  // "born 4.3.2016", "April 2016", "2016" — and returns the best guess as an
+  // ISO string to whatever precision was actually given: a day, a month, or
+  // just a year. English and Spanish month names are both accepted.
+  const MONTH_NAMES = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+    may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9,
+    september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+    enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8,
+    septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
+  };
+  const MONTH_WORD_EDGE = "a-z\\u00e1\\u00e9\\u00ed\\u00f3\\u00fa\\u00f1";
+  function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+  function isoFrom(y, m, d) {
+    if (y == null) return null;
+    const yyyy = String(y).padStart(4, "0");
+    if (m == null) return yyyy;
+    if (m < 1 || m > 12) return null;
+    const mm = String(m).padStart(2, "0");
+    if (d == null) return `${yyyy}-${mm}`;
+    if (d < 1 || d > daysInMonth(y, m)) return null;
+    return `${yyyy}-${mm}-${String(d).padStart(2, "0")}`;
+  }
+  // 0–49 reads as the 2000s, 50–99 as the 1900s — the usual convention for a
+  // two-digit year, and the only one that fits a birthday.
+  function fullYear(n) { return n >= 100 ? n : (n < 50 ? 2000 + n : 1900 + n); }
+  function monthNameIn(s) {
+    const lower = s.toLowerCase();
+    for (const word of Object.keys(MONTH_NAMES)) {
+      const re = new RegExp("(^|[^" + MONTH_WORD_EDGE + "])(" + word + ")(?=[^" + MONTH_WORD_EDGE + "]|$)", "i");
+      if (re.test(lower)) return { month: MONTH_NAMES[word], rest: lower.replace(re, " ") };
+    }
+    return null;
+  }
+  // Returns { iso, precision } — or { iso: null, ... } when a date-like thing
+  // was recognized but not enough to place it (e.g. "4/3" with no year).
+  function parseDateFlexible(raw) {
+    let s = (raw == null ? "" : String(raw)).trim();
+    if (!s) return null;
+    s = s.replace(/^(dob|d\.?o\.?b\.?|date of birth|birth ?date|birthday|born|nacimiento|fecha de nacimiento)\b[\s:\-]*/i, "").trim();
+    if (!s) return null;
+
+    // Year-first: 2016-04-03, 2016/4/3, 2016.4.3, 2016-04.
+    let m = /^(\d{4})[-\/.](\d{1,2})(?:[-\/.](\d{1,2}))?/.exec(s);
+    if (m) return { iso: isoFrom(+m[1], +m[2], m[3] != null ? +m[3] : null), precision: m[3] != null ? "day" : "month" };
+    // Compact: 20160403.
+    m = /^(\d{4})(\d{2})(\d{2})$/.exec(s);
+    if (m) return { iso: isoFrom(+m[1], +m[2], +m[3]), precision: "day" };
+
+    // A month written as a name: "April 3 2016", "23 April 1990", "Apr 2016".
+    const named = monthNameIn(s);
+    if (named) {
+      const nums = (named.rest.match(/\d+/g) || []).map(Number);
+      let yi = nums.findIndex((n) => n >= 1900 && n <= 9999);
+      if (yi === -1 && nums.length >= 1 && nums[nums.length - 1] >= 32 && nums[nums.length - 1] <= 99) yi = nums.length - 1;
+      const year = yi >= 0 ? fullYear(nums[yi]) : null;
+      const day = nums.find((n, i) => i !== yi && n >= 1 && n <= 31);
+      return { iso: year != null ? isoFrom(year, named.month, day == null ? null : day) : null, precision: day != null ? "day" : "month" };
+    }
+
+    const nums = (s.match(/\d+/g) || []).map(Number);
+    if (!nums.length) return null;
+    if (nums.length === 1) {
+      const n = nums[0];
+      if (n >= MIN_YEAR && n <= 9999) return { iso: String(n), precision: "year" };
+      return null;
+    }
+    if (nums.length === 2) {
+      const [a, b] = nums;
+      // A four-digit year is present either way round: "4/1990", "1990/4".
+      if (a >= MIN_YEAR && a <= 9999) return { iso: isoFrom(a, b, null), precision: "month" };
+      if (b >= MIN_YEAR && b <= 9999) return { iso: isoFrom(b, a, null), precision: "month" };
+      // A two-digit year with the month: "4/90".
+      if (b >= 32 && b <= 99) return { iso: isoFrom(fullYear(b), a, null), precision: "month" };
+      return { iso: null, precision: "month", month: a, day: b };
+    }
+    // Three or more numbers: month/day/year in some order, US order assumed
+    // unless the middle number can only be a day.
+    let yi = nums.findIndex((n) => n >= MIN_YEAR && n <= 9999);
+    if (yi === -1 && nums[nums.length - 1] <= 99) yi = nums.length - 1;
+    const year = yi >= 0 ? fullYear(nums[yi]) : null;
+    const rest = nums.filter((_, i) => i !== yi);
+    let mo = rest[0], d = rest[1];
+    if (mo > 12 && d <= 12) { const t = mo; mo = d; d = t; }
+    return { iso: year != null ? isoFrom(year, mo, d) : null, precision: "day" };
+  }
+  // What should actually be stored for a date field: the best-guess ISO when
+  // one was read, otherwise the raw text (so validate() can turn it away).
+  function normalizeAnswer(field, value) {
+    if (!field || (field.type !== "date" && field.type !== "date_flex")) return value;
+    const p = parseDateFlexible(value);
+    return p && p.iso ? p.iso : value;
+  }
+
   function validate(field, value, lang = "en") {
     const M = VALIDATION_MESSAGES[lang] || VALIDATION_MESSAGES.en;
     const v = (value ?? "").toString().trim();
     if (field.required && !v) return M.required;
     if (field.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return M.email;
-    // "date_flex" is the same field, just answerable to month precision
-    // ("2024-03") instead of always requiring an exact day — Date.parse
-    // already accepts that shorter ISO form, so no separate check is needed.
+    // A date field takes whatever a person actually typed — see
+    // parseDateFlexible — as long as it resolves to a day, a month, or a year.
+    // "date_flex" is the same field, only tolerant of month/year precision.
+    // A bare day-and-month with no year is date-like but not placeable, so it
+    // is turned away with the same "couldn't read that" message as gibberish.
     if ((field.type === "date" || field.type === "date_flex") && v) {
-      if (isNaN(Date.parse(v))) return M.date;
-      // Date.parse is happy with a year of 23, and a date picker will hand
-      // one over from a mistyped keystroke ("0023-12-22" reached a real
-      // interview this way). A complaint dated in the third century is not a
-      // typo anyone benefits from having stored, and neither is one dated
-      // decades out. The window is deliberately wide — a grandparent's birth
-      // year at one end, next year at the other for an already-scheduled
-      // hearing — so it only ever catches what could not have happened.
-      // Read an ISO year straight off the string: "1900-01-01" parses as UTC
-      // midnight, which is still 1899 anywhere west of Greenwich.
-      const iso = /^(\d{4})-\d{2}/.exec(v);
-      const year = iso ? Number(iso[1]) : new Date(v).getFullYear();
-      if (year < MIN_YEAR || year > maxYear()) return M.year(MIN_YEAR, maxYear());
+      const parsed = parseDateFlexible(v);
+      if (parsed) {
+        if (!parsed.iso) return M.date;
+        // A complaint dated in the third century is not a typo anyone
+        // benefits from having stored, nor is one dated decades out. The
+        // window is deliberately wide — a grandparent's birth year at one
+        // end, next year at the other for an already-scheduled hearing — so
+        // it only ever catches what could not have happened.
+        const year = Number(parsed.iso.slice(0, 4));
+        if (year < MIN_YEAR || year > maxYear()) return M.year(MIN_YEAR, maxYear());
+      } else {
+        if (isNaN(Date.parse(v))) return M.date;
+        // Read an ISO year straight off the string: "1900-01-01" parses as
+        // UTC midnight, which is still 1899 anywhere west of Greenwich.
+        const iso = /^(\d{4})-\d{2}/.exec(v);
+        const year = iso ? Number(iso[1]) : new Date(v).getFullYear();
+        if (year < MIN_YEAR || year > maxYear()) return M.year(MIN_YEAR, maxYear());
+      }
     }
     if (field.type === "number" && v && isNaN(Number(v))) return M.number;
     // `digits: N` requires the value, once non-digit formatting characters
@@ -835,6 +940,7 @@
     classifyIntent, matchesAny, normalize, levenshtein,
     REPLIES, pickReply,
     VALIDATION_MESSAGES, validate, dateBounds, matchChoice,
+    parseDateFlexible, normalizeAnswer,
     tidyText, readAttempt, initialsOf,
     US_STATES, lookupState, isValidZip, parseAddress, formatAddress, emptyAddress,
     isFieldSkipped,

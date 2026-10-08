@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
 <title>Feedback Platform</title>
+<!-- The app is about families, so the icon is one: two parents and two
+     children, a plain silhouette that still reads at 16px. Same ink as the
+     rest of the app; no background, so it sits on any tab colour. -->
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
 <!-- Content-Security-Policy — the load-bearing control for "the homeserver
      operator can't read submissions".
      Client-side encryption only holds if nothing on this page can read
@@ -15,6 +19,10 @@
      an exfiltration attempt could reach.
      'wasm-unsafe-eval' is required twice over: the matrix-sdk-crypto WASM
      (the thing doing the encrypting) and WebLLM's WebGPU runtime.
+     The OCR path (tesseract.js, read in a worker on this device) fetches its
+     own code, its WASM core and its language data from cdn.jsdelivr.net and
+     tessdata.projectnaptha.com; the image pixels are never sent anywhere, so
+     these two origins are read-only model assets, not an exfiltration route.
      NOTE: frame-ancestors/report-uri are ignored in a <meta> CSP. Serve
      `frame-ancestors 'none'` as a real header at the CDN/proxy too. -->
 <meta http-equiv="Content-Security-Policy" content="
@@ -28,8 +36,8 @@
   img-src 'self' blob: data: https://hyphae.social https://matrix.org https://www.gstatic.com;
   media-src 'self' blob:;
   frame-src 'self' blob: https://www.google.com;
-  worker-src 'self' blob:;
-  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://raw.githubusercontent.com https://ipwho.is;
+  worker-src 'self' blob: https://cdn.jsdelivr.net;
+  connect-src 'self' https://hyphae.social https://matrix.org https://esm.run https://cdn.jsdelivr.net https://tessdata.projectnaptha.com https://huggingface.co https://*.hf.co https://raw.githubusercontent.com https://ipwho.is;
 ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -280,6 +288,12 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .sect-stepper .sect.active .num{background:var(--seal);color:#fff}
 .sect-stepper .sect.complete .num{background:var(--seal);color:#fff}
 .sect-stepper .sect.upcoming{opacity:.6}
+.child-banner{display:flex;align-items:center;gap:10px;padding:9px 16px;background:var(--seal-soft);border-bottom:1px solid var(--line)}
+.child-banner.fork{background:var(--turn-soft);border-bottom:2px solid var(--turn)}
+.child-banner .cb-tag{flex:none;font:700 9px Inter;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:4px;background:var(--seal);color:#fff}
+.child-banner.fork .cb-tag{background:var(--turn)}
+.child-banner .cb-name{font:600 16px Fraunces,Georgia,serif;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.child-banner .cb-sub{font-size:11px;color:var(--muted);margin-left:auto;text-align:right;line-height:1.35}
 .badge{font:500 9.5px "IBM Plex Mono",monospace;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;background:var(--seal-soft);color:var(--seal);margin-left:auto;flex:none}
 .stream{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 .stream::-webkit-scrollbar{width:4px}.stream::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
@@ -577,6 +591,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,1.25fr) minmax(260px,2fr);gap:16px;align-items:start;box-shadow:var(--shadow)}
+.acard.collapsed{display:block}
+.acard.collapsed .acard-answer,.acard.collapsed .atl{display:none}
+.acard-toggle{align-self:flex-start;border:1px solid var(--line);background:var(--surface);border-radius:6px;font:600 11px Inter;line-height:1;padding:3px 7px;cursor:pointer;color:var(--muted)}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
 .acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
 .acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4}
@@ -596,6 +613,26 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .afile-main{flex:1;min-width:0}
 .afile-name{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .afile-meta{font-size:10.5px;color:var(--muted)}
+.afile-wrap{display:flex;flex-direction:column;gap:6px;min-width:0}
+.ocr-block{display:flex;flex-direction:column;gap:5px;margin-top:2px;padding:8px 10px;border:1px dashed #CFD7F0;border-radius:9px;background:var(--wash)}
+.ocr-block.compact{padding:6px 8px}
+.ocr-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.ocr-tag{font:700 9px Inter;letter-spacing:.06em;padding:1px 5px;border-radius:4px;background:var(--seal);color:#fff}
+.ocr-title{font:600 11.5px Inter;color:var(--ink)}
+.ocr-meta{font-size:10px;color:var(--muted);margin-left:auto}
+.ocr-note{font-size:11px;color:var(--muted);line-height:1.4}
+.ocr-text{font-size:12px;line-height:1.45;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);border-radius:7px;padding:6px 8px}
+.ocr-relevant{display:flex;flex-direction:column;gap:4px}
+.ocr-actions{display:flex;gap:6px;flex-wrap:wrap}
+.ocr-kind{font:600 11.5px Inter;color:var(--seal)}
+.ocr-searchrow{display:flex;align-items:center;gap:8px}
+.ocr-search{flex:1;font:inherit;font-size:11.5px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink)}
+.ocr-searchcount{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.ocr-line.dim{opacity:.28}
+.ocr-eyes{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px}
+.ocr-eyeslbl{font:700 9px Inter;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ocr-chip{font:500 11px Inter;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.ocr-chip.on{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
 .acard-answer{display:flex;flex-direction:column;gap:8px;min-width:0}
 .acard-final{display:flex;gap:8px;align-items:flex-start}
 .acard-final .v{flex:1;min-width:0;font-size:15px;line-height:1.45;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -996,6 +1033,7 @@ nav .setup .rail-toggle{display:inline-flex}
           <span class="badge" id="phaseBadge"></span>
         </div>
         <div class="sect-stepper" id="sectStepper" role="list"></div>
+        <div class="child-banner hidden" id="childBanner" role="status"></div>
         <div class="stream" id="stream"></div>
         <div class="quick-answer hidden" id="quickAnswer"></div>
         <div class="compose">
@@ -1389,8 +1427,8 @@ const SCHEMA = {
       required: true,
       prompt: "About when did your child enter DCS custody?",
       promptEs: "¿Aproximadamente cuándo entró tu hijo o hija bajo la custodia de DCS?",
-      help: "An approximate date is fine — if you don't know the exact day, just the month and year works too.",
-      helpEs: "Una fecha aproximada está bien — si no sabes el día exacto, el mes y el año también funcionan.",
+      help: "An approximate date is fine — if you don't know the exact day, just the month and year works too. Type it however you remember it.",
+      helpEs: "Una fecha aproximada está bien — si no sabes el día exacto, el mes y el año también funcionan. Escríbela como la recuerdes.",
     },
     {
       path: "dcs_county",
@@ -1758,8 +1796,8 @@ function childRoundFields(n) {
       required: n === 1,
       prompt: "What is this child's date of birth?",
       promptEs: "¿Cuál es la fecha de nacimiento de este niño o niña?",
-      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
-      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
+      help: "An approximate date is fine — type it however you remember it. \"April 3 2016\", \"4/3/16\", or just \"2016\" all work.",
+      helpEs: "Una fecha aproximada está bien — escríbela como la recuerdes. \"3 de abril de 2016\", \"4/3/16\" o solo \"2016\" funcionan.",
     },
     {
       path: `child_${n}_race_ethnicity`,
@@ -1829,13 +1867,15 @@ function childRoundFields(n) {
       type: "boolean",
       required: false,
       prompt: n === 1
-        ? "Is there another child you want to include in this complaint?"
+        ? "That's one child. Is there another child you want to include?"
         : "Is there another child after that one?",
       promptEs: n === 1
-        ? "¿Hay otro niño o niña que quieras incluir en esta queja?"
+        ? "Ese es un niño o niña. ¿Hay otro niño o niña que quieras incluir?"
         : "¿Hay otro niño o niña después de ese?",
-      help: "Most complaints are about one child — say no if that's the case.",
-      helpEs: "La mayoría de las quejas son sobre un solo niño o niña — di que no si es tu caso.",
+      // The fork is stated as a fork: saying yes starts a whole new round of
+      // questions for a different child, and each child becomes its own file.
+      help: "Each child gets their own separate complaint, filed under their own name. Say yes and we'll go through the next child's questions one at a time; say no if it's just the one child.",
+      helpEs: "Cada niño o niña tiene su propia queja separada, presentada con su propio nombre. Di que sí y haremos las preguntas del siguiente niño o niña, una a la vez; di que no si es solo un niño o niña.",
     },
   ];
 }
@@ -1883,8 +1923,8 @@ function placementRoundFields(n) {
       promptEs: n === 1
         ? "Vamos a repasar las colocaciones de tu hijo o hija una por una. ¿Aproximadamente cuándo comenzó la primera colocación?"
         : `¿Aproximadamente cuándo comenzó la ${ordinalEs} colocación?`,
-      help: "An approximate date is fine — the month and year works if you don't remember the exact day.",
-      helpEs: "Una fecha aproximada está bien — el mes y el año funcionan si no recuerdas el día exacto.",
+      help: "An approximate date is fine — type it however you remember it. \"April 3 2016\", \"4/3/16\", or just \"2016\" all work.",
+      helpEs: "Una fecha aproximada está bien — escríbela como la recuerdes. \"3 de abril de 2016\", \"4/3/16\" o solo \"2016\" funcionan.",
     },
     {
       path: `placement_${n}_type`,
@@ -2296,6 +2336,23 @@ function childRoundNumbers(obj) {
     if (m) nums.add(Number(m[1]));
   }
   return Array.from(nums).sort((a, b) => a - b);
+}
+
+// Every child the family has actually named (or said yes to a further one
+// for), from the answers alone — the child rounds still in progress included.
+// childRoundNumbers() above only counts rounds that have reached a stored
+// detail; this is the "how many children are we talking about, and who?" that
+// the fork banner needs mid-interview, before a round is complete.
+function childIndicesFromAnswers(answers) {
+  const set = new Set();
+  const yes = (v) => v === true || /^(yes|s[ií])$/i.test(String(v || "").trim());
+  for (const k of Object.keys(answers || {})) {
+    const m = /^child_(\d+)_name$/.exec(k);
+    if (m && String(answers[k] || "").trim()) set.add(Number(m[1]));
+    const fm = /^child_more_(\d+)$/.exec(k);
+    if (fm && yes(answers[k])) set.add(Number(fm[1]) + 1);
+  }
+  return Array.from(set).sort((a, b) => a - b);
 }
 
 // Whole years between a (possibly month-only) date_flex birthdate and today
@@ -3775,6 +3832,8 @@ async function previewDocument(doc, media) {
     if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
       body.appendChild(img);
+      // The best-guess transcription, linked to the image it was read from.
+      body.appendChild(ocrPanel(doc, {}));
     } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
       body.appendChild(frame);
@@ -4484,6 +4543,21 @@ class Intake {
       if (intro) this._say("assistant", this.lang === "es" ? intro.es : intro.en, { support: true });
       this._lastSection = sec;
     }
+    // Starting a second (or later) child's round is a fork in the journey, and
+    // it is named as one: whose child just finished, and that we now begin a
+    // fresh round for the next one. The banner above the chat carries the
+    // same message for as long as the round lasts.
+    const cm = /^child_(\d+)_name$/.exec(f.path);
+    if (cm && Number(cm[1]) > 1) {
+      const prevN = Number(cm[1]) - 1;
+      const prevName = String(this.answers()[`child_${prevN}_name`] || "").trim()
+        || (this.lang === "es" ? `el niño ${prevN}` : `child ${prevN}`);
+      const kids = childIndicesFromAnswers(this.answers());
+      const line = this.lang === "es"
+        ? `Eso es todo sobre ${prevName}. Ahora empezamos una queja nueva con el siguiente niño o niña — una a la vez. Hasta ahora van ${kids.length}.`
+        : `That's everything about ${prevName}. Now we start a fresh complaint for the next child — one at a time. That's ${kids.length} so far.`;
+      this._say("assistant", line, { support: true });
+    }
     this._say("assistant", this._reply("asking", { field: f }), { field: f.path });
   }
 
@@ -4864,7 +4938,11 @@ class Intake {
   // typed vs voice-transcribed, and the encrypted recording id) so the
   // assembled letter can trace every line back to what was said.
   async _confirm({ ackInto = null } = {}) {
-    const { field, value, source, inputKind, voiceClipId } = this.pending;
+    const { field, value: rawValue, source, inputKind, voiceClipId } = this.pending;
+    // Store the normalized best guess for a date (see Steer.normalizeAnswer):
+    // the audit trail and the letter always see one canonical shape, whatever
+    // way the person wrote the date.
+    const value = Steer.normalizeAnswer(field, rawValue);
     const ev = this.store.emit(OP.DEF, {
       anchor: this.anchor, path: field.path, value,
       source: source ?? null, inputKind: inputKind ?? "typed", voiceClipId: voiceClipId ?? null,
@@ -5122,11 +5200,12 @@ class Intake {
   // in place.
   editField(path, value) {
     const field = this.schema.fields.find((f) => f.path === path);
-    const err = validate(field, value, this.lang);
+    const normalized = Steer.normalizeAnswer(field, value);
+    const err = validate(field, normalized, this.lang);
     if (err) return { ok: false, error: err };
-    const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value, source: null, inputKind: "edited", voiceClipId: null });
+    const ev = this.store.emit(OP.DEF, { anchor: this.anchor, path, value: normalized, source: null, inputKind: "edited", voiceClipId: null });
     this.epoch++;
-    this._emit("stored", { field, value, event: ev });
+    this._emit("stored", { field, value: normalized, event: ev });
     return { ok: true, event: ev };
   }
 
@@ -6038,6 +6117,37 @@ function initAdminView({ onClose }) {
     return btn;
   }
 
+  // The office can read an image's text too — same on-device path, same event,
+  // with the reading attributed to the reviewer who ran it.
+  async function runAdminOcr(d, eyes = null) {
+    await readAndStoreOcr(d, mediaFor(ctx), {
+      emit: (id, attrs) => emitDocInsTo(ctx, d.roomId, id, attrs),
+      by: ctx.currentUserId,
+      eyes,
+    });
+    renderActive();
+  }
+  async function editAdminOcr(d) {
+    const field = { label: "Best-guess transcription (OCR)", path: d.filename || "document", type: "textarea" };
+    const next = await openInlineEditor(field, d.ocrText || "");
+    if (next == null) return;
+    const text = String(next).trim();
+    const patch = { ocrText: text, ocrKind: "edited", ocrStatus: text ? "done" : "empty", ocrAt: nowIso(), ocrBy: ctx.currentUserId };
+    patch.ocrRelevant = relevantOcrLines(text, submissionTerms());
+    if (commitOcr((id, attrs) => emitDocInsTo(ctx, d.roomId, id, attrs), d, patch)) { toast("Transcription updated", "success"); renderActive(); }
+    else toast("No change — nothing recorded.");
+  }
+
+  function ocrBlockFor(d, { compact = false } = {}) {
+    if (!isImageDoc(d)) return null;
+    return ocrPanel(d, {
+      canRead: ocrReady(),
+      onRead: (eyes) => runAdminOcr(d, eyes),
+      onEdit: compact ? null : () => editAdminOcr(d),
+      compact,
+    });
+  }
+
   function statusSelect(d) {
     const sel = document.createElement("select");
     sel.className = "astatus-sel status-" + d.status;
@@ -6547,7 +6657,12 @@ function initAdminView({ onClose }) {
     row.appendChild(main);
     if (!compact) row.appendChild(statusSelect(d));
     row.appendChild(viewBtn(d));
-    return row;
+    const block = ocrBlockFor(d, { compact });
+    if (!block) return row;
+    const wrap = $e("div", "afile-wrap");
+    wrap.appendChild(row);
+    wrap.appendChild(block);
+    return wrap;
   }
 
   // Labels as the family saw them, from the office's own question set; a
@@ -6667,10 +6782,11 @@ function initAdminView({ onClose }) {
   }
 
   function answerCard(pl, a, labelFor, facts) {
-    const card = $e("div", "acard");
+    const card = $e("div", "acard collapsed");
     const head = $e("div", "acard-head");
     const q = $e("div", "acard-q", labelFor(a.path));
     q.title = a.path;
+    q.style.cursor = "pointer";
     head.appendChild(q);
     const chips = $e("div", "acard-chips");
     if (facts.files?.length) chips.appendChild($e("span", "achip files", `📎 ${facts.files.length} attached`));
@@ -6678,6 +6794,24 @@ function initAdminView({ onClose }) {
     if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
     if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
     if (chips.childNodes.length) head.appendChild(chips);
+    // Every answer loads collapsed — the office scans a submission question by
+    // question and opens only the ones it needs, instead of a wall of
+    // provenance. The final answer, the edit history and any attachments are
+    // one click away.
+    const toggleBtn = $e("button", "acard-toggle", "▸");
+    toggleBtn.type = "button";
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleBtn.title = "Show this answer and its history";
+    const setCollapsed = (v) => {
+      card.classList.toggle("collapsed", v);
+      toggleBtn.textContent = v ? "▸" : "▾";
+      toggleBtn.setAttribute("aria-expanded", String(!v));
+      toggleBtn.title = v ? "Show this answer and its history" : "Hide this answer";
+    };
+    const toggle = () => setCollapsed(!card.classList.contains("collapsed"));
+    toggleBtn.onclick = (e) => { e.stopPropagation(); toggle(); };
+    head.appendChild(toggleBtn);
+    q.onclick = toggle;
     card.appendChild(head);
 
     const finalRow = $e("div", "acard-final");
@@ -7666,31 +7800,19 @@ function buildFieldInput(field, currentValue) {
     wrap.appendChild(yes); wrap.appendChild(no);
     return { el: wrap, getValue: () => val, focus: () => yes.focus() };
   }
-  if (field.type === "date") {
-    const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "field-input"; boundDateInput(inp);
-    if (currentValue) { try { inp.value = new Date(currentValue).toISOString().split("T")[0]; } catch {} }
-    return { el: inp, getValue: () => inp.value, focus: () => inp.focus() };
-  }
-  if (field.type === "date_flex") {
+  // A date is typed in freely and read back as the best guess at what it
+  // means (see Steer.parseDateFlexible) — "April 23 1990", "4/23/90",
+  // "2016-04-03", "April 2016" all land. The value stored is the normalized
+  // ISO form, so the letter and the audit trail always see one shape.
+  if (field.type === "date" || field.type === "date_flex") {
     const wrap = el("div", "field-date-flex");
-    let monthOnly = /^\d{4}-\d{2}$/.test(currentValue || "");
     const inp = document.createElement("input");
     inp.className = "field-input";
-    inp.type = monthOnly ? "month" : "date";
-    boundDateInput(inp);
+    inp.type = "text";
+    inp.placeholder = "Type it however you remember it — e.g. April 23, 1990";
     inp.value = currentValue || "";
-    const toggle = el("button", "addr-toggle", monthOnly ? "I know the exact day" : "I only know the month");
-    toggle.type = "button";
-    toggle.onclick = () => {
-      monthOnly = !monthOnly;
-      inp.type = monthOnly ? "month" : "date";
-      boundDateInput(inp);
-      inp.value = "";
-      toggle.textContent = monthOnly ? "I know the exact day" : "I only know the month";
-    };
-    wrap.appendChild(inp); wrap.appendChild(toggle);
-    return { el: wrap, getValue: () => inp.value, focus: () => inp.focus() };
+    wrap.appendChild(inp);
+    return { el: wrap, getValue: () => Steer.normalizeAnswer(field, inp.value), focus: () => inp.focus() };
   }
   if (field.type === "textarea") {
     const inp = document.createElement("textarea"); inp.rows = 4; inp.className = "field-input";
@@ -7851,6 +7973,46 @@ function onConfigChange() {
 
 // ── Controller events → DOM ──
 let streamingNode = null;
+// The fork, made unmissable. While the questions are about a child, a banner
+// names that child and says plainly that these questions are only about them.
+// At the "another child?" question, the banner turns into the fork point: the
+// children named so far, and the fact that each one becomes its own file.
+function renderChildBanner(field) {
+  const banner = document.getElementById("childBanner");
+  if (!banner || !intake) return;
+  const path = field?.path || "";
+  // Two shapes, checked before anything else: the "another child?" fork
+  // (child_more_N — no round number right after "child_") and an ordinary
+  // question inside a child's round (child_N_*).
+  const fork = /^child_more_(\d+)$/.exec(path);
+  const round = /^child_(\d+)_/.exec(path);
+  if (!fork && !round) { banner.classList.add("hidden"); banner.innerHTML = ""; return; }
+  const es = intake.lang === "es";
+  const answers = intake.answers();
+  const kids = childIndicesFromAnswers(answers);
+  const nameOf = (k) => String(answers[`child_${k}_name`] || "").trim() || (es ? `niño ${k}` : `child ${k}`);
+  banner.classList.remove("hidden");
+  banner.classList.toggle("fork", !!fork);
+  banner.innerHTML = "";
+  if (fork) {
+    const named = kids.map(nameOf);
+    banner.appendChild(el("span", "cb-tag", es ? "Punto de bifurcación" : "Fork point"));
+    banner.appendChild(el("span", "cb-name", es ? "¿Algún otro niño o niña?" : "Another child?"));
+    banner.appendChild(el("span", "cb-sub", named.length
+      ? (es
+        ? `Hasta ahora: ${named.join(", ")}. Cada niño o niña recibe su propio archivo de queja.`
+        : `So far: ${named.join(", ")}. Each child gets their own complaint file.`)
+      : (es ? "Cada niño o niña recibe su propio archivo de queja." : "Each child gets their own complaint file.")));
+  } else {
+    const n = Number(round[1]);
+    banner.appendChild(el("span", "cb-tag", es ? `Niño ${n}` : `Child ${n}`));
+    banner.appendChild(el("span", "cb-name", nameOf(n)));
+    banner.appendChild(el("span", "cb-sub", es
+      ? "Una queja por niño — estas preguntas son solo sobre este niño o niña."
+      : "One complaint per child — these questions are only about this child."));
+  }
+}
+
 function onIntake(kind, data) {
   if (kind === "message") {
     if (data.streaming && !data.text) { streamingNode = renderTyping(data); return; }
@@ -7866,6 +8028,7 @@ function onIntake(kind, data) {
     flashLedger(data.event);
   } else if (kind === "field") {
     renderSide();
+    renderChildBanner(data);
     renderQuickAnswer(data);
   } else if (kind === "context") {
     renderFold(data);
@@ -7874,7 +8037,7 @@ function onIntake(kind, data) {
   } else if (kind === "reviewClosed") {
     closeSectionReview();
   } else if (kind === "complete") {
-    renderSide(); renderQuickAnswer(null); celebrate(); toast("All questions answered!", "success");
+    renderSide(); renderChildBanner(null); renderQuickAnswer(null); celebrate(); toast("All questions answered!", "success");
   }
 }
 
@@ -7957,34 +8120,18 @@ function renderQuickAnswer(field) {
     const no = el("button", "qa-btn", "No"); no.type = "button";
     no.onclick = () => choose("No");
     box.appendChild(yes); box.appendChild(no);
-  } else if (field.type === "date_flex") {
-    const row = el("div", "qa-row");
-    let monthOnly = false;
-    const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
-    const toggle = el("button", "qa-btn", es ? "Solo sé el mes" : "I only know the month");
-    toggle.type = "button";
-    toggle.onclick = () => {
-      monthOnly = !monthOnly;
-      inp.type = monthOnly ? "month" : "date";
-      boundDateInput(inp);
-      inp.value = "";
-      toggle.textContent = monthOnly ? (es ? "Sé el día exacto" : "I know the exact day") : (es ? "Solo sé el mes" : "I only know the month");
-    };
-    const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
-    go.type = "button";
-    go.onclick = () => { if (inp.value) choose(inp.value); };
-    inp.onkeydown = (e) => { if (e.key === "Enter" && inp.value) { e.preventDefault(); choose(inp.value); } };
-    row.appendChild(inp); row.appendChild(toggle); row.appendChild(go);
-    box.appendChild(row);
-  } else if (field.type === "date") {
+  } else if (field.type === "date_flex" || field.type === "date") {
+    // Type the date in freely; the value handed onward is the normalized
+    // best guess, not the literal keystrokes.
     const row = el("div", "qa-row");
     const inp = document.createElement("input");
-    inp.type = "date"; inp.className = "qa-select"; boundDateInput(inp);
+    inp.type = "text"; inp.className = "qa-select";
+    inp.placeholder = es ? "p. ej. 23 de abril de 1990" : "e.g. April 23, 1990";
     const go = el("button", "qa-go", es ? "Usar esta fecha" : "Use this date");
     go.type = "button";
-    go.onclick = () => { if (inp.value) choose(inp.value); };
-    inp.onkeydown = (e) => { if (e.key === "Enter" && inp.value) { e.preventDefault(); choose(inp.value); } };
+    const use = () => { const v = Steer.normalizeAnswer(field, inp.value); if (v) choose(v); };
+    go.onclick = use;
+    inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); use(); } };
     row.appendChild(inp); row.appendChild(go);
     box.appendChild(row);
   } else if (field.type === "number") {
@@ -8363,16 +8510,24 @@ async function handleFiles(fileList) {
       const stored = await putEncryptedMedia(file, mediaBackend(), id, {
         onProgress: (n, total) => { if (total > 1) status.textContent = `Encrypting & uploading… ${Math.round((n / total) * 100)}%`; },
       });
-      store.emit(OP.INS, {
-        entity: "document", id,
-        attrs: {
-          filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, ...stored, status: "new",
-          fieldPath: isCatchAll ? null : field.path,
-          fieldLabel: isCatchAll ? null : field.label,
-          title: "",
-        },
-      });
+      const attrs = {
+        filename: file.name, mimetype: file.type || "application/octet-stream", size: file.size, ...stored, status: "new",
+        fieldPath: isCatchAll ? null : field.path,
+        fieldLabel: isCatchAll ? null : field.label,
+        title: "",
+      };
+      store.emit(OP.INS, { entity: "document", id, attrs });
       row.remove(); toast("Uploaded " + file.name);
+      // Read an image's text in the background, on this device, so the family
+      // sees what was read from their own paperwork without lifting a finger.
+      // Strictly fire-and-forget and entirely optional: not awaited, silent on
+      // failure, and skipped on data-saver / very low-memory devices. The
+      // upload and the whole interview move on regardless — a photo with no
+      // legible text, or a reader that can't run, is not an upload error and
+      // never blocks submitting. It can always be read by hand later.
+      if (isImageDoc({ mimetype: attrs.mimetype }) && ocrReady() && ocrAutoAllowed()) {
+        readAndStoreOcr({ id, ...attrs }, mediaBackend(), { emit: submitterDocEmit, by: meId(), quiet: true });
+      }
     } catch (e) { status.textContent = "Failed: " + e.message; row.classList.add("error"); }
   }
 }
@@ -8440,7 +8595,499 @@ function docRow(d) {
   bottom.appendChild(view);
   bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
   li.appendChild(bottom);
+  if (isImageDoc(d)) {
+    li.appendChild(ocrPanel(d, {
+      canRead: ocrReady(),
+      onRead: (eyes) => runOcrForDoc(d, eyes),
+      onEdit: () => editDocOcr(d),
+    }));
+  }
   return li;
+}
+
+// ── OCR / CV — the holodeck's eyes, wired to the encrypted media store ──
+//
+// An uploaded image can be read in THIS browser: tesseract.js returns the
+// word boxes, and the holodeck's measured 2D model (see
+// vendor/holodeck-eyes.js / vendor/holodeck-screen.js) turns those boxes and
+// the pixels into positioned text. The best guess at what the image says is
+// then attached to the document itself as an ordinary event — so it is
+// versioned, auditable and correctable like every other answer, and a
+// correction is only ever written when it actually differs from the text
+// already on record.
+//
+// Nothing here sends pixels anywhere. The file is decrypted in this tab, read
+// in a worker, and only the resulting text is stored (encrypted, exactly like
+// the image). The question set a document answers is the "submission" the
+// reading is relevant to: lines that mention this family's own facts are
+// surfaced first, so a photo of a court order reads back the names and dates
+// that matter to this complaint instead of an undifferentiated wall of text.
+
+const OCR_ENGINE_LABEL = "tesseract.js + the measured model";
+// The eyes available on a still image (no PDF text layer to read). Same two
+// the holodeck offers a scan, minus the embedded-text eye an image lacks.
+const IMAGE_EYES = [
+  { id: "model", label: "2D model", note: "the measured layout: text in reading order, with its positions" },
+  { id: "ocr", label: "Flat OCR", note: "tesseract's raw string over the whole image" },
+];
+let _ocrScreenMod = null, _ocrEyesMod = null;
+function ocrScreenMod() { return _ocrScreenMod || (_ocrScreenMod = import(new URL("vendor/holodeck-screen.js", location.href).href)); }
+function ocrEyesMod() { return _ocrEyesMod || (_ocrEyesMod = import(new URL("vendor/holodeck-eyes.js", location.href).href)); }
+// Progressive-enhancement gate: a browser without a worker / WASM / image
+// bitmap simply doesn't offer the read controls — the image still previews and
+// the person can type the transcription by hand.
+function ocrReady() {
+  try { return typeof Worker !== "undefined" && typeof WebAssembly !== "undefined" && typeof createImageBitmap === "function"; }
+  catch (e) { return false; }
+}
+function meId() { try { return loginState?.userId || (store && store.userId) || null; } catch (e) { return null; } }
+function shortWho(uid) { return String(uid || "").replace(/^@/, "").split(":")[0]; }
+
+function loadImgFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("couldn't decode this image"));
+    img.src = url;
+  });
+}
+function isImageDoc(d) { return (d?.mimetype || "").startsWith("image/"); }
+
+// OCR/CV is an ENHANCEMENT, never a dependency. A phone on a bad connection, a
+// device without WASM or a worker, or someone who turned it off must still be
+// able to upload files and submit — the reading simply waits, or is done by
+// hand, or is skipped. Nothing here is ever awaited on the path to Submit.
+function ocrAutoAllowed() {
+  try {
+    if (localStorage.getItem("ab:ocr") === "off") return false;
+    const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (c && c.saveData) return false; // data-saver on: don't pull the model unasked
+    if (typeof navigator.deviceMemory === "number" && navigator.deviceMemory < 2) return false;
+  } catch (e) {}
+  return true;
+}
+// A never-rejecting, never-hanging wrapper: whatever the reader does (offline,
+// slow, out of memory), the caller gets a plain result instead of a stuck
+// promise, and a slow pass is abandoned rather than left spinning.
+function withDeadline(promise, ms, label) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ ok: false, reason: (label || "the reader") + " took too long on this device" }), ms);
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); resolve({ ok: false, reason: (e && e.message) || String(e) }); },
+    );
+  });
+}
+
+// A canvas holding the image at or below a long-side cap, so a 12-megapixel
+// phone photo doesn't make OCR (or the layer model) crawl. The capped canvas
+// is what the eyes read; the pixels still never leave the tab.
+function prepareCanvas(img, max) {
+  const W = img.width || img.naturalWidth || img.videoWidth || 0;
+  const H = img.height || img.naturalHeight || img.videoHeight || 0;
+  const scale = Math.min(1, max / Math.max(W, H || 1));
+  const w = Math.max(1, Math.round(W * scale)), h = Math.max(1, Math.round(H * scale));
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  cv.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0, w, h);
+  return cv;
+}
+
+// How much of the page is covered by measured text — a signal that separates a
+// page of text from a picture with a caption.
+function textCoverage(elements, W, H) {
+  if (!W || !H) return 0;
+  let a = 0;
+  for (const e of elements || []) if (e.region) a += Math.max(0, e.region[2]) * Math.max(0, e.region[3]);
+  return Math.min(1, a / (W * H));
+}
+
+// ── what the image IS ──
+// The CV side: a pure summary of the pixels (how flat, how colourful, how many
+// colours, how bright), then a plain-language guess at the kind of thing in
+// front of the camera — a phone screenshot, a photo of a document, a scanned
+// page, a photograph. Every guess names its evidence, because a guess a person
+// can check is worth more than a label they can't.
+function summarizePixels({ width, height, data }) {
+  const n = width * height;
+  if (!n || !data) return null;
+  const hist = new Map();
+  let sumL = 0, sat = 0;
+  for (let i = 0; i < n; i++) {
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+    hist.set(key, (hist.get(key) || 0) + 1);
+    sumL += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    sat += Math.max(r, g, b) - Math.min(r, g, b);
+  }
+  const sorted = [...hist.entries()].sort((a, b) => b[1] - a[1]);
+  const topShare = (sorted[0]?.[1] || 0) / n;
+  const distinct = sorted.filter(([, c]) => c / n >= 0.005).length;
+  const k0 = sorted[0][0];
+  const tr = ((k0 >> 8) & 15) * 17, tg = ((k0 >> 4) & 15) * 17, tb = (k0 & 15) * 17;
+  let flat = 0;
+  for (let i = 0; i < n; i++) if (Math.abs(data[i * 4] - tr) + Math.abs(data[i * 4 + 1] - tg) + Math.abs(data[i * 4 + 2] - tb) <= 45) flat++;
+  const meanLuma = sumL / n;
+  return { topShare, distinct, flatness: flat / n, colorfulness: sat / n / 255, meanLuma, dark: meanLuma < 90 };
+}
+function guessImageKind({ width, height, features, stats = {} }) {
+  const f = features || {};
+  const aspect = height / (width || 1);
+  const ev = [];
+  const result = (kind, conf) => ({ kind, confidence: Math.max(0.3, Math.min(0.95, conf)), evidence: ev.slice() });
+  const words = stats.words || 0, texts = stats.texts || 0, rules = stats.rules || 0, images = stats.images || 0;
+  const textArea = stats.textAreaRatio || 0;
+
+  if (!features) { ev.push("no pixel summary"); return result("an image", 0.3); }
+
+  // A photograph: colour everywhere and few flat areas. (Distinct-colour
+  // count only sharpens the confidence — a real photo can be dominated by one
+  // colour, like a sky, so it must not be required.)
+  if (f.colorfulness > 0.2 && f.flatness < 0.4) {
+    ev.push("a wide spread of colours", "few flat areas");
+    return result("a photograph", 0.6 + Math.min(0.25, (f.distinct - 8) / 80));
+  }
+
+  // A receipt: very tall, light, densely ruled.
+  if (aspect >= 2.2 && f.meanLuma > 180 && rules >= 3) {
+    ev.push("very tall", "a light background", "straight rules across it");
+    return result("a receipt or narrow slip", 0.6);
+  }
+
+  // A phone screenshot: tall, very flat, very few colours.
+  if (aspect >= 1.5 && f.flatness >= 0.55 && f.distinct <= 8) {
+    ev.push("tall, phone-shaped", f.dark ? "a dark, uniform background" : "a uniform background");
+    if (words > 0) ev.push("crisp rows of text");
+    return result(f.dark ? "a dark-mode phone screenshot" : "a phone screenshot", f.flatness >= 0.75 ? 0.8 : 0.6);
+  }
+
+  // A card: near a standard ID/licence ratio, light, with text.
+  if ((Math.abs(aspect - 1.586) < 0.12 || Math.abs(aspect - 1.42) < 0.08) && f.meanLuma > 140 && (texts > 0 || words > 3)) {
+    ev.push("card-shaped", "text on a light field");
+    return result("an ID card or licence", 0.55);
+  }
+
+  // A document: flat-ish, light, ruled and/or text-dense.
+  if (f.flatness >= 0.4 && f.meanLuma > 150 && (rules >= 2 || textArea > 0.05 || words >= 20)) {
+    ev.push("a light background");
+    if (rules >= 2) ev.push("straight rules or lines");
+    if (words >= 20) ev.push("dense text");
+    if (f.colorfulness > 0.18 || f.flatness < 0.55) { ev.push("some colour and shading"); return result("a photo of a document", 0.6); }
+    return result("a scanned document or form", 0.6);
+  }
+
+  // Any other flat, colour-poor render: a screenshot, phone-width not required.
+  if (f.flatness >= 0.55 && f.distinct <= 8) {
+    ev.push("a uniform background", "few colours");
+    return result(f.dark ? "a dark-mode screenshot" : "a screenshot", 0.55);
+  }
+
+  if (images >= 1 && textArea > 0.02) { ev.push("an image region inside the page", "text around it"); return result("a form with a photo or graphic", 0.5); }
+
+  ev.push("no strong signal either way");
+  return result("an image", 0.3);
+}
+
+function ocrKindLabel(id) { return (IMAGE_EYES.find((e) => e.id === id) || {}).label || id; }
+// The holodeck's "what actually happened" line, for one image.
+function ocrNote(doc) {
+  let s = "Read by " + ((doc.ocrEyes || []).map(ocrKindLabel).join(" · ") || "the eyes") + " over 1 page";
+  if (doc.ocrChosen) s += " — " + ocrKindLabel(doc.ocrChosen) + " won";
+  if (doc.ocrWatermark && doc.ocrWatermark.present) s += ". A watermark layer (a large faint wash) was measured";
+  const dis = (doc.ocrDisagreements || []).length;
+  if (dis) s += ". " + dis + " disagreement" + (dis === 1 ? "" : "s") + " between the eyes kept as witnesses, not merged away";
+  return s + ".";
+}
+
+// Decrypt one document and read its pixels through the chosen eyes (or the
+// stigmergic default). Returns the reconciled reading plus the CV guess at
+// what the image is.
+async function readDocumentText(doc, media, { eyes = null } = {}) {
+  if (!ocrReady()) return { ok: false, reason: "this browser can't read images on-device" };
+  const pieces = await getDecryptedMedia(doc, media);
+  const blob = new Blob(pieces, { type: doc.mimetype || "image/*" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await loadImgFromUrl(url);
+    const S = await ocrScreenMod();
+    const E = await ocrEyesMod();
+    const canvas = prepareCanvas(img, 2200);
+    const W = canvas.width, H = canvas.height;
+    const trails = E.loadTrails();
+    const chosenEyes = (eyes && eyes.length) ? eyes.slice() : E.senseEyes({ image: true, trails }).eyes;
+    const screen = await S.readScreenImage(canvas, { name: doc.filename || "image" });
+    if (!screen) return { ok: false, reason: "no pixels to read" };
+    const content = S.contentOf(screen);
+
+    // One page in, one page out: each eye is a witness, and the reconciliation
+    // folds whichever ran into one reading, keeping the losers' distinct lines.
+    const entry = { page: 1 };
+    if (chosenEyes.includes("ocr") && screen.raw) entry.ocr = { text: screen.raw };
+    if (chosenEyes.includes("model")) entry.model = { text: content.text || "", elements: content.elements };
+
+    // Pixels for the layer model (watermark) and the CV guess, from a small copy.
+    const small = prepareCanvas(img, 512);
+    const smallData = small.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, small.width, small.height).data;
+    const features = summarizePixels({ width: small.width, height: small.height, data: smallData });
+    const layer = E.layerModel({ width: small.width, height: small.height, data: smallData });
+    if (layer) entry.layers = layer;
+
+    const rec = E.reconcilePages([entry], { eyes: chosenEyes.length ? chosenEyes : ["model"] });
+    E.recordTrail("image", rec.pages, { order: E.EYE_IDS });
+    const page = rec.pages[0] || {};
+    const stats = {
+      words: screen.words || 0,
+      texts: screen.model?.stats?.texts || 0,
+      rules: screen.model?.stats?.rules || 0,
+      images: screen.model?.stats?.images || 0,
+      textAreaRatio: textCoverage(content.elements, W, H),
+    };
+    const guess = guessImageKind({ width: W, height: H, features, stats });
+    const text = (page.text || "").trim() || (chosenEyes.includes("ocr") ? (screen.raw || "").trim() : "");
+    return {
+      ok: true, text,
+      raw: screen.raw || "",
+      elements: content.elements || [],
+      width: W, height: H,
+      guess,
+      eyes: rec.eyes,
+      chosen: page.chosen || null,
+      witnesses: page.witnesses || [],
+      disagreements: page.disagreements || [],
+      watermark: (layer && layer.watermark) || null,
+      summary: E.summarize({ pages: rec.pages, eyes: rec.eyes }, layer ? [layer] : []),
+      ledger: rec.ledger || [],
+    };
+  } catch (e) {
+    return { ok: false, reason: e.message || String(e) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// What the submission is actually about, as a set of words to look for in a
+// reading. Kept to the identity facts a document is likely to confirm — the
+// child's name/initials, the case number, the county, the key dates — so the
+// match stays meaningful instead of lighting up on common words.
+const OCR_FACT_PATHS = [
+  "complainant_name",
+  "child_1_name", "child_1_initials", "child_2_name", "child_2_initials",
+  "child_3_name", "child_3_initials", "child_4_name", "child_4_initials",
+  "dcs_case_number", "dcs_county",
+  "custody_start_date", "last_incident_date",
+];
+function submissionTerms() {
+  const terms = new Set();
+  let answers = {};
+  try { answers = intake?.answers?.() || {}; } catch (e) { answers = {}; }
+  for (const p of OCR_FACT_PATHS) {
+    const v = answers[p];
+    if (v == null || v === "") continue;
+    const s = String(v).trim().toLowerCase();
+    if (s.length >= 2) terms.add(s);
+    for (const w of s.split(/[^\p{L}\p{N}]+/u)) if (w.length >= 3) terms.add(w);
+  }
+  return terms;
+}
+function relevantOcrLines(text, terms) {
+  if (!terms || !terms.size) return [];
+  const out = [];
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.trim();
+    if (line.length < 2) continue;
+    const low = line.toLowerCase();
+    for (const t of terms) { if (t && low.includes(t)) { out.push(line); break; } }
+  }
+  return [...new Set(out)].slice(0, 40);
+}
+
+function ocrAttrs(res, by) {
+  const text = (res.text || res.raw || "").trim();
+  return {
+    ocrText: text,
+    ocrKind: "ocr",
+    ocrStatus: text ? "done" : "empty",
+    ocrAt: nowIso(),
+    ocrBy: by || null,
+    ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
+    // The eyes that ran, which one won, and what the losers saw — the same
+    // "what actually happened" record the holodeck keeps for a scan.
+    ocrEyes: res.eyes || null,
+    ocrChosen: res.chosen || null,
+    ocrWitnesses: (res.witnesses || []).map((w) => ({ eye: w.eye, chars: w.chars, chosen: !!w.chosen })),
+    ocrDisagreements: (res.disagreements || []).map((d) => ({ eye: d.eye, only: (d.only || []).slice(0, 8) })),
+    ocrWatermark: res.watermark && res.watermark.present ? { present: true, n: res.watermark.n, meanAlpha: res.watermark.meanAlpha } : null,
+    // The CV guess at what the image is, with the evidence behind it.
+    imageKind: res.guess?.kind || null,
+    imageConfidence: res.guess?.confidence ?? null,
+    imageEvidence: res.guess?.evidence || [],
+  };
+}
+
+// The attrs a re-emitted INS should carry: everything the document already
+// has (the encrypted media pointer included — a title/OCR edit must never
+// drop the key that makes the file decryptable), minus the identity fields
+// fold() supplies from the event itself.
+function docAttrsForWrite(doc) {
+  const a = { ...doc };
+  for (const k of ["id", "uploadedAt", "roomId", "applicantName"]) delete a[k];
+  return a;
+}
+
+// Write an OCR patch as a new document event — but only when something
+// actually changed. A correction that matches what is already stored is not
+// an edit and leaves no event behind.
+function commitOcr(emit, doc, patch) {
+  const cur = doc.ocrText || "";
+  const next = patch.ocrText != null ? patch.ocrText : cur;
+  const statusChanged = patch.ocrStatus && patch.ocrStatus !== doc.ocrStatus;
+  const kindChanged = patch.imageKind != null && patch.imageKind !== doc.imageKind;
+  if (next === cur && !statusChanged && !kindChanged) return false;
+  const attrs = docAttrsForWrite(doc);
+  if (patch.ocrText != null && next !== cur && cur) {
+    attrs.ocrHistory = [...(doc.ocrHistory || []), { text: doc.ocrText, kind: doc.ocrKind || "ocr", at: doc.ocrAt || null, by: doc.ocrBy || null }].slice(-20);
+  }
+  Object.assign(attrs, patch);
+  emit(doc.id, attrs);
+  return true;
+}
+
+// The submitter's own writes, and the office's guarded writes into an
+// applicant's room — the same two paths every other document edit uses.
+function submitterDocEmit(id, attrs) { if (store) store.emit(OP.INS, { entity: "document", id, attrs }); }
+function emitDocInsTo(ctx, roomId, id, attrs) {
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.INS, { entity: "document", id, attrs });
+  return DemoStore.appendEvent(roomId, OP.INS, { entity: "document", id, attrs }, ctx.currentUserId);
+}
+
+async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false, eyes = null } = {}) {
+  try {
+    const res = await withDeadline(readDocumentText(doc, media, { eyes }), 150000, "Reading the image");
+    if (!res.ok) { if (!quiet) toast("Couldn't read this image on this device — you can type the text yourself. (" + res.reason + ")", "warn"); return false; }
+    const patch = ocrAttrs(res, by);
+    patch.ocrRelevant = relevantOcrLines(patch.ocrText, submissionTerms());
+    const wrote = commitOcr(emit, doc, patch);
+    if (!quiet) toast(patch.ocrText ? (wrote ? "Read the image — " + (patch.imageKind || "transcription attached") : "Already up to date") : "No legible text found", wrote ? "success" : undefined);
+    return wrote;
+  } catch (e) {
+    if (!quiet) toast("Couldn't read this image on this device — you can type the text yourself.", "warn");
+    return false;
+  }
+}
+
+// Submitter-side entry points. Auto-run after an image upload, and available
+// by hand from the document row (with whichever eyes are switched on).
+async function runOcrForDoc(d, eyes = null) {
+  await readAndStoreOcr(d, mediaBackend(), { emit: submitterDocEmit, by: meId(), eyes });
+  renderDocs();
+}
+async function editDocOcr(d) {
+  const field = { label: "Best-guess transcription (OCR)", path: d.filename || "document", type: "textarea" };
+  const next = await openInlineEditor(field, d.ocrText || "");
+  if (next == null) return;
+  const text = String(next).trim();
+  const by = meId();
+  const patch = { ocrText: text, ocrKind: "edited", ocrStatus: text ? "done" : "empty", ocrAt: nowIso(), ocrBy: by };
+  patch.ocrRelevant = relevantOcrLines(text, submissionTerms());
+  if (commitOcr(submitterDocEmit, d, patch)) { toast("Transcription updated", "success"); renderDocs(); }
+  else toast("No change — nothing recorded.");
+}
+
+// The visible, linked transcription: shown beneath the image everywhere a
+// document is listed or previewed. `hooks` decide whether the viewer may
+// (re)read or correct it — the submitter can, and so can the office.
+function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact = false } = {}) {
+  const wrap = $e("div", "ocr-block" + (compact ? " compact" : ""));
+  const head = $e("div", "ocr-head");
+  head.appendChild($e("span", "ocr-tag", "OCR"));
+  head.appendChild($e("span", "ocr-title", compact ? "Best guess" : "Best-guess transcription"));
+  if (doc.ocrAt) head.appendChild($e("span", "ocr-meta", "read " + fmtDate(doc.ocrAt) + (doc.ocrBy ? " by " + shortWho(doc.ocrBy) : "")));
+  wrap.appendChild(head);
+
+  // What the CV thinks the image is, with its evidence on the tooltip.
+  if (doc.imageKind) {
+    const pct = doc.imageConfidence ? " (" + Math.round(doc.imageConfidence * 100) + "% sure)" : "";
+    const k = $e("div", "ocr-kind", "Looks like: " + doc.imageKind + pct);
+    if ((doc.imageEvidence || []).length) k.title = "Signals: " + doc.imageEvidence.join("; ");
+    wrap.appendChild(k);
+  }
+
+  // What the eyes actually did — which ran, which won, what was kept.
+  if (doc.ocrEyes || doc.ocrChosen) wrap.appendChild($e("div", "ocr-note", ocrNote(doc)));
+
+  const hasText = !!(doc.ocrText && doc.ocrText.trim());
+  if (!hasText) {
+    wrap.appendChild($e("div", "ocr-note", doc.ocrStatus === "failed" ? "Couldn't read this image." : "No text read from this image yet."));
+  } else {
+    // Search WITHIN this document only. Sources are never mixed here: every
+    // match is in this one image's own reading, so a search can never surface
+    // a line that came from another family's paperwork.
+    const lineEls = [];
+    const body = $e("div", "ocr-text");
+    for (const line of String(doc.ocrText).split("\n")) {
+      const ln = $e("div", "ocr-line", line || " ");
+      body.appendChild(ln);
+      lineEls.push(ln);
+    }
+    if (!compact) {
+      const searchRow = $e("div", "ocr-searchrow");
+      const search = document.createElement("input");
+      search.type = "search"; search.className = "ocr-search";
+      search.placeholder = "Search within this document";
+      const count = $e("span", "ocr-searchcount", "");
+      search.oninput = () => {
+        const q = search.value.trim().toLowerCase();
+        if (!q) { for (const ln of lineEls) ln.classList.remove("dim"); count.textContent = ""; return; }
+        let n = 0;
+        for (const ln of lineEls) { const hit = ln.textContent.toLowerCase().includes(q); ln.classList.toggle("dim", !hit); if (hit) n++; }
+        count.textContent = n + " of " + lineEls.length + " lines";
+      };
+      searchRow.append(search, count);
+      wrap.appendChild(searchRow);
+    }
+    wrap.appendChild(body);
+  }
+
+  if (Array.isArray(doc.ocrRelevant) && doc.ocrRelevant.length) {
+    const rel = $e("div", "ocr-relevant");
+    rel.appendChild($e("div", "ocr-note", "Lines that match this submission"));
+    for (const line of doc.ocrRelevant) rel.appendChild($e("div", "ocr-text", line));
+    wrap.appendChild(rel);
+  }
+  if (Array.isArray(doc.ocrHistory) && doc.ocrHistory.length) {
+    wrap.appendChild($e("div", "ocr-note", doc.ocrHistory.length + " earlier revision" + (doc.ocrHistory.length === 1 ? "" : "s") + " kept on record"));
+  }
+
+  // The eyes toggles, borrowed from the holodeck's source card: switch on the
+  // readers you want, then read the pixels again. A person's choice wins over
+  // any sensing.
+  if (canRead && onRead) {
+    const sel = new Set(doc.ocrEyes && doc.ocrEyes.length ? doc.ocrEyes : ["model"]);
+    const row = $e("div", "ocr-eyes");
+    row.appendChild($e("span", "ocr-eyeslbl", "Eyes"));
+    for (const e of IMAGE_EYES) {
+      const chip = $e("button", "ocr-chip" + (sel.has(e.id) ? " on" : ""), e.label);
+      chip.type = "button"; chip.title = e.note;
+      chip.onclick = () => {
+        if (sel.has(e.id)) { if (sel.size > 1) sel.delete(e.id); } else sel.add(e.id);
+        chip.classList.toggle("on", sel.has(e.id));
+      };
+      row.appendChild(chip);
+    }
+    const go = $e("button", "dview", "Read with these eyes");
+    go.title = "Runs on this device — the image is never sent anywhere";
+    go.onclick = () => onRead([...sel]);
+    row.appendChild(go);
+    wrap.appendChild(row);
+  }
+
+  if (onEdit && hasText) {
+    const actions = $e("div", "ocr-actions");
+    const e2 = $e("button", "dview", "✎ Correct transcription");
+    e2.onclick = () => onEdit();
+    actions.appendChild(e2);
+    wrap.appendChild(actions);
+  }
+  return wrap;
 }
 
 // ── Admin dashboard ──
@@ -9761,29 +10408,40 @@ function renderSubmission() {
   const pane = document.getElementById("submissionPane");
   if (!pane || !intake) return;
   const answers = intake.answers();
-  // Skipped fields (e.g. the disability follow-up when the answer above it
-  // was "No") never got asked — they don't belong in a review of what was
-  // actually answered.
-  const fields = intake.progress();
+  // Every question in the interview is shown here — not only the ones that
+  // happened to be answered — so a family reviewing at the end can see the
+  // whole form, including anything still blank, and fix any of it. Derived
+  // fields (the initials worked out from a name) are the only thing left out,
+  // since they were never questions to answer.
+  const baseFields = (() => {
+    try { return configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields; }
+    catch (e) { return SCHEMA.fields; }
+  })();
+  const fields = withRepeatingRounds(baseFields, answers).filter((f) => !f.derived);
+  const answeredCount = Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH && !k.startsWith("_")).length;
   const submitted = isSubmitted();
   const complete = intake.isComplete();
   const es = intake.lang === "es";
+  const kids = childIndicesFromAnswers(answers);
   pane.innerHTML = `
     <div style="max-width:720px;margin:0 auto;padding:20px 24px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <button id="subBackBtn" style="font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer">${es ? "← Volver" : "← Back"}</button>
-        <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">${es ? "Revisa tus respuestas" : "Review your answers"}</h2>
-        <span style="color:var(--muted);font-size:12px">${Object.keys(answers).filter((k) => k !== SUBMITTED_FLAG_PATH).length}/${fields.length}</span>
+        <h2 style="font-family:Fraunces,serif;font-weight:560;font-size:20px;margin:0">${es ? "Todas tus respuestas" : "All your answers"}</h2>
+        <span style="color:var(--muted);font-size:12px">${answeredCount}/${fields.length}</span>
       </div>
       <div style="background:var(--turn-soft);border:1px solid var(--turn);border-radius:9px;padding:10px 13px;margin:0 0 14px;font-size:12.5px;color:var(--ink);line-height:1.5">
-        <b>${es ? "⚠ Esto no es el documento final." : "⚠ This is not the final document."}</b>
+        <b>${es ? "⚠ Solo para tus propios registros." : "⚠ For your own records only."}</b>
         ${es
-          ? "Este es un resumen de tus respuestas. El personal las usará para preparar un borrador formal para presentar ante la OCR. El borrador final nunca se te mostrará aquí."
-          : "This is a summary of your answers. Staff will use them to prepare a formal draft for filing with the OCR. The final draft is never shown here."}
+          ? "Esto es un resumen de tus respuestas — no es un formulario para que lo presentes ni lo entregues a nadie. El personal usará tus respuestas para preparar un borrador formal para presentar ante la OCR. No te damos ninguno de los documentos que produce, y el borrador final nunca se te muestra aquí."
+          : "This is a summary of your answers — not a form for you to submit or provide to anyone. Staff will use your answers to prepare a formal draft for filing with the OCR. We don't give you any of the documents it produces, and the final draft is never shown here."}
       </div>
       <p style="color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5">${es
-        ? "Puedes corregir cualquier respuesta ahora, o después."
-        : "You can fix any answer now, or later."}</p>
+        ? "Estas son todas las preguntas de la entrevista. Puedes corregir cualquier respuesta ahora, o después."
+        : "These are all the questions in the interview. You can fix any answer now, or later."}</p>
+      ${kids.length > 1 ? `<div style="background:var(--wash);border:1px solid var(--line);border-radius:9px;padding:10px 13px;margin:0 0 14px;font-size:12.5px;line-height:1.5">${es
+        ? `Nos contaste sobre <b>${kids.length} niños o niñas</b>. La oficina preparará una queja separada para cada uno, con su propio nombre.`
+        : `You told us about <b>${kids.length} children</b>. The office will prepare a separate complaint for each one, under their own name.`}</div>` : ""}
       ${complete ? `<div class="msg-banner" style="margin:0 0 16px">${es ? CLOSING_MESSAGE_ES : CLOSING_MESSAGE_EN}</div>` : ""}
       ${submitted ? `<div class="msg-banner" style="margin:0 0 16px">${es ? "Enviado para revisión. Aún puedes corregir cualquier respuesta." : "Submitted for review. You can still fix any answer."}</div>` : ""}
       ${currentStoreKind === "demo" ? `
@@ -9826,6 +10484,7 @@ function renderSubmission() {
           return `<div style="border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:12.5px">
             ${escAttr(a.filename)} (${(a.size/1024).toFixed(1)} KB)
             ${note ? `<div style="color:var(--muted);font-size:11px;margin-top:2px">${escAttr(note)}</div>` : ""}
+            ${a.ocrText ? `<div style="margin-top:5px;font-size:11.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere"><b style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">${es ? "Transcripción (OCR)" : "Transcription (OCR)"}</b><br>${escAttr(a.ocrText)}</div>` : ""}
           </div>`;
         }).join("")}`;
       })()}
