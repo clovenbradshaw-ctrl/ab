@@ -467,6 +467,11 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .docstatus{font-size:12.5px;color:var(--muted);margin:0}
 .docstatus.error{color:var(--red)}
 .docimg{max-width:100%;max-height:82vh;border-radius:9px;border:1px solid var(--line)}
+.zoom-bar{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.zoom-btn{font:500 11px Inter;padding:2px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);cursor:pointer}
+.zoom-btn:hover{border-color:var(--seal);color:var(--seal)}
+.zoom-pct{font:500 10px "IBM Plex Mono",monospace;color:var(--muted);min-width:40px;text-align:center}
+.doczoom{display:inline-block;max-width:100%}
 .docframe{width:100%;height:82vh;border:1px solid var(--line);border-radius:9px}
 .docdownload{font:600 12.5px Inter;color:#fff;background:var(--ink);padding:8px 15px;border-radius:8px;text-decoration:none}
 
@@ -4373,6 +4378,24 @@ function docSurface(doc, nativeEl, onSaveText) {
   return wrap;
 }
 
+// Zoom for any loaded media: a small bar that scales the image/PDF/video with
+// CSS zoom (layout-aware, so the modal scrolls correctly).
+function withZoom(body, node) {
+  const bar = $e("div", "zoom-bar");
+  let z = 1;
+  const pct = $e("span", "zoom-pct", "100%");
+  const apply = () => { node.style.zoom = z; pct.textContent = Math.round(z * 100) + "%"; };
+  const mk = (label, delta, title) => { const b = $e("button", "zoom-btn", label); b.type = "button"; b.title = title; b.onclick = () => { z = Math.min(5, Math.max(0.25, +(z + delta).toFixed(2))); apply(); }; return b; };
+  const out = mk("−", -0.25, "Zoom out");
+  const inn = mk("+", 0.25, "Zoom in");
+  const rst = $e("button", "zoom-btn", "reset"); rst.type = "button"; rst.title = "Reset zoom"; rst.onclick = () => { z = 1; apply(); };
+  bar.append(out, pct, inn, rst);
+  const wrap = $e("div", "doczoom"); wrap.appendChild(node);
+  body.append(bar, wrap);
+  apply();
+  return wrap;
+}
+
 async function previewDocument(doc, media, opts = {}) {
   const scrim = ensureModal();
   const head = scrim.querySelector(".dochead");
@@ -4395,18 +4418,15 @@ async function previewDocument(doc, media, opts = {}) {
     const mime = doc.mimetype || "";
     if (mime.startsWith("image/")) {
       const img = document.createElement("img"); img.className = "docimg"; img.src = objUrl;
-      // One view at a time: the page with its positioned, selectable text, or
-      // the text alone at those same positions.
-      body.appendChild(docSurface(doc, img, opts.onSaveText));
+      withZoom(body, docSurface(doc, img, opts.onSaveText));
     } else if (mime === "application/pdf") {
       const frame = document.createElement("iframe"); frame.className = "docframe"; frame.src = objUrl;
-      body.appendChild(frame);
+      withZoom(body, frame);
     } else if (mime.startsWith("video/")) {
       const player = document.createElement("video");
       player.controls = true; player.src = objUrl;
       player.style.cssText = "width:100%;display:block;margin:4px 0;max-height:60vh";
-      // One view at a time: the video, or the text transcribed from its frames.
-      body.appendChild(docSurface(doc, player, opts.onSaveText));
+      withZoom(body, docSurface(doc, player, opts.onSaveText));
     } else if (mime.startsWith("audio/")) {
       const player = document.createElement("audio");
       player.controls = true; player.src = objUrl;
