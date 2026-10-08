@@ -44,6 +44,7 @@
 <script src="vendor/steer.js"></script>
 <script src="vendor/eoreader6.js"></script>
 <script src="vendor/voice.js"></script>
+<script src="db-client.js"></script>
 <!-- reCAPTCHA is NOT loaded here. It used to be a blocking tag on every page
      load, which put Google-controlled JS in the same origin as every
      plaintext answer, for every visitor — including the constituent flow,
@@ -1217,6 +1218,14 @@ const DEPLOY_CONFIG = {
   // identity — see assertAdminIdentity(). Format: the base64 key id, e.g.
   // "gHqKPGXBQmoIPnaAcxx8mCg6ZQZ1L0RQ9k3bnvcRLo0".
   adminMasterKey: null,
+
+  // The append-only database tier that sits beside Matrix (see db-client.js
+  // and server/server.mjs). Submitters POST their answers here on refresh;
+  // the office reads everything back and merges it, deduped, with whatever
+  // it can still decrypt on Matrix. Must be reverse-proxied on the VM to
+  // server/server.mjs. Set to null to disable the database entirely — the
+  // app then behaves exactly as before.
+  dbEndpoint: "https://hyphae.social/ab-db",
 };
 
 // ── config.js ────────────────────────────────────────────────────────────────
@@ -2632,7 +2641,11 @@ function buildOutgoingDoc(template, answers, provenance = {}) {
 
 function decodeMxEvent(mxEvent) {
   const c = mxEvent.getContent();
-  return { id: mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
+  // `eid` is the app-local event id the sender stamped on the event (see
+  // MatrixStore._send), so a device that folds the same room later sees the
+  // *same* ids it had before a reload — which is also what lets the database
+  // tier and the Matrix tier dedup an event that arrived through both.
+  return { id: c.eid || mxEvent.getId(), op: c.op, payload: c.payload, at: new Date(mxEvent.getTs()).toISOString(), by: mxEvent.getSender() };
 }
 
 class BaseStore {
@@ -2867,7 +2880,7 @@ class MatrixStore extends BaseStore {
     for (let attempt = 0; ; attempt++) {
       try {
         if (this.requireEncryption) await this._assertEncrypted();
-        await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload });
+        await this.client.sendEvent(this.roomId, EVENT_TYPE, { op, payload, eid: ev.id });
         ev._pending = false;
         ev._failed = false;
         this._notify(ev);
@@ -2922,6 +2935,32 @@ class MatrixStore extends BaseStore {
       }
     }
     return { events, undecryptable, pending };
+  }
+
+  // A decryption failure is not necessarily permanent: the sender's device may
+  // just have been offline when it first failed. Re-asking re-issues the
+  // room-key request, so a submitter who opens or refreshes their app can
+  // answer — and once one admin device has the key it rides the office history
+  // backup to every other admin device. Whole-account and throttled (this scan
+  // runs on the dashboard tick), so every stuck room is re-asked, not just the
+  // first.
+  static async requestMissingKeys(client, { minIntervalMs = 20000 } = {}) {
+    if (!client) return;
+    const now = Date.now();
+    if (now - (MatrixStore._lastKeyRequestAt || 0) < minIntervalMs) return;
+    MatrixStore._lastKeyRequestAt = now;
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      const room = client.getRoom(roomId);
+      if (!room) continue;
+      for (const e of room.getLiveTimeline().getEvents()) {
+        if (!e.isEncrypted?.() || !e.isDecryptionFailure?.()) continue;
+        if (!afterCutoff(e.getTs())) continue;
+        // shouldAttemptDecryption() stays true for a UISI event (it has no
+        // clear event yet), so this re-runs the decrypt — which re-issues the
+        // room-key request to the sender's devices.
+        try { client.decryptEventIfNeeded?.(e)?.catch?.(() => {}); } catch {}
+      }
+    }
   }
 
   // Across every room this account can see. Used by the admin surfaces to
@@ -5177,24 +5216,118 @@ function afterCutoff(at) {
   return Number.isFinite(t) ? t >= OFFICE_CUTOFF_MS : true;
 }
 
+// ── Standard database tier (append-only) beside Matrix ───────────────────────
+// The office reads the *same* events from two places: the encrypted Matrix
+// rooms (what it can still decrypt) and the plaintext append-only database
+// (server/server.mjs, via db-client.js). These are merged, deduped by event
+// id, and the database wins on ties — so "whichever shows up first" is one
+// row in the office view, never two. A submission the office can no longer
+// read on Matrix still arrives here from the database as a synthetic
+// "db:<submission_id>" room.
+//
+// Families never touch any of this: the submitters' session only ever POSTs
+// (write-only, see _dbFlush below). `dbSubmissions` stays empty for them.
+let dbSubmissions = [];
+let dbByRoom = new Map();
+
+function _dbConfigure() {
+  if (!window.ABDB) return;
+  const client = loginState?.kind === "matrix" ? loginState.client : null;
+  window.ABDB.configure({
+    endpoint: DEPLOY_CONFIG.dbEndpoint || null,
+    token: client?.getAccessToken?.() || null,
+    userId: loginState?.userId || client?.getUserId?.() || null,
+  });
+}
+
+async function _dbLoadAndMerge() {
+  dbSubmissions = [];
+  dbByRoom = new Map();
+  if (!window.ABDB?.available()) return;
+  try {
+    const res = await window.ABDB.list();
+    dbSubmissions = (res && res.submissions) || [];
+  } catch (e) {
+    console.warn("[db] couldn't read the submissions database:", e);
+    return;
+  }
+  for (const s of dbSubmissions) if (s && s.room_id) dbByRoom.set(s.room_id, s);
+}
+
+// One stable id per applicant, so the office's database copy and Matrix copy
+// fold into the same submission. Recovered from the room's own log on any
+// device; created (and emitted as an inert `submission` record) the first
+// time the family opens their form.
+function _dbEnsureSubmissionId(store) {
+  if (!store || !store.roomId) return null;
+  const folded = fold(store.timeline());
+  const existing = Object.values(folded.records).find((r) => r.entity === "submission");
+  let id = existing?.attrs?.submission_id
+    || (window.ABDB && window.ABDB.submissionId(store.roomId));
+  if (!id) {
+    id = window.ABDB?.newSubmissionId?.() || ("sub_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10));
+    store.emit(OP.INS, { id, entity: "submission", attrs: { submission_id: id, created_at: nowIso() } });
+  }
+  if (window.ABDB) window.ABDB.setSubmissionId(store.roomId, id);
+  return id;
+}
+
+let _dbFlushTimer = null;
+function _dbScheduleFlush(store) {
+  if (!window.ABDB?.available()) return;
+  clearTimeout(_dbFlushTimer);
+  _dbFlushTimer = setTimeout(() => _dbFlush(store), 3000);
+}
+
+// Submitters are write-only: this re-sends the whole (small) local event log
+// to the database. The server dedups by event id, so it is safe to call on
+// every refresh and after every answer. Failures are silent — Matrix is still
+// the primary store, and the next refresh retries.
+async function _dbFlush(store) {
+  if (!window.ABDB?.available() || !store?.roomId) return;
+  if (currentStoreKind !== "matrix") return;
+  if (!loginState || loginState.userId === ADMIN_USER_ID) return; // the office doesn't submit
+  try {
+    const submissionId = _dbEnsureSubmissionId(store);
+    const events = store.timeline().map(({ id, op, payload, at, by }) => ({ id, op, payload, at, by }));
+    if (!events.length) return;
+    await window.ABDB.append({ submission_id: submissionId, room_id: store.roomId, events });
+  } catch (e) {
+    console.warn("[db] flush deferred (kept on Matrix):", e);
+  }
+}
+
 // The one read every office surface goes through, so the cutoff can't be
 // applied in five places and forgotten in a sixth. Deliberately NOT used by
 // an applicant's own session: a family resuming an interview they started
 // last week must still see everything they told us.
+function officeRoomIds(storeKind, client) {
+  const base = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  if (storeKind !== "matrix" || !dbSubmissions.length || !window.ABDB) return base;
+  return base.concat(window.ABDB.syntheticRoomIds(base, dbSubmissions));
+}
+
 function officeRoomEvents(storeKind, client, roomId) {
   // The shared question set lives in a room of its own, and it is not a
   // family. Left in, it renders as a submission with no name, no phone and
   // no answers — an empty row the office has to learn to ignore. Skipping it
   // here covers every surface at once, since they all read through this.
   if (configStore && configStore.roomId && roomId === configStore.roomId) return [];
-  const events = storeKind === "matrix"
+  if (storeKind === "matrix" && typeof roomId === "string" && roomId.startsWith("db:")) {
+    const sub = dbSubmissions.find((s) => s.submission_id === roomId.slice(3));
+    const events = sub ? sub.events : [];
+    return events.filter((e) => afterCutoff(e.at));
+  }
+  const base = storeKind === "matrix"
     ? MatrixStore.foldRoomEvents(client, roomId)
     : DemoStore.loadEvents(roomId);
+  const sub = storeKind === "matrix" ? dbByRoom.get(roomId) : null;
+  const events = (sub && window.ABDB) ? window.ABDB.mergeRoomEvents(base, sub.events) : base;
   return events.filter((e) => afterCutoff(e.at));
 }
 
 function collectSubmissions({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const submissions = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5215,7 +5348,7 @@ function collectSubmissions({ storeKind, client }) {
 }
 
 function collectAllAnswers({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const answers = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5250,7 +5383,7 @@ function collectAllAnswers({ storeKind, client }) {
 }
 
 function collectAllDocuments({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const docs = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5291,7 +5424,7 @@ function foldLetterRecord(id, r, folded, extra) {
 // same event shape as documents — so the review queue is derived from the
 // same folded truth the admin sees everywhere else, not a parallel table.
 function collectAllLetters({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const letters = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5322,7 +5455,7 @@ function collectVoiceClipsForRoom(ctx, roomId) {
 // into a draft. The Letters tab's "Generate draft…" picker lives off this —
 // one source of truth for "which applicants can a letter be written for".
 function collectApplicantRooms({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const rooms = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5345,7 +5478,7 @@ function collectApplicantRooms({ storeKind, client }) {
 // raw submissions, voice transcripts ("heard"), parsed answers, and
 // generated letters (templatized output). Used by the Pipeline admin tab.
 function collectPipelineData({ storeKind, client }) {
-  const roomIds = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
+  const roomIds = officeRoomIds(storeKind, client);
   const pipelines = [];
   for (const roomId of roomIds) {
     const events = officeRoomEvents(storeKind, client, roomId);
@@ -5748,10 +5881,10 @@ function initAdminView({ onClose }) {
   function renderOfficeKeysPanel() {
     const box = $e("div");
     box.style.cssText = "margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)";
-    const head = $e("div", null, "Office password");
+    const head = $e("div", null, "Your password");
     head.style.cssText = "font:600 13px Inter;margin-bottom:4px";
     box.appendChild(head);
-    const explain = $e("div", null, "Signing in with the office password unlocks all history on that device and keeps it backed up for every other sign-in. The password itself never goes to the server.");
+    const explain = $e("div", null, "The same password you sign in with opens all history on any device and keeps it backed up for every other sign-in. The password itself never goes to the server.");
     explain.style.cssText = "font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:10px";
     box.appendChild(explain);
 
@@ -5760,12 +5893,12 @@ function initAdminView({ onClose }) {
     const pw = document.createElement("input");
     pw.type = "password";
     pw.autocomplete = "current-password";
-    pw.placeholder = "Office password";
+    pw.placeholder = "Your password";
     pw.style.cssText = "flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;background:var(--surface);color:var(--ink)";
     row.appendChild(pw);
 
     const busy = async (btn, label, work) => {
-      if (!pw.value) { toast("Enter the office password first.", "warn"); pw.focus(); return; }
+      if (!pw.value) { toast("Enter your password first.", "warn"); pw.focus(); return; }
       const text = btn.textContent;
       btn.disabled = true; btn.textContent = label;
       try { await work(pw.value); pw.value = ""; }
@@ -7095,11 +7228,20 @@ function initAdminView({ onClose }) {
         // Pull in the older half of every submission, then redraw with it.
         MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
         watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
+        // Also refresh the append-only database on open and on the slow tick,
+        // so a submission that only exists there (Matrix data gone/unreadable)
+        // shows up without a page reload — "whichever shows up first".
+        _dbLoadAndMerge().then(() => { if (isAdminViewOpen()) renderActive(); });
         // Slow cross-device convergence tick — see adminRefreshTimer above.
         clearInterval(adminRefreshTimer);
         adminRefreshTimer = setInterval(() => {
           if (!isAdminViewOpen() || !ctx?.client) return;
           MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+          _dbLoadAndMerge().then(() => { if (isAdminViewOpen()) renderActive(); });
+          // Keep asking for any still-undecryptable keys while the dashboard is
+          // open, so a submitter who comes online can unstick history. See
+          // MatrixStore.requestMissingKeys.
+          MatrixStore.requestMissingKeys(ctx.client).catch(() => {});
         }, 12000);
       }
     },
@@ -7130,8 +7272,8 @@ function unreadableNotice(ctx) {
   head.textContent = `${undecryptable} item${undecryptable === 1 ? "" : "s"} in ${rooms} submission${rooms === 1 ? "" : "s"} can't be read on this device.`;
   box.appendChild(head);
   box.appendChild(document.createTextNode(
-    " They were encrypted for office devices that existed when they were sent. Unlock history on this device with the office password under Devices & backup."
-    + " Anything that was never backed up — sent before history backup was on, to a device that has since been cleared — can't be recovered by anyone."
+    " Your password opens all history on any device — enter it under Devices & backup to pull every backed-up submission into this browser."
+    + " The only items that can't come back are ones no device ever backed up before it was cleared."
   ));
   return box;
 }
@@ -9258,6 +9400,18 @@ async function signBackupAsOffice(client, backupInfo) {
   return true;
 }
 
+// True once this browser has opened history at least once: the session-backup
+// private key is cached in the crypto store, so a reload can pull the whole
+// backup without the password again. False means this browser has never opened
+// it and needs the (same) office password to start — after that it resumes
+// silently like any other known device.
+async function deviceCanReadHistory(client) {
+  const crypto = client?.getCrypto?.();
+  if (!crypto) return false;
+  try { return !!(await crypto.getSessionBackupPrivateKey()); }
+  catch { return false; }
+}
+
 // Opening the dashboard pulls in whatever other office devices have backed
 // up since, using the backup key this device already holds — no password.
 async function refreshOfficeHistory(client) {
@@ -9267,6 +9421,117 @@ async function refreshOfficeHistory(client) {
   if (!backupInfo?.version) return;
   await client.restoreKeyBackupWithCache(undefined, undefined, backupInfo);
   if (isAdminViewOpen()) adminCtl?.refresh?.();
+}
+
+// ── Recovery loop: try every way we have, on a cadence ──────────────────────
+// The office side restores from the key backup and keeps re-asking for any
+// still-undecryptable events (a submitter who comes online can then answer).
+// The submitter side keeps its client willing to share history with every
+// office device and keeps retrying its own decryption. Runs for any matrix
+// session, office or submitter, so whichever end is open does its part without
+// anyone pressing anything.
+
+// Submitter side: stop gating key sharing on device verification, so the client
+// will hand a requested room key to the office's devices even though they
+// weren't recipients when the message was sent. Best-effort across the SDK
+// shapes; a no-op where the API isn't present.
+function allowSharingToAllDevices(client) {
+  try { client.crypto?.setGlobalBlacklistUnverifiedDevices?.(false); } catch {}
+  try { client.getCrypto?.()?.setGlobalBlacklistUnverifiedDevices?.(false); } catch {}
+  for (const room of client.getRooms?.() || []) {
+    try { room.setBlacklistUnverifiedDevices?.(false); } catch {}
+  }
+}
+
+function nudgeAccountDecryption(client) {
+  for (const room of client.getRooms?.() || []) {
+    for (const e of room.getLiveTimeline?.().getEvents?.() || []) {
+      if (!e.isEncrypted?.() || !e.isDecryptionFailure?.()) continue;
+      try { client.decryptEventIfNeeded?.(e)?.catch?.(() => {}); } catch {}
+    }
+  }
+}
+
+let _recoveryTimer = null;
+function startHistoryRecovery(client) {
+  if (!client) return;
+  if (_recoveryTimer) clearInterval(_recoveryTimer);
+  const tick = async () => {
+    try {
+      if (isAdmin(client.getUserId())) {
+        await refreshOfficeHistory(client);
+        await MatrixStore.requestMissingKeys(client);
+        if (isAdminViewOpen()) adminCtl?.refresh?.();
+      } else {
+        allowSharingToAllDevices(client);
+        nudgeAccountDecryption(client);
+      }
+    } catch (e) { console.warn("[recovery] tick failed:", e); }
+  };
+  tick();
+  _recoveryTimer = setInterval(tick, 20000);
+}
+
+// TEMPORARY stopgap (2026-10-07): on an office device that has never opened
+// history, ask for the password once instead of making anyone hunt for
+// Devices & backup. It's the same password as sign-in; setUpOfficeHistory
+// opens secret storage, restores the whole backup, and turns backup on for
+// this device. Dismissible, and never shown once this browser holds the key.
+function promptOfficePassword(client) {
+  if (!client || !isAdmin(client.getUserId())) return;
+  if (document.getElementById("officeUnlockModal")) return;
+  const wrap = document.createElement("div");
+  wrap.id = "officeUnlockModal";
+  wrap.className = "inline-editor on";
+  const box = document.createElement("div");
+  box.className = "modal";
+  box.setAttribute("role", "dialog");
+  const h = document.createElement("h3");
+  h.textContent = "Unlock history";
+  h.style.cssText = "margin:0 0 6px;font-family:Fraunces,serif;font-weight:560;font-size:18px";
+  const p = document.createElement("p");
+  p.textContent = "Enter your password to read every submission on this device. It's the same password you sign in with, and it never goes to the server.";
+  p.style.cssText = "margin:0 0 12px;font-size:13px;line-height:1.5;color:var(--muted)";
+  const err = document.createElement("div");
+  err.style.cssText = "color:#b3261e;font-size:12px;min-height:14px;margin-bottom:6px";
+  const pw = document.createElement("input");
+  pw.type = "password";
+  pw.autocomplete = "current-password";
+  pw.placeholder = "Your password";
+  pw.style.cssText = "width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px;background:var(--surface);color:var(--ink)";
+  const btns = document.createElement("div");
+  btns.className = "btns";
+  const later = document.createElement("button");
+  later.className = "cancel";
+  later.textContent = "Not now";
+  const go = document.createElement("button");
+  go.className = "primary";
+  go.textContent = "Unlock";
+  btns.append(later, go);
+  box.append(h, p, err, pw, btns);
+  wrap.appendChild(box);
+  const close = () => { document.removeEventListener("keydown", onKey); wrap.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  later.onclick = close;
+  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  document.addEventListener("keydown", onKey);
+  const doUnlock = async () => {
+    if (!pw.value) { err.textContent = "Enter your password first."; pw.focus(); return; }
+    go.disabled = true; go.textContent = "Unlocking…"; err.textContent = "";
+    try {
+      const result = await setUpOfficeHistory(client, pw.value);
+      if (!result.ok) { err.textContent = result.reason || "Couldn't unlock history."; go.disabled = false; go.textContent = "Unlock"; return; }
+      close();
+      reportOfficeHistory(result);
+    } catch (e) {
+      err.textContent = e?.message || String(e);
+      go.disabled = false; go.textContent = "Unlock";
+    }
+  };
+  go.onclick = doUnlock;
+  pw.addEventListener("keydown", (e) => { if (e.key === "Enter") doUnlock(); });
+  document.body.appendChild(wrap);
+  pw.focus();
 }
 
 function reportOfficeHistory(result) {
@@ -10785,6 +11050,7 @@ async function boot() {
 
   document.getElementById("submissionBtn").style.display = "none";
   currentStoreKind = loginState.kind === "matrix" ? "matrix" : "demo";
+  _dbConfigure();
   // Only a real account has a password to change; a demo session has no
   // account behind it at all.
   document.getElementById("pwBtn").style.display = currentStoreKind === "matrix" ? "" : "none";
@@ -10831,6 +11097,11 @@ async function boot() {
   document.getElementById("eventLogCard").classList.toggle("hidden", !showInternals);
   document.getElementById("internalsFoot").classList.toggle("hidden", !showInternals);
 
+  // Every real session runs the recovery loop: the office restores from backup
+  // and re-asks for missing keys; a submitter keeps sharing/decrypting. See
+  // startHistoryRecovery.
+  if (loginState.kind === "matrix") startHistoryRecovery(loginState.client);
+
   // The admin account never fills out the intake — it only reviews what
   // constituents have submitted. Any admin login (the local demo account or
   // the real Matrix ADMIN_USER_ID) skips the applicant chat/model setup
@@ -10838,6 +11109,11 @@ async function boot() {
   // Pipeline tab (submissions table + per-applicant inbox-style detail view).
   if (isAdmin(loginState.userId)) {
     knowledge = KnowledgeStore.fromJSON(foldConfig(configStore.timeline()).knowledge);
+    // Pull the append-only database in before the first render, so the office
+    // sees submissions that only exist there (Matrix data gone/unreadable)
+    // side-by-side with the ones it can still decrypt. Safe to await — it is
+    // best-effort and resolves instantly when the database is unreachable.
+    await _dbLoadAndMerge();
     store.subscribe(renderDocs);
     configStore.subscribe(onConfigChange);
     renderDocs();
@@ -10856,9 +11132,25 @@ async function boot() {
         .catch((e) => console.error("[config] seeding the shared question set failed:", e));
     }
     if (loginState.kind === "matrix") {
-      refreshOfficeHistory(loginState.client).catch((e) => console.warn("[office] couldn't pull newer history from the backup:", e));
+      refreshOfficeHistory(loginState.client)
+        .catch((e) => console.warn("[office] couldn't pull newer history from the backup:", e))
+        // Ask for any still-undecryptable keys (a sender may have come online).
+        .then(() => MatrixStore.requestMissingKeys(loginState.client).catch(() => {}))
+        // TEMPORARY: a device that has never opened history gets the password
+        // pop-up right away (see promptOfficePassword).
+        .then(async () => {
+          if (!(await deviceCanReadHistory(loginState.client))) promptOfficePassword(loginState.client);
+        });
     }
     return;
+  }
+
+  // A family filling out the form is write-only against the database: their
+  // answers flush to the append-only log on refresh (and, debounced, after
+  // each answer), and they can never read anyone else's content back from it.
+  if (currentStoreKind === "matrix") {
+    store.subscribe(() => _dbScheduleFlush(store));
+    _dbFlush(store);
   }
 
   await _bootAfterStore();
