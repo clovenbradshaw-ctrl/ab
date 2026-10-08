@@ -1415,8 +1415,9 @@ nav .setup .rail-toggle{display:inline-flex}
      structure · rule proposals). Vendored from scores-patch-points/Alhazen. -->
 <script src="vendor/alhazen.js"></script>
 <script>
-// The reading capacity is Alhazen's; rebind it in below (see the tail of this
-// script). The local copies remain only as a fallback until they are deleted.
+// The reading capacity is Alhazen's (scores-patch-points/Alhazen, vendored as
+// vendor/alhazen.js). Bind its functions here; nothing below re-defines them.
+const { valueFormat, extractFormFields, snake, titleLine, readGridFromElements, readGridFromText, inventTuples, structuralProposer } = window.Alhazen || {};
 
 // config.js — small shared constants that don't belong to any one layer.
 //
@@ -2529,52 +2530,8 @@ function snippetAround(text, index, match) {
   const end = Math.min(text.length, index + String(match).length + 70);
   return (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ").trim() + (end < text.length ? "…" : "");
 }
-// Read a form: the label a page prints and the value beside it, line by line —
-// "ISSUE DATE: 08/11/2023", "NAME: …", "DOCUMENT NO.: …" — good enough for the
-// labelled fields of a prescription, a police report, a DCS notice.
-function extractFormFields(text) {
-  const out = [];
-  for (const raw of String(text || "").split("\n")) {
-    const line = raw.replace(/\s+$/, "").trim();
-    if (line.length < 4) continue;
-    let label, value;
-    const sep = line.indexOf(":");
-    if (sep > 1 && sep <= 40) { label = line.slice(0, sep); value = line.slice(sep + 1); }
-    else {
-      // label then 2+ spaces (or " - ") then the value — many forms have no colon.
-      const m = /^([A-Za-z][A-Za-z ./()&#,\-]{1,40}?)(?:\s{2,}|\s+[-–—]\s+)(\S.*)$/.exec(line);
-      if (!m) continue;
-      label = m[1]; value = m[2];
-    }
-    label = label.replace(/[\s.:\-–—]+$/, "").trim();
-    value = value.trim();
-    const words = label.split(/\s+/).filter(Boolean);
-    if (label.length < 2 || words.length > 6 || /\d/.test(label) || !/[A-Za-z]/.test(label)) continue;
-    if (!value || /^[\W_]*$/.test(value)) continue;
-    out.push({ label, value: value.slice(0, 220) });
-    if (out.length >= 60) break;
-  }
-  return out;
-}
-// ── keys and formats: what we extract and keep ──
-// A field is a KEY (a label, a hypothesis) and a VALUE reduced to its FORMAT.
-// The value's content is thrown away; the label is NOT assumed correct — it is
-// an editable candidate the system learns from.
-function valueFormat(v) {
-  const s = String(v == null ? "" : v).trim();
-  if (!s) return "empty";
-  if (/^[$€£]\s?\d[\d,]*\.?\d{0,2}$/.test(s)) return "currency";
-  if (/^\d{4}-\d{2}(-\d{2})?$/.test(s) || /^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}$/.test(s) || /^(0[1-9]|1[0-2])[0-2]\d(19|20)\d{2}$/.test(s)) return "date";
-  if (/^\d{1,2}:\d{2}(\s?[ap]\.?m\.?)?$/i.test(s)) return "time";
-  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)) return "email";
-  if (/^\+?1?[\s.\-()]*\d{3}[\s.\-()]*\d{3}[\s.\-]*\d{4}$/.test(s)) return "phone";
-  if (/^(yes|no|true|false|s[ií])$/i.test(s)) return "choice";
-  if (/\d/.test(s) && /^[A-Za-z0-9][A-Za-z0-9\-\/.]{3,}$/.test(s) && /[A-Za-z]/.test(s)) return "identifier";
-  if (/^\d+$/.test(s)) return "integer";
-  if (/^\d[\d,]*\.\d+$/.test(s)) return "decimal";
-  if (/^[A-Za-z][A-Za-z.'\-]+( [A-Za-z][A-Za-z.'\-]+){1,3}$/.test(s)) return "name";
-  return s.length > 60 ? "free-text" : "text";
-}
+// extractFormFields · valueFormat now live in Alhazen (vendor/alhazen.js) and
+// are bound below at startup; they are not defined here.
 const DOC_KEY_ENTITY = "doc_key";
 function loadKeyLessons() {
   const out = [];
@@ -2603,87 +2560,11 @@ function applyKeyLessons(text, kind) {
   }
   return out;
 }
-// Invent the tuple of everything: for each field, {key, canonical, format, type},
-// plus whether the reading is NESTED (a table of records) and its columns. Local
-// and deterministic — a model may propose richer rules, but this never blocks.
-function snake(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
-function inventTuples(text, elements) {
-  const lines = String(text || "").split("\n").map((l) => l.replace(/\s+$/, "")).filter((l) => l.trim());
-  const tuples = [];
-  for (const line of lines) {
-    const f = extractFormFields(line)[0];
-    if (f) { const fmt = valueFormat(f.value); tuples.push({ label: f.label, value: f.value, canonical: snake(f.label), format: fmt, type: fmt }); }
-  }
-  // Grid forms (label row on top, value rows beneath) — read the grid by
-  // geometry when we have positioned words, else by whitespace runs.
-  let grid = elements && elements.length ? readGridFromElements(elements) : { columns: [], records: [] };
-  if (!grid.records.length) grid = readGridFromText(lines);
-  const cellLines = lines.filter((l) => l.trim().split(/\s{2,}|\t/).filter(Boolean).length >= 3);
-  const nested = grid.records.length > 0 || cellLines.length >= 3;
-  const kind = nested ? "table" : (tuples.length >= 3 ? "form" : "prose");
-  const columns = grid.columns.length ? grid.columns : (nested ? cellLines[0].trim().split(/\s{2,}|\t/).filter(Boolean) : []);
-  return { nested, kind, tuples, columns, records: grid.records, header: grid.columns };
-}
-// The grid by geometry: rows by vertical proximity, columns by the header row's
-// x positions; each following row binds its cells to those column keys. This is
-// how a form whose labels sit in a header and values sit beneath gets read.
-function readGridFromElements(els) {
-  const items = (els || []).filter((e) => e && e.text && e.region && String(e.text).trim())
-    .map((e) => ({ t: String(e.text).trim(), x: e.region[0], y: e.region[1], w: e.region[2], h: e.region[3] }));
-  if (items.length < 6) return { columns: [], records: [] };
-  items.sort((a, b) => a.y - b.y);
-  const rows = [];
-  for (const it of items) {
-    const cy = it.y + it.h / 2, r = rows[rows.length - 1];
-    if (r && Math.abs(cy - r.cy) < Math.max(9, it.h * 0.6)) { r.items.push(it); r.cy = (r.cy * (r.items.length - 1) + cy) / r.items.length; }
-    else rows.push({ cy, items: [it] });
-  }
-  if (rows.length < 2) return { columns: [], records: [] };
-  const head = rows[0].items.slice().sort((a, b) => a.x - b.x);
-  const colX = head.map((h) => h.x);
-  const records = [];
-  for (const r of rows.slice(1)) {
-    const rec = {};
-    for (const it of r.items) {
-      let bi = 0, bd = 1e9;
-      colX.forEach((cx, i) => { const d = Math.abs(cx - it.x); if (d < bd) { bd = d; bi = i; } });
-      const key = head[bi] ? head[bi].t : ("col" + (bi + 1));
-      rec[key] = rec[key] ? rec[key] + " " + it.t : it.t;
-    }
-    if (Object.keys(rec).length >= 2) records.push(rec);
-  }
-  return { columns: head.map((h) => h.t), records };
-}
-// Text fallback: a line of short phrases is a header; following lines with 2+
-// whitespace-separated cells are records.
-function readGridFromText(lines) {
-  let header = null; const records = [];
-  for (const line of lines) {
-    const cells = line.trim().split(/\s{2,}|\t/).map((s) => s.trim()).filter(Boolean);
-    if (cells.length < 3) continue;
-    if (!header && cells.every((c) => /[A-Za-z]/.test(c) && c.length <= 28)) { header = cells; continue; }
-    if (header && cells.length >= Math.max(2, header.length - 1)) {
-      const rec = {}; for (let i = 0; i < header.length; i++) rec[header[i]] = cells[i] || ""; records.push(rec);
-    }
-  }
-  return { columns: header || [], records };
-}
+// snake · inventTuples now live in Alhazen.
+// readGridFromElements · readGridFromText now live in Alhazen.
 // Invent and record rules from a reading: a candidate key lesson per field, and
 // a structure lesson saying whether it is nested (columns become column keys).
-// A local pass reads the structure and proposes rules about what it is seeing:
-// keys (canonicalized), value types, the kind's name, and nesting (columns).
-// Deterministic and offline; a real local model may replace it when available.
-function titleLine(text) { return (String(text || "").split("\n").map((s) => s.trim()).filter(Boolean)[0] || "").slice(0, 60); }
-function structuralProposer(text, elements) {
-  const inv = inventTuples(text, elements);
-  const rules = [];
-  for (const t of inv.tuples) rules.push({ type: "key", label: t.label, canonical: t.canonical, valueType: t.format, value: t.value });
-  if (inv.nested) {
-    for (const c of inv.columns) rules.push({ type: "key", label: c, canonical: snake(c), valueType: "column" });
-    rules.push({ type: "struct", structure: "table", nested: true, columns: inv.columns });
-  }
-  return { kindName: titleLine(text) || "unknown", structure: inv.kind, nested: inv.nested, rules };
-}
+// titleLine · structuralProposer now live in Alhazen.
 function inventRules(text, docKind) {
   const inv = inventTuples(text);
   for (const t of inv.tuples) recordKeyLesson(t.label, t.format, docKind);
@@ -14536,21 +14417,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("abBuild"); if (el && v) el.textContent = v;
     const foot = document.getElementById("buildFoot"); if (foot && v) foot.textContent = "Feedback Platform · " + v;
   } catch (e) {}
-
-  // The reading capacity is Alhazen's (scores-patch-points/Alhazen). Rebind the
-  // globals to the vendored pipeline so runtime uses it, not the local copies.
-  try {
-    if (window.Alhazen) {
-      valueFormat = window.Alhazen.valueFormat;
-      extractFormFields = window.Alhazen.extractFormFields;
-      snake = window.Alhazen.snake;
-      titleLine = window.Alhazen.titleLine;
-      readGridFromElements = window.Alhazen.readGridFromElements;
-      readGridFromText = window.Alhazen.readGridFromText;
-      inventTuples = window.Alhazen.inventTuples;
-      structuralProposer = window.Alhazen.structuralProposer;
-    }
-  } catch (e) { console.error("[alhazen] rebind failed:", e); }
 });
 
 </script>
