@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta name="ab-build" content="2026-10-08T19:40Z" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
 <title>Feedback Platform</title>
@@ -1386,7 +1389,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button><button class="atab" data-view="docai">DocAI</button></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button><button class="atab" data-view="docai">DocAI</button><span id="abBuild" style="margin-left:auto;font:500 10px 'IBM Plex Mono',monospace;color:var(--muted);align-self:center"></span></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm" title="Opens the questions in a demo — nothing is saved or sent">Try the questions (demo) ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -6370,8 +6373,6 @@ function initAdminView({ onClose }) {
     // across every submission, in the background.
     enqueueUnreadImages();
     body.innerHTML = "";
-    const unreadable = unreadableNotice(ctx);
-    if (unreadable) body.appendChild(unreadable);
 
     const searchBar = document.createElement("div");
     searchBar.style.cssText = "margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap";
@@ -14065,6 +14066,11 @@ document.addEventListener("DOMContentLoaded", () => {
   initUserWizard();
   initQuestionWizard();
   initEntry();
+  try {
+    const tag = document.querySelector('meta[name="ab-build"]');
+    const el = document.getElementById("abBuild");
+    if (el && tag) el.textContent = "build " + tag.content;
+  } catch (e) {}
 });
 
 </script></body></html>
