@@ -8245,6 +8245,15 @@ function initAdminView({ onClose }) {
     if (!block) return row;
     const wrap = $e("div", "afile-wrap");
     wrap.appendChild(row);
+    if (compact) {
+      // On an answer, the transcription is disclosed, never auto-expanded.
+      block.style.display = "none";
+      const t = $e("button", "dview ocr-disc", "text ▸");
+      t.type = "button";
+      t.title = "Show the OCR transcription read from this image";
+      t.onclick = (e) => { e.stopPropagation(); const open = block.style.display === "none"; block.style.display = open ? "" : "none"; t.textContent = open ? "text ▾" : "text ▸"; };
+      row.appendChild(t);
+    }
     wrap.appendChild(block);
     return wrap;
   }
