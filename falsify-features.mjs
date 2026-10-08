@@ -261,7 +261,8 @@ await page.waitForTimeout(1200);
   } catch (e) { skip("OCR reads an uploaded image on-device", "could not run: " + e.message); }
 }
 
-// 9. the submitter's own "Read this image" trigger, driven through the real doc row
+// 9. submitter: an uploaded image is read AUTOMATICALLY and invisibly — no
+//    chooser, no manual step — and its text is editable by hand.
 {
   try {
     const r = await page.evaluate(async () => {
@@ -270,25 +271,39 @@ await page.waitForTimeout(1200);
       cv.width = 480; cv.height = 140;
       const cx = cv.getContext("2d");
       cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
-      cx.fillStyle = "#000"; cx.font = "bold 60px sans-serif"; cx.fillText("ORDER 54321", 20, 90);
+      cx.fillStyle = "#000"; cx.font = "bold 60px sans-serif"; cx.fillText("AUTO 54321", 20, 90);
       const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
-      const id = newId("doc");
-      const stored = await putEncryptedMedia(blob, mediaBackend(), id);
+      const file = new File([blob], "auto.png", { type: "image/png" });
       const emitLog = [];
       store = { fold: () => ({ records: {} }), timeline: () => [], subscribe() {}, emit: (op, payload) => emitLog.push([op, payload]) };
-      const d = { id, ...stored, filename: "t2.png", mimetype: "image/png", status: "new" };
-      const row = docRow(d);
-      const read = [...row.querySelectorAll("button")].find((b) => /Read with these eyes/i.test(b.textContent));
-      if (read) read.click();
-      for (let i = 0; i < 160 && !emitLog.length; i++) await new Promise((r) => setTimeout(r, 250));
-      return { hasButton: !!read, emits: emitLog.map(([op, p]) => ({ op, entity: p.entity, id: p.id, text: (p.attrs || {}).ocrText, by: (p.attrs || {}).ocrBy })) };
+      intake = { nextField: () => null };
+      // the real upload path — no click anywhere:
+      handleFiles([file]);
+      for (let i = 0; i < 200 && !emitLog.some(([, p]) => p.entity === "document" && (p.attrs || {}).ocrText); i++) await new Promise((r) => setTimeout(r, 250));
+      // what the family sees for that document:
+      const doc = { filename: "auto.png", mimetype: "image/png", ocrText: "AUTO 54321", ocrAt: new Date().toISOString() };
+      const row = docRow(doc);
+      const btns = [...row.querySelectorAll("button")].map((b) => b.textContent);
+      const text = row.textContent;
+      return { emits: emitLog.map(([, p]) => ({ entity: p.entity, text: (p.attrs || {}).ocrText })), btns, text };
     });
-    const ins = r.emits.find((e) => e.entity === "document" && e.op === "INS");
-    check("the doc row offers a read trigger for an image", r.hasButton);
-    if (r.hasButton && ins && /ORDER|54321/i.test(ins.text || "")) ok("reading from the row attaches the transcription to the document", (ins.text || "").slice(0, 30));
-    else if (r.hasButton && !ins) skip("reading from the row attaches the transcription to the document", "tesseract CDN unreachable here");
-    else bad("reading from the row attaches the transcription to the document", JSON.stringify(r.emits).slice(0, 120));
-  } catch (e) { skip("reading from the row attaches the transcription to the document", "could not run: " + e.message); }
+    const ins = r.emits.find((e) => e.entity === "document" && /AUTO|54321/i.test(e.text || ""));
+    check("an uploaded image is read automatically, with no manual step", !!ins, JSON.stringify(r.emits).slice(0, 120));
+    check("the family's row shows the text", /AUTO 54321/.test(r.text));
+    check("the family's row offers NO OCR chooser or read button", !r.btns.some((b) => /Read with these eyes|Read this image|Re-read image/i.test(b)));
+    check("the family's row offers editing the text", r.btns.some((b) => /Fix the text|Type the text|transcription/i.test(b)));
+  } catch (e) { bad("submitter auto-read (no manual step)", "could not run: " + e.message); }
+}
+
+// 9b. the reader warms its models in the background after load, unprompted
+{
+  const r = await page.evaluate(async () => {
+    const had = typeof warmOcr === "function" && typeof scheduleOcrWarm === "function";
+    await warmOcr();
+    return { had, warmed: _ocrWarmed === true, tess: typeof window.Tesseract };
+  });
+  check("the reader warms itself in the background", r.had && r.warmed);
+  check("warming loads the engine with no user action", r.tess !== "undefined");
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed

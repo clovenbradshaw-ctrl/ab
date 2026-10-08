@@ -668,6 +668,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .atable .acell-name{font-weight:600}
 .atable .acell-val{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .atable .acell-mime,.atable .acell-size,.atable .acell-date{color:var(--muted);font-size:11px;white-space:nowrap}
+.atr-ocr td{padding:0 11px 10px;background:transparent}
+.atr-ocr:hover td{background:transparent}
+.atr-ocr .ocr-block{max-width:720px}
 .astatus-sel{font:500 11px Inter;padding:3px 6px;border-radius:5px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
 .aview{font:inherit;font-size:11.5px;padding:3px 10px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--ink);cursor:pointer}
 .pill{display:inline-block;font:600 10.5px Inter;letter-spacing:.02em;padding:2px 9px;border-radius:99px;white-space:nowrap}
@@ -6194,6 +6197,19 @@ function initAdminView({ onClose }) {
         const statusTd = document.createElement("td"); statusTd.appendChild(statusSelect(d)); tr.appendChild(statusTd);
         const actionTd = document.createElement("td"); actionTd.appendChild(viewBtn(d)); tr.appendChild(actionTd);
         tbody.appendChild(tr);
+        // An image gets its own row underneath: the best-guess transcription,
+        // a per-source search, and the eyes controls — so the office can read
+        // and correct a file from the Documents list, not only from inside a
+        // submission. Sources stay separate: each block reads only its own file.
+        if (isImageDoc(d)) {
+          const dr = document.createElement("tr");
+          dr.className = "atr-ocr";
+          const td = document.createElement("td");
+          td.colSpan = 6;
+          td.appendChild(ocrBlockFor(d));
+          dr.appendChild(td);
+          tbody.appendChild(dr);
+        }
       }
       table.appendChild(tbody); group.appendChild(table);
       wrap.appendChild(group);
@@ -8520,13 +8536,13 @@ async function handleFiles(fileList) {
       row.remove(); toast("Uploaded " + file.name);
       // Read an image's text in the background, on this device, so the family
       // sees what was read from their own paperwork without lifting a finger.
-      // Strictly fire-and-forget and entirely optional: not awaited, silent on
+      // Strictly fire-and-forget and entirely invisible: not awaited, silent on
       // failure, and skipped on data-saver / very low-memory devices. The
       // upload and the whole interview move on regardless — a photo with no
       // legible text, or a reader that can't run, is not an upload error and
-      // never blocks submitting. It can always be read by hand later.
+      // never blocks submitting. It can always be fixed by hand.
       if (isImageDoc({ mimetype: attrs.mimetype }) && ocrReady() && ocrAutoAllowed()) {
-        readAndStoreOcr({ id, ...attrs }, mediaBackend(), { emit: submitterDocEmit, by: meId(), quiet: true });
+        autoReadDoc({ id, ...attrs }, mediaBackend(), submitterDocEmit, meId());
       }
     } catch (e) { status.textContent = "Failed: " + e.message; row.classList.add("error"); }
   }
@@ -8596,9 +8612,11 @@ function docRow(d) {
   bottom.appendChild(el("span", "dstatus", DOC_STATUS_LABEL[d.status] || d.status));
   li.appendChild(bottom);
   if (isImageDoc(d)) {
+    // The family's view: no eyes to choose, no read button, no engine jargon —
+    // the reading runs on its own and this is just the text, with a way to
+    // fix it. "quiet" is the whole point: they never asked for an OCR.
     li.appendChild(ocrPanel(d, {
-      canRead: ocrReady(),
-      onRead: (eyes) => runOcrForDoc(d, eyes),
+      quiet: true,
       onEdit: () => editDocOcr(d),
     }));
   }
@@ -8630,6 +8648,7 @@ const IMAGE_EYES = [
   { id: "model", label: "2D model", note: "the measured layout: text in reading order, with its positions" },
   { id: "ocr", label: "Flat OCR", note: "tesseract's raw string over the whole image" },
 ];
+const ocrPending = new Set(); // ids currently being auto-read, for a calm "Reading…" note
 let _ocrScreenMod = null, _ocrEyesMod = null;
 function ocrScreenMod() { return _ocrScreenMod || (_ocrScreenMod = import(new URL("vendor/holodeck-screen.js", location.href).href)); }
 function ocrEyesMod() { return _ocrEyesMod || (_ocrEyesMod = import(new URL("vendor/holodeck-eyes.js", location.href).href)); }
@@ -8974,11 +8993,16 @@ async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false, eye
   }
 }
 
-// Submitter-side entry points. Auto-run after an image upload, and available
-// by hand from the document row (with whichever eyes are switched on).
-async function runOcrForDoc(d, eyes = null) {
-  await readAndStoreOcr(d, mediaBackend(), { emit: submitterDocEmit, by: meId(), eyes });
-  renderDocs();
+// Auto-read after an upload: fire-and-forget, with a calm "Reading…" note for
+// the moment it is in flight. Returns nothing and is never awaited — the
+// caller (the upload loop) moves straight on.
+function autoReadDoc(doc, media, emit, by) {
+  ocrPending.add(doc.id);
+  try { renderDocs(); } catch (e) {}
+  readAndStoreOcr(doc, media, { emit, by, quiet: true }).finally(() => {
+    ocrPending.delete(doc.id);
+    try { renderDocs(); } catch (e) {}
+  });
 }
 async function editDocOcr(d) {
   const field = { label: "Best-guess transcription (OCR)", path: d.filename || "document", type: "textarea" };
@@ -8992,31 +9016,62 @@ async function editDocOcr(d) {
   else toast("No change — nothing recorded.");
 }
 
-// The visible, linked transcription: shown beneath the image everywhere a
-// document is listed or previewed. `hooks` decide whether the viewer may
-// (re)read or correct it — the submitter can, and so can the office.
-function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact = false } = {}) {
+// Warm the reader in the background once the site is up, so an upload never
+// pays the one-time model download in the middle of someone's interview. Pulls
+// the eyes module, loads tesseract (which caches its core and language data),
+// reads a blank tile and throws it away — invisible, and skipped when the
+// device or connection says not to.
+let _ocrWarmed = false;
+async function warmOcr() {
+  if (_ocrWarmed || !ocrReady() || !ocrAutoAllowed()) return;
+  _ocrWarmed = true;
+  try {
+    const S = await ocrScreenMod();
+    const cv = document.createElement("canvas"); cv.width = 32; cv.height = 32;
+    const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, 32, 32);
+    await S.readScreenImage(cv, { name: "warmup" });
+  } catch (e) { console.debug("[ocr] background warm skipped:", (e && e.message) || e); }
+}
+// Run it on idle after load, never on the critical path.
+function scheduleOcrWarm() {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(() => { warmOcr(); }, { timeout: 8000 });
+  else setTimeout(() => { warmOcr(); }, 4000);
+}
+
+// The visible, linked transcription. `quiet` is the family's view: the text
+// and the CV guess, but none of the engine bookkeeping — they never asked to
+// run an OCR, they just get the text, and can fix it. The office's view keeps
+// the eyes, the notes and the read controls.
+function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact = false, quiet = false } = {}) {
   const wrap = $e("div", "ocr-block" + (compact ? " compact" : ""));
   const head = $e("div", "ocr-head");
-  head.appendChild($e("span", "ocr-tag", "OCR"));
-  head.appendChild($e("span", "ocr-title", compact ? "Best guess" : "Best-guess transcription"));
-  if (doc.ocrAt) head.appendChild($e("span", "ocr-meta", "read " + fmtDate(doc.ocrAt) + (doc.ocrBy ? " by " + shortWho(doc.ocrBy) : "")));
+  if (quiet) {
+    head.appendChild($e("span", "ocr-title", compact ? "Text in image" : "Text in this image"));
+  } else {
+    head.appendChild($e("span", "ocr-tag", "OCR"));
+    head.appendChild($e("span", "ocr-title", compact ? "Best guess" : "Best-guess transcription"));
+    if (doc.ocrAt) head.appendChild($e("span", "ocr-meta", "read " + fmtDate(doc.ocrAt) + (doc.ocrBy ? " by " + shortWho(doc.ocrBy) : "")));
+  }
   wrap.appendChild(head);
 
   // What the CV thinks the image is, with its evidence on the tooltip.
   if (doc.imageKind) {
     const pct = doc.imageConfidence ? " (" + Math.round(doc.imageConfidence * 100) + "% sure)" : "";
-    const k = $e("div", "ocr-kind", "Looks like: " + doc.imageKind + pct);
+    const k = $e("div", "ocr-kind", (quiet ? "Looks like " : "Looks like: ") + doc.imageKind + pct);
     if ((doc.imageEvidence || []).length) k.title = "Signals: " + doc.imageEvidence.join("; ");
     wrap.appendChild(k);
   }
 
-  // What the eyes actually did — which ran, which won, what was kept.
-  if (doc.ocrEyes || doc.ocrChosen) wrap.appendChild($e("div", "ocr-note", ocrNote(doc)));
+  // What the eyes actually did — which ran, which won, what was kept. Backend
+  // bookkeeping: the office sees it, the family doesn't.
+  if (!quiet && (doc.ocrEyes || doc.ocrChosen)) wrap.appendChild($e("div", "ocr-note", ocrNote(doc)));
 
   const hasText = !!(doc.ocrText && doc.ocrText.trim());
+  const pending = typeof ocrPending !== "undefined" && ocrPending.has(doc.id);
   if (!hasText) {
-    wrap.appendChild($e("div", "ocr-note", doc.ocrStatus === "failed" ? "Couldn't read this image." : "No text read from this image yet."));
+    wrap.appendChild($e("div", "ocr-note", pending
+      ? (quiet ? "Reading the text in this image…" : "Reading this image on this device…")
+      : (doc.ocrStatus === "failed" ? "Couldn't read this image." : "No text read from this image yet — you can type it in yourself.")));
   } else {
     // Search WITHIN this document only. Sources are never mixed here: every
     // match is in this one image's own reading, so a search can never surface
@@ -9028,7 +9083,7 @@ function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact 
       body.appendChild(ln);
       lineEls.push(ln);
     }
-    if (!compact) {
+    if (!compact && !quiet) {
       const searchRow = $e("div", "ocr-searchrow");
       const search = document.createElement("input");
       search.type = "search"; search.className = "ocr-search";
@@ -9080,9 +9135,12 @@ function ocrPanel(doc, { onRead = null, onEdit = null, canRead = false, compact 
     wrap.appendChild(row);
   }
 
-  if (onEdit && hasText) {
+  if (onEdit) {
     const actions = $e("div", "ocr-actions");
-    const e2 = $e("button", "dview", "✎ Correct transcription");
+    const label = quiet
+      ? (hasText ? "✎ Fix the text" : "✎ Type the text in")
+      : (hasText ? "✎ Correct transcription" : "✎ Add the transcription");
+    const e2 = $e("button", "dview", label);
     e2.onclick = () => onEdit();
     actions.appendChild(e2);
     wrap.appendChild(actions);
@@ -10287,6 +10345,9 @@ function wantsLoginScreen() {
 }
 
 async function initEntry() {
+  // The reader loads its models in the background, on idle, once the site is
+  // up — never while someone is waiting, and never as a prompt to click.
+  scheduleOcrWarm();
   // Form preview: opened from the admin dashboard's "Preview the form" link
   // (see wireNewNav) in a fresh tab, so it never touches the admin's real
   // account — a plain, non-persisted demo session, same as clicking "Try a
