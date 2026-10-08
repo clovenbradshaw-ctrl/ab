@@ -591,7 +591,10 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .asum b{color:var(--ink)}
 .afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1.8fr);gap:14px;align-items:start;box-shadow:var(--shadow)}
+.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:block;box-shadow:var(--shadow)}
+.acard .acard-head{min-width:0}
+.acard .acard-q{min-width:0}
+.hist-modal{max-width:680px}
 .acard>*{min-width:0}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
 .acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
@@ -702,8 +705,9 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .te-field input,.te-field textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .te-field textarea{min-height:70px;resize:vertical}
 .te-btns{display:flex;gap:8px;margin-top:6px}
-.note-btn{font:500 10px Inter;padding:2px 7px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.note-btn{width:22px;height:22px;padding:0;display:inline-grid;place-items:center;font:600 10px Inter;line-height:1;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted);cursor:pointer}
 .note-btn:hover{border-color:var(--seal);color:var(--seal)}
+.note-btn.has{background:var(--seal-soft);border-color:var(--seal);color:var(--seal)}
 .note-row{padding:8px 10px;border-bottom:1px solid var(--line)}
 .note-row:last-child{border-bottom:none}
 .note-top{display:flex;gap:8px;align-items:baseline;font-size:10.5px;color:var(--muted)}
@@ -720,6 +724,16 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .da-templates{width:calc(100% - 20px);min-height:150px;font:12.5px/1.5 "IBM Plex Mono",monospace;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px;background:var(--surface);color:var(--ink);resize:vertical}
 .da-sources{display:flex;flex-direction:column;gap:5px;padding:10px 12px}
 .da-sources a{color:var(--seal);font-size:12.5px}
+.da-loop{margin-left:auto;font:500 9.5px "IBM Plex Mono",monospace;color:var(--muted)}
+.da-drop{margin:10px 0;padding:22px;border:1.5px dashed var(--line);border-radius:var(--r);text-align:center;color:var(--muted);font-size:13px;background:var(--wash);cursor:pointer}
+.da-drop.over{border-color:var(--seal);background:var(--seal-soft)}
+.da-parsed{padding:6px}
+.da-parsed-row{padding:9px 10px;border-bottom:1px solid var(--line)}
+.da-parsed-row:last-child{border-bottom:none}
+.da-parsed-name{font:600 12.5px Inter;color:var(--ink)}
+.da-parsed-fields{font:11px/1.5 "IBM Plex Mono",monospace;color:var(--muted);white-space:pre-wrap;margin:3px 0}
+.da-parsed-ctl{display:flex;gap:6px;align-items:center}
+.da-kindinput{font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);flex:1;min-width:120px}
 .tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
 .tl-row:hover{background:var(--wash)}
 .tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
@@ -7510,9 +7524,16 @@ function initAdminView({ onClose }) {
     scrim.classList.add("on");
     setTimeout(() => ta.focus(), 60);
   }
+  // A note is a tiny icon at the top of the thing it's about, with a count.
+  function sameAnchor(a, b) {
+    a = a || {}; b = b || {};
+    return a.kind === b.kind && String(a.path || a.id || a.key || "") === String(b.path || b.id || b.key || "");
+  }
+  function noteCount(pl, anchor) { return (pl.notes || []).filter((n) => sameAnchor(n.anchor, anchor)).length; }
   function noteButton(pl, anchor, label) {
-    const b = $e("button", "note-btn", "＋ note");
-    b.title = "Add a note about this";
+    const count = noteCount(pl, anchor);
+    const b = $e("button", "note-btn" + (count ? " has" : ""), count ? "💬" + count : "＋");
+    b.title = count ? count + " note" + (count === 1 ? "" : "s") + " — add another" : "Add a note";
     b.onclick = (e) => { e.stopPropagation(); addNoteEditor(pl, anchor, label); };
     return b;
   }
@@ -7620,6 +7641,34 @@ function initAdminView({ onClose }) {
     }
     return [...byName.values()].sort((a, b) => b.count - a.count);
   }
+  function learnFromDoc(d, kind) {
+    // Close the loop: the confirmed kind's signature absorbs this document's
+    // words, so the next document like it reads better. DEF kind · EVA doc ·
+    // REC correction — each turn sharpens the signature.
+    //
+    // What crosses submitters is the KEY — the kind's vocabulary/signature.
+    // The content itself (this document's text and values) stays in the
+    // submitter's own room, segmented; only the learned key is shared.
+    try {
+      if (!configStore || !configStore.fold) return;
+      const id = "kind_" + kind.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 48);
+      const prev = configStore.fold().records[id];
+      const toks = docTokens(d.ocrText);
+      const merged = [...new Set([...(((prev && prev.attrs && prev.attrs.tokens) || [])), ...toks])].slice(0, 40);
+      configStore.emit(OP.INS, { entity: DOC_KIND_ENTITY, id, attrs: { name: kind, tokens: merged, count: (((prev && prev.attrs && prev.attrs.count) || 0) + 1), source: "confirmed", updatedAt: nowIso() } });
+      emitDocInsTo(ctx, d.roomId, d.id, Object.assign(docAttrsForWrite(d), { docKind: kind }));
+    } catch (e) {}
+  }
+  function emitDocLearn(d, kind) {
+    // REC: the correction itself, as an event in the shared room.
+    try {
+      if (!configStore || !configStore.roomId) return;
+      const attrs = { docId: d.id, roomId: d.roomId, kind, proposedKind: d.docKind || null, by: ctx.currentUserId, at: nowIso() };
+      const id = newId("learn");
+      if (ctx.storeKind === "matrix") sendGuardedOrWarn(ctx, configStore.roomId, OP.INS, { entity: "doc_learn", id, attrs });
+      else DemoStore.appendEvent(configStore.roomId, OP.INS, { entity: "doc_learn", id, attrs }, ctx.currentUserId);
+    } catch (e) {}
+  }
   function renderDocAI() {
     const wrap = $e("div");
     wrap.appendChild($e("div", "da-intro", "DocAI learns the shape of the documents that reach this office — Tennessee police reports, DCS letters, court orders and the rest. Feed it templates now; it keeps learning from everything actually uploaded, and its memory lives in the shared question room, so it grows more competent over time."));
@@ -7663,13 +7712,64 @@ function initAdminView({ onClose }) {
       }
     };
     draw(loadDocKinds().sort((a, b) => (b.count || 0) - (a.count || 0)));
-    const learn = (templates) => { draw(induceDocKinds(templates)); toast("DocAI updated", "success"); };
+    const learn = (templates) => { draw(induceDocKinds(templates)); drawParsed(); toast("DocAI updated", "success"); };
     run.onclick = () => learn([]);
     tbtn.onclick = () => {
       const blocks = parseTemplates(ta.value);
       if (!blocks.length) { toast("Add a template headed like '=== Name ==='.", "warn"); return; }
       learn(blocks);
     };
+
+    // ── Drag-and-drop files to teach it ──
+    const drop = $e("div", "da-drop", "Drop text files here to teach it (or click)");
+    const fin = document.createElement("input"); fin.type = "file"; fin.multiple = true; fin.accept = ".txt,.json,.md,.csv,.log,.tsv,text/*"; fin.style.display = "none";
+    drop.appendChild(fin);
+    drop.onclick = () => fin.click();
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); ingestFiles(e.dataTransfer.files); });
+    fin.onchange = () => { ingestFiles(fin.files); fin.value = ""; };
+    async function ingestFiles(files) {
+      const blocks = [];
+      for (const f of Array.from(files)) {
+        const texty = /text|json|markdown|csv/.test(f.type) || /\.(txt|json|md|markdown|csv|log|tsv)$/i.test(f.name);
+        if (!texty) { toast("Drop text-like files here; images and PDFs are learned from uploads. (" + f.name + ")", "warn"); continue; }
+        blocks.push({ name: f.name.replace(/\.[a-z0-9]+$/i, ""), text: await f.text() });
+      }
+      if (blocks.length) learn(blocks);
+    }
+
+    // ── What it parsed, editable: correct it and it learns (EVA → REC) ──
+    const pbox = $e("div", "spanel");
+    const phead = $e("div", "spanel-head");
+    phead.appendChild($e("span", "spanel-title", "What it parsed — correct it and it learns"));
+    const loop = $e("span", "da-loop", "DEF · EVA · REC"); phead.appendChild(loop);
+    pbox.appendChild(phead);
+    const plist = $e("div", "da-parsed");
+    pbox.appendChild(plist);
+    wrap.insertBefore(drop, tbox);
+    wrap.appendChild(pbox);
+    function drawParsed() {
+      plist.innerHTML = "";
+      const docs = collectAllDocuments(ctx).filter((d) => d.ocrText && String(d.ocrText).trim());
+      if (!docs.length) { plist.appendChild($e("div", "spanel-empty", "No readable uploads yet. Drop text files above, or let the uploads finish reading.")); return; }
+      for (const d of docs) {
+        const row = $e("div", "da-parsed-row");
+        row.appendChild($e("div", "da-parsed-name", d.title || d.filename));
+        const fields = extractFormFields(d.ocrText).slice(0, 8).map((f) => f.label + ": " + f.value).join("\n");
+        row.appendChild($e("div", "da-parsed-fields", fields || "(no labelled fields found)"));
+        const ctl = $e("div", "da-parsed-ctl");
+        const kindI = document.createElement("input"); kindI.className = "da-kindinput"; kindI.value = d.docKind || ""; kindI.placeholder = "its kind…";
+        ctl.appendChild(kindI);
+        const save = $e("button", "aview", "Record");
+        save.title = "Record the correction; the kind learns this document's words";
+        save.onclick = () => { const kind = kindI.value.trim() || "unclassified"; emitDocLearn(d, kind); learnFromDoc(d, kind); toast("Recorded — it will read these better next time", "success"); draw(loadDocKinds().sort((a, b) => (b.count || 0) - (a.count || 0))); };
+        ctl.appendChild(save);
+        row.appendChild(ctl);
+        plist.appendChild(row);
+      }
+    }
+    drawParsed();
     return wrap;
   }
 
@@ -7961,6 +8061,16 @@ function initAdminView({ onClose }) {
   }
 
   function stepsOf(a) { return a.versions?.length ? a.versions : [a]; }
+  // Only real edits: steps after the original whose value actually changed
+  // (derived/auto fills and no-op re-saves don't count).
+  function realEditCount(steps) {
+    let n = 0;
+    for (let i = 1; i < steps.length; i++) {
+      if (steps[i].inputKind === "derived") continue;
+      if (!sameAnswer(steps[i].value, steps[i - 1].value)) n++;
+    }
+    return n;
+  }
 
   function answerFacts(a) {
     const steps = stepsOf(a);
@@ -8001,6 +8111,12 @@ function initAdminView({ onClose }) {
     if (facts.familyChanged) chips.appendChild($e("span", "achip", "✎ Changed by family"));
     if (facts.officeChanged) chips.appendChild($e("span", "achip office", "✎ Corrected by office"));
     if (chips.childNodes.length) head.appendChild(chips);
+    // A tiny history icon at the top: only REAL edits (value actually changed)
+    // are tallied; it opens the full timeline.
+    const edits = realEditCount(stepsOf(a));
+    const histBtn = $e("button", "note-btn" + (edits ? " has" : ""), "🕘" + (edits || ""));
+    histBtn.title = edits ? edits + " edit" + (edits === 1 ? "" : "s") + " — open the history" : "No edits — this is as first given";
+    head.appendChild(histBtn);
     head.appendChild(noteButton(pl, { kind: "answer", path: a.path }, labelFor(a.path)));
     card.appendChild(head);
 
@@ -8111,7 +8227,17 @@ function initAdminView({ onClose }) {
       }
       timeline.appendChild(item);
     });
-    card.appendChild(timeline);
+    // The history is not the hero — it opens over the field on demand.
+    histBtn.onclick = () => {
+      const scrim = ensureModal();
+      scrim.querySelector(".dochead").textContent = labelFor(a.path) + " — history";
+      const body2 = scrim.querySelector(".docbody");
+      body2.innerHTML = "";
+      const wrap2 = $e("div", "hist-modal");
+      wrap2.appendChild(timeline);
+      body2.appendChild(wrap2);
+      scrim.classList.add("on");
+    };
     return card;
   }
 
