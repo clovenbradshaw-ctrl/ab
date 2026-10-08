@@ -14091,8 +14091,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initEntry();
   try {
     const tag = document.querySelector('meta[name="ab-build"]');
-    const el = document.getElementById("abBuild");
-    if (el && tag) el.textContent = "build " + tag.content;
+    const v = tag ? "build " + tag.content : "";
+    const el = document.getElementById("abBuild"); if (el && v) el.textContent = v;
+    const foot = document.getElementById("buildFoot"); if (foot && v) foot.textContent = "Feedback Platform · " + v;
   } catch (e) {}
 });
 
