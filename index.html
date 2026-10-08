@@ -642,6 +642,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .sdoc-row{display:flex;gap:9px;align-items:flex-start;padding:8px;border-radius:9px;cursor:pointer}
 .sdoc-row:hover{background:var(--wash)}
 .sdoc-ic{flex:none;font-size:15px}
+.sdoc-thumb{width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--wash);flex:none}
 .sdoc-main{min-width:0}
 .sdoc-name{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sdoc-meta{font-size:10.5px;color:var(--muted)}
@@ -686,7 +687,21 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .spanel-title{font-family:Fraunces,serif;font-weight:560;font-size:14px}
 .spanel-head .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
 .spanel-empty{padding:14px 12px;font-size:12px;color:var(--muted)}
-.tl{max-height:360px;overflow-y:auto;padding:6px}
+.tl{height:800px;max-height:80vh;overflow-y:auto;padding:6px}
+.tl-tools{display:flex;gap:6px;align-items:center;margin-left:auto}
+.tl-tool{font:500 10.5px Inter;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.tl-tool:hover{border-color:var(--seal);color:var(--seal)}
+.tl-badge{font:500 9px Inter;text-transform:uppercase;letter-spacing:.03em;padding:1px 5px;border-radius:99px;vertical-align:middle}
+.tl-badge.auto{background:var(--wash);color:var(--muted)}
+.tl-badge.edited{background:var(--turn-soft);color:var(--turn)}
+.tl-badge.added{background:var(--seal-soft);color:var(--seal)}
+.tl-acts{display:flex;gap:5px;align-items:center}
+.tl-row.manual .tl-title{font-weight:600}
+.te-field{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
+.te-field label{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.te-field input,.te-field textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.te-field textarea{min-height:70px;resize:vertical}
+.te-btns{display:flex;gap:8px;margin-top:6px}
 .tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
 .tl-row:hover{background:var(--wash)}
 .tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
@@ -2420,6 +2435,58 @@ function snippetAround(text, index, match) {
   const start = Math.max(0, index - 50);
   const end = Math.min(text.length, index + String(match).length + 70);
   return (start > 0 ? "…" : "") + text.slice(start, end).replace(/\s+/g, " ").trim() + (end < text.length ? "…" : "");
+}
+// ── a file's own date: EXIF metadata, or the name it was saved under ──
+// When a photo was taken says a lot the pixels don't. Read it from the file's
+// EXIF (DateTimeOriginal / DateTime) or, failing that, from the filename the
+// phone/camera wrote ("IMG_20240105…", "Screenshot 2026-10-08…").
+function parseTiffDate(dv, b, base) {
+  const le = String.fromCharCode(b[base], b[base + 1]) === "II";
+  const g16 = (o) => dv.getUint16(o, le), g32 = (o) => dv.getUint32(o, le);
+  if (g16(base + 2) !== 42) return null;
+  const walk = (dirOff) => {
+    const n = g16(dirOff);
+    for (let i = 0; i < n; i++) {
+      const e = dirOff + 2 + i * 12;
+      const tag = g16(e), type = g16(e + 2), count = g32(e + 4);
+      const valOff = (type === 2 && count > 4) ? base + g32(e + 8) : e + 8;
+      if (tag === 0x9003 || tag === 0x0132) {
+        let s = ""; for (let j = 0; j < 19; j++) s += String.fromCharCode(b[valOff + j] || 0);
+        const m = /(\d{4}):(\d{2}):(\d{2})/.exec(s);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+      }
+      if (tag === 0x8769) { const sub = walk(base + g32(e + 8)); if (sub) return sub; }
+    }
+    return null;
+  };
+  return walk(base + g32(base + 4));
+}
+function fileHeadDate(bytes) {
+  try {
+    const b = bytes, len = b.length;
+    const ascii = (i, n) => { let s = ""; for (let j = 0; j < n; j++) s += String.fromCharCode(b[i + j] || 0); return s; };
+    if (b[0] === 0xFF && b[1] === 0xD8) {
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      let off = 2;
+      while (off + 4 <= len) {
+        if (b[off] !== 0xFF) { off++; continue; }
+        const marker = b[off + 1], size = dv.getUint16(off + 2, false);
+        if (size <= 0) break;
+        if (marker === 0xE1 && ascii(off + 4, 4) === "Exif") { const d = parseTiffDate(dv, b, off + 10); if (d) return d; }
+        off += 2 + size;
+      }
+    }
+    const m = /(\d{4})[:/-](\d{2})[:/-](\d{2})/.exec(ascii(0, Math.min(len, 20000)));
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  } catch (e) {}
+  return null;
+}
+function filenameDate(name) {
+  const s = String(name || "");
+  for (const d of extractDatesFromText(s)) return d.iso;
+  const m = /(^|\D)((?:19|20)\d{6})(?=\D|$)/.exec(s);
+  if (m) { const t = m[2]; const p = Steer.parseDateFlexible(`${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}`); if (p && p.iso) return p.iso; }
+  return null;
 }
 // "Query this application": the passages in ONE submission that match — its
 // own answers, what was said, and the text read from its own documents. Never
@@ -5916,6 +5983,13 @@ function collectPipelineData({ storeKind, client }) {
       .filter(([, r]) => r.entity === "letter")
       .map(([id, r]) => foldLetterRecord(id, r, folded, { roomId, applicantName }));
 
+    // Admin corrections / additions to this submission's timeline — edits key
+    // to an automated item, additions stand alone. Both are real events, so
+    // they are auditable and attributable.
+    const timeline = Object.entries(folded.records)
+      .filter(([, r]) => r.entity === "timeline")
+      .map(([id, r]) => ({ id, ...r.attrs }));
+
     const lastActivity = defs.length ? defs.reduce((max, e) => (e.at || "") > (max || "") ? e.at : max, "") : null;
 
     const caseStatus = folded.anchors?.case?.status?.value || "new";
@@ -7113,74 +7187,180 @@ function initAdminView({ onClose }) {
   // Everything the application actually places in time, drawn from ALL its
   // content: dated answers, documents received, and dates read out of the
   // documents' own text — each with a link back to the evidence it came from.
-  function submissionTimeline(pl) {
+  // The fold: read every date out of every source of this submission at once,
+  // pool the occurrences of each date, and infer what that date MEANS from the
+  // company it keeps (the words around it) and how many sources agree. A date
+  // that recurs across the file, unnamed, is very likely a birthday.
+  function inferTimeline(pl) {
     const labels = answerLabels();
-    const answers = Object.fromEntries(pl.answers.map((a) => [a.path, a.value]));
-    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
-    const fields = withRepeatingRounds(base, answers);
-    const events = [];
-    const pushDates = (blob, title, src, seen) => {
-      let n = 0;
-      for (const d of extractDatesFromText(blob)) {
-        if (seen.has(d.iso) || n >= 8) continue;
-        seen.add(d.iso); n++;
-        events.push({ sort: d.iso, at: d.iso, title, detail: snippetAround(blob, d.index, d.match), src, fromText: true });
-      }
-    };
-    for (const f of fields) {
-      const v = answers[f.path];
-      if (!v) continue;
-      const s = String(v);
-      const isDate = f.type === "date" || f.type === "date_flex";
-      const own = isDate ? (/^(\d{4}-\d{2}(?:-\d{2})?)/.exec(s) || [])[1] : null;
-      const seen = new Set();
-      if (own) { seen.add(own); events.push({ sort: own, at: own, title: labels(f.path), detail: s, src: { kind: "answer", path: f.path } }); }
-      // Dates the answer's own words (or the recording behind it) mention —
-      // "in March 2025 the caseworker…" becomes an event too.
-      const a = pl.answers.find((x) => x.path === f.path);
-      const blobs = [s];
-      if (a) {
-        if (a.source) blobs.push(a.source);
-        for (const ver of (a.versions || [])) {
-          if (ver.source) blobs.push(ver.source);
-          if (ver.voiceClip && ver.voiceClip.transcript) blobs.push("spoken: " + ver.voiceClip.transcript);
-        }
-      }
-      for (const blob of blobs) pushDates(blob, labels(f.path), { kind: "answer", path: f.path }, seen);
+    const occ = [];
+    const add = (iso, context, source) => occ.push({ iso, context, source });
+    for (const a of pl.answers) {
+      const src = { kind: "answer", path: a.path, name: labels(a.path) };
+      const blobs = [String(a.value == null ? "" : a.value), a.source];
+      for (const v of (a.versions || [])) { blobs.push(v.source); if (v.voiceClip && v.voiceClip.transcript) blobs.push(v.voiceClip.transcript); }
+      for (const blob of blobs) if (blob) for (const d of extractDatesFromText(blob)) add(d.iso, snippetAround(blob, d.index, d.match), src);
     }
+    for (const doc of pl.docs || []) {
+      const src = { kind: "doc", doc, name: doc.title || doc.filename };
+      for (const d of extractDatesFromText(doc.ocrText || "")) add(d.iso, snippetAround(doc.ocrText, d.index, d.match), src);
+      for (const d of extractDatesFromText(doc.filename || "")) add(d.iso, "file name: " + doc.filename, src);
+      if (doc.capturedAt) add(doc.capturedAt, "the file's own date (" + (doc.capturedFrom || "metadata") + "): " + (doc.title || doc.filename), src);
+    }
+    const byIso = new Map();
+    for (const o of occ) { if (!byIso.has(o.iso)) byIso.set(o.iso, []); byIso.get(o.iso).push(o); }
+    const out = [];
+    for (const [iso, list] of byIso) {
+      const contexts = list.map((x) => x.context).join("\n");
+      const srcKeys = new Set(list.map((x) => x.source.kind + ":" + (x.source.path || (x.source.doc && x.source.doc.id))));
+      const docIds = new Set(list.filter((x) => x.source.kind === "doc").map((x) => x.source.doc.id));
+      const meaning = inferDateMeaning(iso, contexts, { docCount: docIds.size, sourceCount: srcKeys.size, count: list.length });
+      const names = [...new Set(list.map((x) => x.source.name))];
+      out.push({ at: iso, title: meaning.title, detail: meaning.why, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places: ${names.slice(0, 3).join(", ")}` : names[0], key: "date:" + iso });
+    }
+    return out;
+  }
+  function inferDateMeaning(iso, contexts, info) {
+    const low = (contexts || "").toLowerCase();
+    const rules = [
+      [/\b(born|birth|birthday|dob|d\.o\.b|nacimiento|nacid[oa])\b/, "likely a birthday", "the words 'born' / 'birthday' sit with it"],
+      [/custod(y|ial)|taken into .*custody|entered .*custody|removed (from|by)/, "start of custody", "reads as when custody began"],
+      [/placement|placed|foster|kinship|group home|shelter|transitional/, "a placement", "reads as a placement date"],
+      [/incident|happened|occurred|assault|abuse|missed|no[- ]show|denied|neglect/, "an incident", "reads as when something happened"],
+      [/filed|complaint|grievance|appeal|hearing|court|petition|judge|subpoena/, "a legal date", "reads as a filing / hearing / court date"],
+      [/school|iep|grade|principal|expulsion|suspension|enroll/, "a school event", "reads as a school date"],
+    ];
+    for (const [re, title, why] of rules) if (re.test(low)) return { title, why };
+    const age = new Date().getFullYear() - Number(iso.slice(0, 4));
+    if ((info.docCount >= 2 || info.sourceCount >= 2 || info.count >= 3) && age >= 0 && age <= 110) {
+      return { title: "probably a birthday", why: `the same date appears in ${info.sourceCount} place${info.sourceCount === 1 ? "" : "s"} with nothing naming it` };
+    }
+    return { title: "a date", why: "" };
+  }
+  function submissionTimeline(pl) {
+    // Automated events, keyed so an admin correction can attach to one.
+    const auto = inferTimeline(pl);
     for (const d of pl.docs || []) {
-      if (d.uploadedAt) events.push({ sort: d.uploadedAt, at: d.uploadedAt.slice(0, 10), title: "Document received", detail: d.title || d.filename, src: { kind: "doc", doc: d } });
-      // Dates read out of the document's own text — including a screenshot of a
-      // text conversation, where the dates are the story.
-      pushDates(d.ocrText || "", "Date read in " + (d.title || d.filename), { kind: "doc", doc: d }, new Set());
+      if (d.uploadedAt) auto.push({ at: d.uploadedAt.slice(0, 10), title: "Document received", detail: d.title || d.filename, src: { kind: "doc", doc: d }, key: "recv:" + d.id });
+      if (d.capturedAt) auto.push({ at: d.capturedAt, title: (isVideoDoc(d) ? "Video" : "Photo") + " dated", detail: [d.capturedFrom, d.title || d.filename].filter(Boolean).join(" · "), src: { kind: "doc", doc: d }, key: "cap:" + d.id });
     }
-    if (pl.submittedAt) events.push({ sort: pl.submittedAt, at: pl.submittedAt.slice(0, 10), title: "Submitted for review", detail: "", src: null });
-    events.sort((a, b) => String(a.sort).localeCompare(String(b.sort)));
+    if (pl.submittedAt) auto.push({ at: pl.submittedAt.slice(0, 10), title: "Submitted for review", detail: "", src: null, key: "submitted" });
 
+    // Admin overrides (keyed to an automated item) and additions of their own.
+    const overrides = new Map(), additions = [];
+    for (const rec of pl.timeline || []) {
+      if (rec.status === "added") additions.push({ at: rec.at, title: rec.title, detail: rec.detail, status: "added", by: rec.by, rec });
+      else if (rec.key) overrides.set(rec.key, rec);
+    }
+    const events = [];
+    for (const e of auto) {
+      const o = overrides.get(e.key);
+      if (o) events.push({ at: o.at || e.at, title: o.title || e.title, detail: o.detail != null ? o.detail : e.detail, src: e.src, sub: e.sub, status: "edited", by: o.by, key: e.key, rec: o });
+      else events.push(Object.assign({}, e, { status: "auto" }));
+    }
+    for (const a of additions) events.push(a);
+
+    let sortDir = 1;
+    let filterKind = "all";
     const panel = $e("div", "spanel");
     const head = $e("div", "spanel-head");
     head.appendChild($e("span", "spanel-title", "Timeline"));
-    head.appendChild($e("span", "count", String(events.length)));
+    const count = $e("span", "count", String(events.length));
+    head.appendChild(count);
+    const tools = $e("div", "tl-tools");
+    const sortBtn = $e("button", "tl-tool", "Date ↑");
+    sortBtn.onclick = () => { sortDir = -sortDir; sortBtn.textContent = sortDir > 0 ? "Date ↑" : "Date ↓"; draw(); };
+    tools.appendChild(sortBtn);
+    const filt = document.createElement("select");
+    filt.className = "tl-tool";
+    for (const [k, l] of [["all", "All"], ["auto", "Automated"], ["manual", "Edited / added"]]) filt.appendChild(new Option(l, k));
+    filt.onchange = () => { filterKind = filt.value; draw(); };
+    tools.appendChild(filt);
+    const addBtn = $e("button", "tl-tool", "+ Add event");
+    addBtn.title = "Add a timeline event of your own";
+    addBtn.onclick = () => openTimelineEditor(pl, null);
+    tools.appendChild(addBtn);
+    head.appendChild(tools);
     panel.appendChild(head);
     const list = $e("div", "tl");
-    if (!events.length) list.appendChild($e("div", "spanel-empty", "No dated events yet."));
-    for (const e of events) {
-      const row = $e("div", "tl-row");
-      row.appendChild($e("div", "tl-when", e.at));
-      const main = $e("div", "tl-main");
-      main.appendChild($e("div", "tl-title", e.title));
-      if (e.detail) main.appendChild($e("div", "tl-detail", e.detail));
-      row.appendChild(main);
-      if (e.src) {
-        const b = $e("button", "tl-src", e.src.kind === "doc" ? "view" : "evidence");
-        b.title = e.src.kind === "doc" ? "Open the document this came from" : "Jump to the answer this came from";
-        b.onclick = () => openEvidence(pl, e.src);
-        row.appendChild(b);
-      }
-      list.appendChild(row);
-    }
     panel.appendChild(list);
+
+    function draw() {
+      list.innerHTML = "";
+      const shown = events
+        .filter((e) => filterKind === "all" || (filterKind === "auto" ? e.status === "auto" : e.status !== "auto"))
+        .slice()
+        .sort((a, b) => sortDir * String(a.at).localeCompare(String(b.at)));
+      count.textContent = String(shown.length);
+      if (!shown.length) { list.appendChild($e("div", "spanel-empty", "No events match.")); return; }
+      for (const e of shown) {
+        const row = $e("div", "tl-row" + (e.status === "auto" ? "" : " manual"));
+        row.appendChild($e("div", "tl-when", e.at));
+        const mn = $e("div", "tl-main");
+        const line = $e("div", "tl-title");
+        line.appendChild(document.createTextNode(e.title + " "));
+        const badge = $e("span", "tl-badge " + e.status, e.status === "auto" ? "auto" : e.status === "added" ? "added by office" : "edited by office");
+        badge.title = e.status === "auto" ? "Read automatically from the content" : (e.status === "added" ? "Added by the office" : "Corrected by the office");
+        line.appendChild(badge);
+        mn.appendChild(line);
+        const det = [e.detail, e.sub].filter(Boolean).join(" · ");
+        if (det) mn.appendChild($e("div", "tl-detail", det));
+        row.appendChild(mn);
+        const acts = $e("div", "tl-acts");
+        if (e.src) {
+          const b = $e("button", "tl-src", e.src.kind === "doc" ? "view" : "evidence");
+          b.title = e.src.kind === "doc" ? "Open the document this came from" : "Jump to the answer this came from";
+          b.onclick = () => openEvidence(pl, e.src);
+          acts.appendChild(b);
+        }
+        const ed = $e("button", "tl-src", "✎");
+        ed.title = "Correct or edit this timeline item";
+        ed.onclick = () => openTimelineEditor(pl, e);
+        acts.appendChild(ed);
+        row.appendChild(acts);
+        list.appendChild(row);
+      }
+    }
+    draw();
     return panel;
+  }
+
+  // Correct an automated item or add one of the office's own. Saved as a real
+  // event in the submission's room, so it is attributable and auditable.
+  function openTimelineEditor(pl, ev) {
+    const scrim = ensureModal();
+    const head = scrim.querySelector(".dochead");
+    const body = scrim.querySelector(".docbody");
+    const isEdit = !!ev;
+    head.textContent = isEdit ? "Correct this timeline item" : "Add a timeline event";
+    body.innerHTML = "";
+    const field = (label, val, area) => {
+      const w = $e("div", "te-field"); w.appendChild($e("label", null, label));
+      const i = document.createElement(area ? "textarea" : "input");
+      if (!area) i.type = "text";
+      i.value = val || "";
+      w.appendChild(i); body.appendChild(w); return i;
+    };
+    const dateI = field("Date (YYYY-MM-DD)", ev ? ev.at : "");
+    const titleI = field("What it is", ev ? ev.title : "");
+    const detailI = field("Detail", ev && ev.detail ? ev.detail : "", true);
+    const btns = $e("div", "te-btns");
+    const save = $e("button", "aview", "Save");
+    const cancel = $e("button", "aview", "Cancel");
+    btns.append(save, cancel); body.appendChild(btns);
+    cancel.onclick = closeDoc;
+    save.onclick = () => {
+      const at = dateI.value.trim(), title = titleI.value.trim(), detail = detailI.value.trim();
+      if (!at || !title) { toast("A date and a title are needed.", "warn"); return; }
+      const isAdded = !ev || ev.status === "added" || !ev.key;
+      const id = (ev && ev.rec && ev.rec.id) ? ev.rec.id : newId("tl");
+      const key = (ev && ev.key && !isAdded) ? ev.key : ("added:" + Math.random().toString(36).slice(2));
+      emitTimelineIns(ctx, pl.roomId, id, { key, at, title, detail, status: isAdded ? "added" : "edited", by: ctx.currentUserId, editedAt: nowIso() });
+      closeDoc();
+      toast(isAdded ? "Timeline event added" : "Timeline corrected", "success");
+      setTimeout(() => renderActive(), 400);
+    };
+    scrim.classList.add("on");
   }
 
   // The application's information, auto-sorted into the buckets it takes to
@@ -7331,7 +7511,14 @@ function initAdminView({ onClose }) {
       for (const d of shown) {
         const row = $e("div", "sdoc-row");
         row.onclick = () => openDoc(pl, d);
-        row.appendChild($e("span", "sdoc-ic", fileIcon(d.mimetype)));
+        if (isImageDoc(d)) {
+          const img = document.createElement("img");
+          img.className = "sdoc-thumb"; img.alt = d.title || d.filename || "";
+          row.appendChild(img);
+          loadThumb(d, img, mediaFor(ctx));
+        } else {
+          row.appendChild($e("span", "sdoc-ic", fileIcon(d.mimetype)));
+        }
         const main = $e("div", "sdoc-main");
         main.appendChild($e("div", "sdoc-name", d.title || d.filename));
         main.appendChild($e("div", "sdoc-meta", [cat(d) === "other" ? "file" : cat(d), fmtBytes(d.size), d.ocrText ? "text read" : "no text", d.imageKind || null].filter(Boolean).join(" · ")));
@@ -9409,6 +9596,22 @@ function isVideoDoc(d) { return (d?.mimetype || "").startsWith("video/"); }
 // Both are read on-device: an image from its pixels, a video from frames of it.
 function isReadableMedia(d) { return isImageDoc(d) || isVideoDoc(d); }
 
+// A real thumbnail for an image, decrypted in this tab and cached per document
+// so the list doesn't re-decrypt on every render.
+const docThumbCache = new Map();
+async function loadThumb(doc, img, media) {
+  try {
+    if (docThumbCache.has(doc.id)) { img.src = docThumbCache.get(doc.id); return; }
+    const pieces = await getDecryptedMedia(doc, media);
+    const url = URL.createObjectURL(new Blob(pieces, { type: doc.mimetype || "image/*" }));
+    if (docThumbCache.size > 60) { const k = docThumbCache.keys().next().value; URL.revokeObjectURL(docThumbCache.get(k)); docThumbCache.delete(k); }
+    docThumbCache.set(doc.id, url);
+    img.src = url;
+  } catch (e) {
+    img.replaceWith($e("span", "sdoc-ic", "🖼"));
+  }
+}
+
 // OCR/CV is an ENHANCEMENT, never a dependency. A phone on a bad connection, a
 // device without WASM or a worker, or someone who turned it off must still be
 // able to upload files and submit — the reading simply waits, or is done by
@@ -9562,6 +9765,12 @@ async function readDocumentText(doc, media) {
   const pieces = await getDecryptedMedia(doc, media);
   const head = new Uint8Array(pieces[0].slice(0, 16));
   const sourceKind = sniffSourceKind(head);
+  // When the file itself says when it was made: EXIF first, then the filename.
+  const metaHead = new Uint8Array(pieces[0].slice(0, 65536));
+  const metaDate = fileHeadDate(metaHead);
+  const nameDate = filenameDate(doc.filename);
+  const capturedAt = metaDate || nameDate;
+  const capturedFrom = metaDate ? "metadata" : (nameDate ? "file name" : null);
   const blob = new Blob(pieces, { type: doc.mimetype || "image/*" });
   const url = URL.createObjectURL(blob);
   try {
@@ -9610,6 +9819,7 @@ async function readDocumentText(doc, media) {
       elements: content.elements || [],
       width: W, height: H,
       sourceKind,
+      capturedAt, capturedFrom,
       guess,
       eyes: rec.eyes,
       chosen: page.chosen || null,
@@ -9674,7 +9884,8 @@ async function readVideoText(doc, media) {
       }
     }
     const text = lines.join("\n");
-    return { ok: true, text, raw: text, elements: [], width: v.videoWidth || 0, height: v.videoHeight || 0, sourceKind: "video", frames };
+    const nameDate = filenameDate(doc.filename);
+    return { ok: true, text, raw: text, elements: [], width: v.videoWidth || 0, height: v.videoHeight || 0, sourceKind: "video", frames, capturedAt: nameDate, capturedFrom: nameDate ? "file name" : null };
   } catch (e) {
     return { ok: false, reason: e.message || String(e) };
   } finally {
@@ -9728,6 +9939,8 @@ function ocrAttrs(res, by) {
     ocrBy: by || null,
     ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
     ocrSourceKind: res.sourceKind || null,
+    capturedAt: res.capturedAt || null,
+    capturedFrom: res.capturedFrom || null,
     // The eyes that ran, which one won, and what the losers saw — the same
     // "what actually happened" record the holodeck keeps for a scan.
     ocrEyes: res.eyes || null,
@@ -9776,6 +9989,10 @@ function submitterDocEmit(id, attrs) { if (store) store.emit(OP.INS, { entity: "
 function emitDocInsTo(ctx, roomId, id, attrs) {
   if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.INS, { entity: "document", id, attrs });
   return DemoStore.appendEvent(roomId, OP.INS, { entity: "document", id, attrs }, ctx.currentUserId);
+}
+function emitTimelineIns(ctx, roomId, id, attrs) {
+  if (ctx.storeKind === "matrix") return sendGuardedOrWarn(ctx, roomId, OP.INS, { entity: "timeline", id, attrs });
+  return DemoStore.appendEvent(roomId, OP.INS, { entity: "timeline", id, attrs }, ctx.currentUserId);
 }
 
 async function readAndStoreOcr(doc, media, { emit, by = null, quiet = false } = {}) {

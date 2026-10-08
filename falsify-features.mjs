@@ -346,9 +346,10 @@ await page.waitForTimeout(1200);
     const marked = highlightPassage("DCS <b>custody</b> changed", "custody");
     const clipped = clipPassage("alpha\nbeta\n" + "x".repeat(400) + "\ngamma custodian here\nomega", ["custodian"]);
     const dates = extractDatesFromText("we met on March 5, 2025 and again 4/6/25, plus 2024-01-02").map((d) => d.iso);
+    const fromName = [filenameDate("IMG_20240105_091500.jpg"), filenameDate("Screenshot 2026-10-08 at 10.13.01.png")];
     const src = await (await fetch("/index.html")).text();
     return {
-      marked, clippedHasTerm: /custodian/.test(clipped) && clipped.length < 500, dates,
+      marked, clippedHasTerm: /custodian/.test(clipped) && clipped.length < 500, dates, fromName,
       srcHasTimeline: /submissionTimeline/.test(src) && /tl-src/.test(src) && /openEvidence/.test(src) && /extractDatesFromText/.test(src),
       srcNoBuckets: !/submissionBuckets/.test(src) && !/"srow"/.test(src) && !/bchip/.test(src),
       srcTimelineRightOfAnswers: /"sbody"|sbody/.test(src) && /sbody-side/.test(src) && /submissionTimeline\(pl\)/.test(src),
@@ -361,6 +362,11 @@ await page.waitForTimeout(1200);
       srcInboxSearch: /inbox-search/.test(src) && /inbox-filters/.test(src) && /submissionSearchBlob/.test(src),
       srcTestDefaultOff: /let showTest = false;/.test(src) && /isTestSubmission/.test(src) && /Test \(/.test(src),
       srcCardShrink: /minmax\(0,1fr\) minmax\(0,1\.2fr\)/.test(src) && /\.acard>\*\{min-width:0\}/.test(src),
+      srcTimelineEdit: /openTimelineEditor/.test(src) && /emitTimelineIns/.test(src) && /tl-badge/.test(src) && /isAdded \? "added" : "edited"/.test(src),
+      srcTimelineSort: /height:800px/.test(src) && /tl-tools/.test(src) && /Edited \/ added/.test(src),
+      srcThumbs: /sdoc-thumb/.test(src) && /loadThumb/.test(src),
+      srcCapture: /fileHeadDate/.test(src) && /filenameDate/.test(src) && /capturedAt/.test(src),
+      srcTimelineEntity: /entity: "timeline"/.test(src) && /r\.entity === "timeline"/.test(src),
     };
   });
   check("highlight marks the match and escapes the text", /<mark>custody<\/mark>/.test(r.marked) && !/<b>/.test(r.marked));
@@ -378,6 +384,12 @@ await page.waitForTimeout(1200);
   check("the inbox has search + status/phase filters", r.srcInboxSearch);
   check("test submissions (before today) are hidden by default", r.srcTestDefaultOff);
   check("answer cards shrink instead of overflowing", r.srcCardShrink);
+  check("dates come from file names too", r.fromName[0] === "2024-01-05" && r.fromName[1] === "2026-10-08", JSON.stringify(r.fromName));
+  check("timeline items can be corrected / added, with auto vs edited badges", r.srcTimelineEdit);
+  check("timeline is 800px, sortable and filterable", r.srcTimelineSort);
+  check("documents list shows real thumbnails", r.srcThumbs);
+  check("image/video dates come from metadata or file name", r.srcCapture);
+  check("timeline edits/additions persist as room events", r.srcTimelineEntity);
 }
 
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
