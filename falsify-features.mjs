@@ -356,7 +356,8 @@ await page.waitForTimeout(1200);
       srcHasQuery: /submissionPassages/.test(src) && /showPassagesModal/.test(src) && /appquery/.test(src) && /passage-text/.test(src),
       srcHasAnswerAnchor: /card\.id = "ac-/.test(src),
       srcInboxProgress: /submissionPct/.test(src) && /ib-progress/.test(src),
-      srcNativeTranscript: /docTranscriptView/.test(src) && /docview-native/.test(src),
+      srcSingleView: /docSurface/.test(src) && /ds-flat/.test(src) && !/docTranscriptView/.test(src),
+      srcPosBackfill: /function wantsReading/.test(src) && /backfillPositions/.test(src) && /pagesChanged/.test(src),
       srcVideoRead: /readVideoText/.test(src) && /isVideoDoc/.test(src) && /readMediaText/.test(src),
       srcDedupeSteps: /Collapse runs of the same value/.test(src),
       srcInboxSearch: /inbox-search/.test(src) && /inbox-filters/.test(src) && /submissionSearchBlob/.test(src),
@@ -382,7 +383,8 @@ await page.waitForTimeout(1200);
   check("query pops up the application's own passages", r.srcHasQuery);
   check("answers are anchorable for evidence jumps", r.srcHasAnswerAnchor);
   check("the inbox card shows completion progress", r.srcInboxProgress);
-  check("image/video pop-ups show native + transcription", r.srcNativeTranscript);
+  check("image/video pop-ups show ONE view at a time (page or text)", r.srcSingleView);
+  check("past docs are re-read for positioned text on refresh", r.srcPosBackfill);
   check("video is auto-transcribed from its frames", r.srcVideoRead);
   check("duplicate same-value steps are collapsed", r.srcDedupeSteps);
   check("the inbox has search + status/phase filters", r.srcInboxSearch);
