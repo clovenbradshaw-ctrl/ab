@@ -7211,31 +7211,45 @@ function initAdminView({ onClose }) {
     for (const o of occ) { if (!byIso.has(o.iso)) byIso.set(o.iso, []); byIso.get(o.iso).push(o); }
     const out = [];
     for (const [iso, list] of byIso) {
-      const contexts = list.map((x) => x.context).join("\n");
-      const srcKeys = new Set(list.map((x) => x.source.kind + ":" + (x.source.path || (x.source.doc && x.source.doc.id))));
-      const docIds = new Set(list.filter((x) => x.source.kind === "doc").map((x) => x.source.doc.id));
-      const meaning = inferDateMeaning(iso, contexts, { docCount: docIds.size, sourceCount: srcKeys.size, count: list.length });
+      const meaning = inferDateMeaning(iso, list);
       const names = [...new Set(list.map((x) => x.source.name))];
       out.push({ at: iso, title: meaning.title, detail: meaning.why, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places: ${names.slice(0, 3).join(", ")}` : names[0], key: "date:" + iso });
     }
     return out;
   }
-  function inferDateMeaning(iso, contexts, info) {
-    const low = (contexts || "").toLowerCase();
-    const rules = [
-      [/\b(born|birth|birthday|dob|d\.o\.b|nacimiento|nacid[oa])\b/, "likely a birthday", "the words 'born' / 'birthday' sit with it"],
-      [/custod(y|ial)|taken into .*custody|entered .*custody|removed (from|by)/, "start of custody", "reads as when custody began"],
-      [/placement|placed|foster|kinship|group home|shelter|transitional/, "a placement", "reads as a placement date"],
-      [/incident|happened|occurred|assault|abuse|missed|no[- ]show|denied|neglect/, "an incident", "reads as when something happened"],
-      [/filed|complaint|grievance|appeal|hearing|court|petition|judge|subpoena/, "a legal date", "reads as a filing / hearing / court date"],
-      [/school|iep|grade|principal|expulsion|suspension|enroll/, "a school event", "reads as a school date"],
-    ];
-    for (const [re, title, why] of rules) if (re.test(low)) return { title, why };
-    const age = new Date().getFullYear() - Number(iso.slice(0, 4));
-    if ((info.docCount >= 2 || info.sourceCount >= 2 || info.count >= 3) && age >= 0 && age <= 110) {
-      return { title: "probably a birthday", why: `the same date appears in ${info.sourceCount} place${info.sourceCount === 1 ? "" : "s"} with nothing naming it` };
+  // The application's own vocabulary: the questions the office authored, in
+  // their own words. A date's meaning is read from this — the question it
+  // answers, or the words around it — never from a hardcoded category.
+  function questionConcepts() {
+    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
+    const out = [];
+    for (const f of base) {
+      const label = String(f.label || f.prompt || "").trim();
+      if (!label) continue;
+      const concept = label.replace(/^\s*(child|placement)\s*\d+\s*[—:-]\s*/i, "").trim() || label;
+      out.push({ path: f.path, label, concept, words: concept.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4) });
     }
-    return { title: "a date", why: "" };
+    return out;
+  }
+  function inferDateMeaning(iso, list) {
+    const fields = questionConcepts();
+    // 1) The date is an answer to a question — then it means that question.
+    for (const o of list) {
+      if (o.source.kind === "answer") {
+        const f = fields.find((x) => x.path === o.source.path);
+        if (f && f.concept && f.concept.toLowerCase() !== "when") return { title: f.concept, why: `recorded as “${f.label}”` };
+      }
+    }
+    // 2) Otherwise read the company the date keeps — match the words around it
+    //    (and the file it came from) against the application's own vocabulary.
+    const hay = list.map((o) => o.source.name + " " + o.context).join(" ").toLowerCase();
+    let best = null, bestN = 0;
+    for (const f of fields) {
+      const n = f.words.filter((w) => hay.includes(w)).length;
+      if (n > bestN) { bestN = n; best = f; }
+    }
+    if (best && bestN >= 1) return { title: best.concept, why: `the words around it match “${best.label}”` };
+    return { title: "a date", why: list[0] ? list[0].context : "" };
   }
   function submissionTimeline(pl) {
     // Automated events, keyed so an admin correction can attach to one.
