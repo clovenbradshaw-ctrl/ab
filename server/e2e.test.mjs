@@ -171,6 +171,34 @@ test("E2E: DB fills, submitters are write-only, admin reads from any device", as
     assert.equal(byId["sub-b"].events[0].payload.value, "Maria Garcia");
     assert.equal(byId["sub-a"].events.find((e) => e.payload.path === "complainant_name").payload.value, "Jane Doe");
 
+    // — Admin-side mirroring: the office decrypts a room the family never
+    //   flushed, and writes it to the DB declaring the family as owner — so
+    //   the family can keep flushing later instead of being locked out.
+    const mirror = await admin.append({
+      submission_id: "sub-mirror",
+      room_id: "!room-m:hyphae.social",
+      owner_user: "@family-a:hyphae.social",
+      events: [answerEvent("em1", "complainant_name", "Casey Doe")],
+    });
+    assert.equal(mirror.status, 200, "admin mirror write must succeed");
+    assert.equal((await mirror.json()).appended, 1);
+
+    // The family can still append to that same submission.
+    const familyResume = await a1.append({
+      submission_id: "sub-mirror",
+      room_id: "!room-m:hyphae.social",
+      events: [answerEvent("em2", "dcs_county", "Shelby")],
+    });
+    assert.equal(familyResume.status, 200, "owner must be able to keep flushing after an admin mirror");
+
+    // A different family still cannot.
+    const foreign = await b1.append({
+      submission_id: "sub-mirror",
+      room_id: "!room-m:hyphae.social",
+      events: [answerEvent("emX", "dcs_county", "NOPE")],
+    });
+    assert.equal(foreign.status, 403, "another family must not write into a mirrored submission");
+
     // — Durability: restart the server over the same file and read again.
     app.server.close();
     const app2 = createApp({
@@ -183,7 +211,7 @@ test("E2E: DB fills, submitters are write-only, admin reads from any device", as
     const admin2 = freshClient(`http://127.0.0.1:${port2}`, ADMIN_TOKEN);
     const list2 = await admin2.read();
     assert.equal(list2.status, 200);
-    assert.equal((await list2.json()).submissions.length, 2, "data survives a server restart");
+    assert.equal((await list2.json()).submissions.length, 3, "data survives a server restart");
     app2.server.close();
   } finally {
     app.server.close?.();

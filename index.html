@@ -5297,6 +5297,53 @@ async function _dbFlush(store) {
   }
 }
 
+// Admin-side mirror: the office device can decrypt a family's room, so it
+// writes that room's events into the database — even when the family's own
+// device never flushed. This is how a submission that only ever lived on
+// Matrix becomes durable the moment the office (or any key-holding device)
+// comes back online. Append-only and deduped by event id, so it is safe to
+// run repeatedly; a signature per room keeps it from re-sending unchanged
+// rooms on every tick.
+const _dbMirrorSig = new Map();
+async function _dbMirrorRooms(client) {
+  if (!window.ABDB?.available() || !client) return;
+  if (!loginState || loginState.userId !== ADMIN_USER_ID) return;
+  const me = client.getUserId?.() || ADMIN_USER_ID;
+  try {
+    for (const roomId of MatrixStore.joinedRoomIds(client)) {
+      if (configStore && configStore.roomId === roomId) continue;
+      const { events } = MatrixStore.readRoom(client, roomId);
+      if (!events.length) continue;
+      const sig = events.length + ":" + events[events.length - 1].id;
+      if (_dbMirrorSig.get(roomId) === sig) continue;
+      _dbMirrorSig.set(roomId, sig);
+
+      // One stable id per room; recovered from the room's own log, or stamped
+      // in so a later family flush reuses the same id instead of forking.
+      const folded = fold(events);
+      let sid = Object.values(folded.records).find((r) => r.entity === "submission")?.attrs?.submission_id;
+      const toSend = events.map(({ id, op, payload, at, by }) => ({ id, op, payload, at, by }));
+      if (!sid) {
+        sid = window.ABDB.newSubmissionId();
+        const ins = { id: sid, op: OP.INS, payload: { id: sid, entity: "submission", attrs: { submission_id: sid, created_at: nowIso() } }, at: nowIso(), by: me };
+        toSend.push(ins);
+        try { await client.sendEvent(roomId, EVENT_TYPE, { op: OP.INS, payload: ins.payload, eid: sid }); } catch (e) {
+          console.warn("[db] mirror: couldn't stamp submission id on", roomId, e);
+        }
+      }
+      // The family is the owner, whoever first wrote the room — so it keeps
+      // the right to flush after this device is gone.
+      const owner = events.find((e) => e.by && e.by !== me)?.by || null;
+      await window.ABDB.append({
+        submission_id: sid, room_id: roomId, events: toSend,
+        ...(owner ? { owner_user: owner } : {}),
+      });
+    }
+  } catch (e) {
+    console.warn("[db] mirror deferred:", e);
+  }
+}
+
 // The one read every office surface goes through, so the cutoff can't be
 // applied in five places and forgotten in a sixth. Deliberately NOT used by
 // an applicant's own session: a family resuming an interview they started
@@ -7226,7 +7273,7 @@ function initAdminView({ onClose }) {
       renderActive();
       if (ctx.storeKind === "matrix" && ctx.client) {
         // Pull in the older half of every submission, then redraw with it.
-        MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+        MatrixStore.backfill(ctx.client).then(() => { _dbMirrorRooms(ctx.client); if (isAdminViewOpen()) renderActive(); });
         watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
         // Also refresh the append-only database on open and on the slow tick,
         // so a submission that only exists there (Matrix data gone/unreadable)
@@ -7236,7 +7283,7 @@ function initAdminView({ onClose }) {
         clearInterval(adminRefreshTimer);
         adminRefreshTimer = setInterval(() => {
           if (!isAdminViewOpen() || !ctx?.client) return;
-          MatrixStore.backfill(ctx.client).then(() => { if (isAdminViewOpen()) renderActive(); });
+          MatrixStore.backfill(ctx.client).then(() => { _dbMirrorRooms(ctx.client); if (isAdminViewOpen()) renderActive(); });
           _dbLoadAndMerge().then(() => { if (isAdminViewOpen()) renderActive(); });
           // Keep asking for any still-undecryptable keys while the dashboard is
           // open, so a submitter who comes online can unstick history. See

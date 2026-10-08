@@ -198,8 +198,17 @@ export function createApp(config = {}) {
     // it, and only that user (or the office) may append to it again. This is
     // what keeps "submitters are write-only" from meaning "submitters can
     // write into anyone's case".
+    //
+    // The office may mirror a room it can decrypt, in which case it declares
+    // the real owner via owner_user so the submitter can keep flushing their
+    // own case later (a submission bound to the admin would otherwise lock the
+    // family out of it). owner_user is honoured for the office only.
+    const isAdminUser = isAdmin({ token, userId });
+    const claimedOwner = (isAdminUser && typeof body.owner_user === "string" && body.owner_user.trim())
+      ? body.owner_user.trim().slice(0, 255) : userId;
+
     const owner = ownerOf.get(submissionId);
-    if (owner && owner.user_id && owner.user_id !== userId && !isAdmin({ token, userId })) {
+    if (owner && owner.user_id && owner.user_id !== claimedOwner && !isAdminUser) {
       return json(res, 403, { error: "submission belongs to another user" });
     }
 
@@ -220,7 +229,7 @@ export function createApp(config = {}) {
         submissionId, id, ev.op, payload,
         typeof ev.at === "string" ? ev.at.slice(0, 64) : null,
         typeof ev.by === "string" ? ev.by.slice(0, 255) : userId,
-        roomId || null, userId, serverTs,
+        roomId || null, claimedOwner, serverTs,
       );
       if (Number(res0.changes) > 0) appended++; else skipped++;
     }
