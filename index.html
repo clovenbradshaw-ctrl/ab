@@ -597,7 +597,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .hist-modal{max-width:680px}
 .acard>*{min-width:0}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
-.acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
+.acard-head{display:flex;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
 .atl-line{overflow-wrap:anywhere}
 .acard-chips{display:flex;gap:4px;flex-wrap:wrap}
@@ -698,7 +698,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .tl-badge.auto{background:var(--wash);color:var(--muted)}
 .tl-badge.edited{background:var(--turn-soft);color:var(--turn)}
 .tl-badge.added{background:var(--seal-soft);color:var(--seal)}
-.tl-acts{display:flex;gap:5px;align-items:center}
+.tl-acts{display:flex;gap:4px;align-items:center;flex:none}
 .tl-row.manual .tl-title{font-weight:600}
 .te-field{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
 .te-field label{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
@@ -734,9 +734,10 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .da-parsed-fields{font:11px/1.5 "IBM Plex Mono",monospace;color:var(--muted);white-space:pre-wrap;margin:3px 0}
 .da-parsed-ctl{display:flex;gap:6px;align-items:center}
 .da-kindinput{font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);flex:1;min-width:120px}
-.tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
+.tl-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px}
 .tl-row:hover{background:var(--wash)}
-.tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
+.tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);flex:none;width:76px}
+.tl-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--ink)}
 .tl-main{min-width:0}
 .tl-title{font-size:12.5px;color:var(--ink)}
 .tl-detail{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2472,6 +2473,13 @@ function extractDatesFromText(text) {
     }
   }
   const seen = new Set();
+  const compact = /\b(0[1-9]|1[0-2])([0-2][0-9]|3[01])((?:19|20)\d{2})\b/g;
+  let cm;
+  while ((cm = compact.exec(s))) {
+    const iso = `${cm[3]}-${cm[1]}-${cm[2]}`;
+    const p = Steer.parseDateFlexible(iso);
+    if (p && p.iso) out.push({ iso: p.iso, match: cm[0], index: cm.index });
+  }
   return out.filter((x) => { const k = x.iso + "@" + x.index; if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => a.index - b.index);
 }
 function snippetAround(text, index, match) {
@@ -6348,7 +6356,7 @@ function initAdminView({ onClose }) {
       searchTimer = setTimeout(() => { searchQuery = searchInput.value; renderActive(); }, 200);
     };
     searchBar.appendChild(searchInput);
-    if (active !== "eval" && active !== "answers") body.appendChild(searchBar);
+    if (active !== "eval" && active !== "answers" && active !== "docai") body.appendChild(searchBar);
 
     if (active === "table") {
       const filtered = docs.filter((d) => matchesQuery(`${d.applicantName} ${d.filename} ${d.mimetype} ${d.status}`, q));
@@ -7315,18 +7323,22 @@ function initAdminView({ onClose }) {
   function inferTimeline(pl) {
     const labels = answerLabels();
     const occ = [];
-    const add = (iso, context, source) => occ.push({ iso, context, source });
+    const addOcc = (iso, blob, index, match, source) => {
+      const line = lineAround(blob, index);
+      occ.push({ iso, context: snippetAround(blob, index, match), source, line, label: labelBefore(line, match) });
+    };
     for (const a of pl.answers) {
       const src = { kind: "answer", path: a.path, name: labels(a.path) };
       const blobs = [String(a.value == null ? "" : a.value), a.source];
       for (const v of (a.versions || [])) { blobs.push(v.source); if (v.voiceClip && v.voiceClip.transcript) blobs.push(v.voiceClip.transcript); }
-      for (const blob of blobs) if (blob) for (const d of extractDatesFromText(blob)) add(d.iso, snippetAround(blob, d.index, d.match), src);
+      for (const blob of blobs) if (blob) for (const d of extractDatesFromText(blob)) addOcc(d.iso, blob, d.index, d.match, src);
     }
     for (const doc of pl.docs || []) {
       const src = { kind: "doc", doc, name: doc.title || doc.filename };
-      for (const d of extractDatesFromText(doc.ocrText || "")) add(d.iso, snippetAround(doc.ocrText, d.index, d.match), src);
-      for (const d of extractDatesFromText(doc.filename || "")) add(d.iso, "file name: " + doc.filename, src);
-      if (doc.capturedAt) add(doc.capturedAt, "the file's own date (" + (doc.capturedFrom || "metadata") + "): " + (doc.title || doc.filename), src);
+      const text = doc.ocrText || "";
+      for (const d of extractDatesFromText(text)) addOcc(d.iso, text, d.index, d.match, src);
+      for (const d of extractDatesFromText(doc.filename || "")) occ.push({ iso: d.iso, context: "file name", source: src, line: doc.filename, label: "" });
+      if (doc.capturedAt) occ.push({ iso: doc.capturedAt, context: "the file's own date", source: src, line: doc.title || doc.filename, label: "" });
     }
     const byIso = new Map();
     for (const o of occ) { if (!byIso.has(o.iso)) byIso.set(o.iso, []); byIso.get(o.iso).push(o); }
@@ -7334,43 +7346,63 @@ function initAdminView({ onClose }) {
     for (const [iso, list] of byIso) {
       const meaning = inferDateMeaning(iso, list);
       const names = [...new Set(list.map((x) => x.source.name))];
-      out.push({ at: iso, title: meaning.title, detail: meaning.why, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places: ${names.slice(0, 3).join(", ")}` : names[0], key: "date:" + iso });
+      out.push({ at: iso, title: meaning.title, detail: meaning.detail, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places` : names[0], key: "date:" + iso });
     }
     return out;
   }
-  // The application's own vocabulary: the questions the office authored, in
-  // their own words. A date's meaning is read from this — the question it
-  // answers, or the words around it — never from a hardcoded category.
+  function lineAround(text, index) {
+    const s = String(text || "");
+    const start = s.lastIndexOf("\n", index) + 1;
+    let end = s.indexOf("\n", index); if (end < 0) end = s.length;
+    return s.slice(start, end).replace(/\s+/g, " ").trim();
+  }
+  // The label a form prints beside the field — "Issue Date: 08/11/2023".
+  function labelBefore(line, match) {
+    const s = String(line || "");
+    const i = s.toLowerCase().indexOf(String(match || "").toLowerCase());
+    if (i <= 0) return "";
+    let before = s.slice(0, i).replace(/[._\-–—:=\s]+$/, "").trim();
+    if (before.length > 42) before = before.slice(-42).trim();
+    return /[a-z]{2,}/i.test(before) ? before : "";
+  }
+  const DATE_CONCEPT_STOP = new Set(["date", "time", "your", "their", "the", "for", "and", "his", "her", "child", "children", "number", "name", "when", "what", "does", "did", "have", "has", "with", "about", "where", "which", "that", "this", "first", "last", "most", "recent"]);
+  // Only the questions that are ABOUT a point in time — matching dates against
+  // phone numbers and names is how you get nonsense.
   function questionConcepts() {
     const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
     const out = [];
     for (const f of base) {
       const label = String(f.label || f.prompt || "").trim();
       if (!label) continue;
-      const concept = label.replace(/^\s*(child|placement)\s*\d+\s*[—:-]\s*/i, "").trim() || label;
-      out.push({ path: f.path, label, concept, words: concept.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4) });
+      const isTime = f.type === "date" || f.type === "date_flex" || /\b(date|when|birth|born|custody|placed|placement|incident|hearing|filed|started|began)\b/i.test(label);
+      if (!isTime) continue;
+      const concept = (label.replace(/^\s*(child|placement)\s*\d+\s*[—:-]\s*/i, "").trim() || label).replace(/\s*\(.*\)\s*$/, "");
+      const words = concept.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !DATE_CONCEPT_STOP.has(w));
+      if (words.length) out.push({ path: f.path, label, concept, words });
     }
     return out;
   }
   function inferDateMeaning(iso, list) {
     const fields = questionConcepts();
-    // 1) The date is an answer to a question — then it means that question.
-    for (const o of list) {
-      if (o.source.kind === "answer") {
-        const f = fields.find((x) => x.path === o.source.path);
-        if (f && f.concept && f.concept.toLowerCase() !== "when") return { title: f.concept, why: `recorded as “${f.label}”` };
-      }
+    // 1) The date IS the answer to a dated question.
+    const ans = list.find((o) => o.source.kind === "answer");
+    if (ans) {
+      const f = fields.find((x) => x.path === ans.source.path);
+      if (f) return { title: f.concept, detail: ans.line || ans.source.name };
     }
-    // 2) Otherwise read the company the date keeps — match the words around it
-    //    (and the file it came from) against the application's own vocabulary.
+    // 2) The form labels it — read the label printed beside the date.
+    const labelled = list.find((o) => o.label);
+    if (labelled) return { title: labelled.label, detail: labelled.line };
+    // 3) The words around it match the office's own date vocabulary.
     const hay = list.map((o) => o.source.name + " " + o.context).join(" ").toLowerCase();
     let best = null, bestN = 0;
     for (const f of fields) {
       const n = f.words.filter((w) => hay.includes(w)).length;
-      if (n > bestN) { bestN = n; best = f; }
+      const need = f.words.length >= 2 ? 2 : 1;
+      if (n >= need && n > bestN) { bestN = n; best = f; }
     }
-    if (best && bestN >= 1) return { title: best.concept, why: `the words around it match “${best.label}”` };
-    return { title: "a date", why: list[0] ? list[0].context : "" };
+    if (best) return { title: best.concept, detail: list[0].line || list[0].context };
+    return { title: "a date", detail: list[0] ? (list[0].line || list[0].context) : "" };
   }
   function submissionTimeline(pl) {
     // Automated events, keyed so an admin correction can attach to one.
@@ -7411,7 +7443,7 @@ function initAdminView({ onClose }) {
     for (const [k, l] of [["all", "All"], ["auto", "Automated"], ["manual", "Edited / added"]]) filt.appendChild(new Option(l, k));
     filt.onchange = () => { filterKind = filt.value; draw(); };
     tools.appendChild(filt);
-    const addBtn = $e("button", "tl-tool", "+ Add event");
+    const addBtn = $e("button", "tl-tool", "+ Add");
     addBtn.title = "Add a timeline event of your own";
     addBtn.onclick = () => openTimelineEditor(pl, null);
     tools.appendChild(addBtn);
@@ -7430,25 +7462,22 @@ function initAdminView({ onClose }) {
       if (!shown.length) { list.appendChild($e("div", "spanel-empty", "No events match.")); return; }
       for (const e of shown) {
         const row = $e("div", "tl-row" + (e.status === "auto" ? "" : " manual"));
+        row.title = e.detail || "";
         row.appendChild($e("div", "tl-when", e.at));
-        const mn = $e("div", "tl-main");
         const line = $e("div", "tl-title");
-        line.appendChild(document.createTextNode(e.title + " "));
-        const badge = $e("span", "tl-badge " + e.status, e.status === "auto" ? "auto" : e.status === "added" ? "added by office" : "edited by office");
+        line.appendChild(document.createTextNode(e.title));
+        const badge = $e("span", "tl-badge " + e.status, e.status === "auto" ? "auto" : e.status === "added" ? "added" : "edited");
         badge.title = e.status === "auto" ? "Read automatically from the content" : (e.status === "added" ? "Added by the office" : "Corrected by the office");
         line.appendChild(badge);
-        mn.appendChild(line);
-        const det = [e.detail, e.sub].filter(Boolean).join(" · ");
-        if (det) mn.appendChild($e("div", "tl-detail", det));
-        row.appendChild(mn);
+        row.appendChild(line);
         const acts = $e("div", "tl-acts");
         if (e.src) {
-          const b = $e("button", "tl-src", e.src.kind === "doc" ? "view" : "evidence");
+          const b = $e("button", "note-btn", e.src.kind === "doc" ? "📄" : "🔎");
           b.title = e.src.kind === "doc" ? "Open the document this came from" : "Jump to the answer this came from";
           b.onclick = () => openEvidence(pl, e.src);
           acts.appendChild(b);
         }
-        const ed = $e("button", "tl-src", "✎");
+        const ed = $e("button", "note-btn", "✎");
         ed.title = "Correct or edit this timeline item";
         ed.onclick = () => openTimelineEditor(pl, e);
         acts.appendChild(ed);
