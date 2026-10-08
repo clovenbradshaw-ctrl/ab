@@ -1410,8 +1410,12 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- Alhazen — the optics pipeline (binarize · keys + value formats · grid
+     structure · rule proposals). Vendored from scores-patch-points/Alhazen. -->
+<script src="vendor/alhazen.js"></script>
 <script>
-
+// The reading capacity is Alhazen's; rebind it in below (see the tail of this
+// script). The local copies remain only as a fallback until they are deleted.
 
 // config.js — small shared constants that don't belong to any one layer.
 //
@@ -14520,6 +14524,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = document.getElementById("abBuild"); if (el && v) el.textContent = v;
     const foot = document.getElementById("buildFoot"); if (foot && v) foot.textContent = "Feedback Platform · " + v;
   } catch (e) {}
+
+  // The reading capacity is Alhazen's (scores-patch-points/Alhazen). Rebind the
+  // globals to the vendored pipeline so runtime uses it, not the local copies.
+  try {
+    if (window.Alhazen) {
+      valueFormat = window.Alhazen.valueFormat;
+      extractFormFields = window.Alhazen.extractFormFields;
+      snake = window.Alhazen.snake;
+      titleLine = window.Alhazen.titleLine;
+      readGridFromElements = window.Alhazen.readGridFromElements;
+      readGridFromText = window.Alhazen.readGridFromText;
+      inventTuples = window.Alhazen.inventTuples;
+      structuralProposer = window.Alhazen.structuralProposer;
+    }
+  } catch (e) { console.error("[alhazen] rebind failed:", e); }
 });
 
 </script>
