@@ -402,6 +402,66 @@ await page.waitForTimeout(1200);
   check("the document modal is large", r.srcBigModal);
 }
 
+// 9f. a document opens at its true aspect ratio — never stretched to a guess
+{
+  const r = await page.evaluate(async () => {
+    // a 400x100 page: clearly not square
+    const cv = document.createElement("canvas"); cv.width = 400; cv.height = 100;
+    const cx = cv.getContext("2d"); cx.fillStyle = "#fff"; cx.fillRect(0, 0, 400, 100);
+    cx.fillStyle = "#000"; cx.font = "20px sans-serif"; cx.fillText("wide page", 10, 60);
+    const url = cv.toDataURL("image/png");
+    const measure = async (doc) => {
+      const img = document.createElement("img");
+      const el = docSurface(doc, img, null);
+      document.body.appendChild(el);
+      img.src = url;
+      await new Promise((res) => { if (img.complete) res(); else img.addEventListener("load", res); });
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const b = el.querySelector(".ds-stage").getBoundingClientRect();
+      el.remove();
+      return b.width / b.height;
+    };
+    // No stored page dims: the shape must come from the file, not a square guess.
+    const legacy = await measure({ id: "x", mimetype: "image/png", ocrText: "wide page" });
+    // Stored measured page dims are honored.
+    const measured = await measure({ id: "y", mimetype: "image/png", ocrPages: [{ page: 1, width: 400, height: 100, text: "wide page", elements: [] }] });
+    const src = await (await fetch("/index.html")).text();
+    return { legacy, measured, contain: /object-fit:contain/.test(src) };
+  });
+  check("a document opens at its true aspect ratio, not stretched", Math.abs(r.legacy - 4) < 0.2 && Math.abs(r.measured - 4) < 0.2, JSON.stringify(r));
+  check("the page uses contain, never fill", r.contain);
+}
+
+// 9g. lessons learned improve comprehension of a form (handprint / clinical)
+{
+  const r = await page.evaluate(() => {
+    const text = [
+      "Adherence Counseling Record",
+      "Participant ID: 102",
+      "Visit Date: 03/24/2010",
+      "Counseling notes: feels good about being in the study",
+      "Next step: needs to feel more relaxed",
+      "Strategy: change dose time to at lunch",
+      "Agreement: strategy and action plan",
+    ].join("\n");
+    const before = applyKeyLessons(text, "clinical/acr").map((f) => ({ k: f.label, known: f.known, fmt: f.format }));
+    // a fake shared room so a lesson can be recorded without a Matrix session
+    const records = {};
+    configStore = { roomId: "!cfg", fold: () => ({ records }), emit: (op, payload) => { records[payload.id] = { entity: payload.entity, attrs: payload.attrs }; return { id: payload.id }; } };
+    recordKeyLesson("Visit Date", valueFormat("03/24/2010"), "clinical/acr");
+    recordKeyLesson("Participant ID", valueFormat("102"), "clinical/acr");
+    const after = applyKeyLessons(text, "clinical/acr").map((f) => ({ k: f.label, known: f.known, fmt: f.format }));
+    const variant = applyKeyLessons("Visit  date: 1/2/03\nPARTICIPANT ID: 999", "clinical/acr").map((f) => ({ k: f.label, known: f.known }));
+    return { before, after, variant };
+  });
+  const known = (arr, k) => (arr.find((x) => x.k.toLowerCase() === k.toLowerCase()) || {}).known;
+  check("a form parses to keys + value formats", r.before.length >= 5 && r.before.every((x) => x.fmt));
+  check("value formats are recognized (date / integer / name)", r.before.some((x) => x.fmt === "date") && r.before.some((x) => x.fmt === "integer"));
+  check("before learning, the key is unknown", known(r.before, "Visit Date") === false);
+  check("after a lesson the key is known — comprehension improves", known(r.after, "Visit Date") === true && known(r.after, "Participant ID") === true);
+  check("the lesson generalizes across label variants", r.variant.every((x) => x.known));
+}
+
 // 10. OCR/CV must never block a submission: a slow read is abandoned, a failed
 //     read returns cleanly, and auto-reading can be switched off entirely.
 {
