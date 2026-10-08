@@ -591,8 +591,10 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .asum b{color:var(--ink)}
 .afilter{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .acards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1.8fr);gap:14px;align-items:start;box-shadow:var(--shadow)}
-.acard>*{min-width:0}
+.acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:block;box-shadow:var(--shadow)}
+.acard .acard-head{margin-bottom:8px}
+.acard-hist{margin-top:10px}
+.hist-toggle{font:500 11px Inter;padding:3px 9px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
 @media(max-width:900px){.acard{grid-template-columns:1fr;gap:10px}}
 .acard-head{display:flex;flex-direction:column;gap:6px;min-width:0}
 .acard-q{font:600 12.5px Inter;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
@@ -611,6 +613,8 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 /* Submission header: a progress dashboard (2/3) beside a searchable
    documents box (1/3). The answers are the hero content beneath them. */
 .sreview{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:start;margin-bottom:16px}
+.sreview-side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.hist-modal{max-width:640px}
 @media(max-width:900px){.sreview{grid-template-columns:1fr}}
 .sdash{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:13px 15px;display:flex;flex-direction:column;gap:10px}
 .sdash-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
@@ -688,14 +692,15 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .spanel-head .count{margin-left:auto;font:500 10.5px "IBM Plex Mono",monospace;color:var(--muted);padding:1px 6px;border-radius:99px;background:var(--wash)}
 .spanel-empty{padding:14px 12px;font-size:12px;color:var(--muted)}
 .tl{height:800px;max-height:80vh;overflow-y:auto;padding:6px}
-.tl-tools{display:flex;gap:6px;align-items:center;margin-left:auto}
-.tl-tool{font:500 10.5px Inter;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer}
+.tl-tools{display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:nowrap}
+.tl-tool{font:500 10.5px Inter;padding:2px 8px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap;line-height:1.5}
 .tl-tool:hover{border-color:var(--seal);color:var(--seal)}
+select.tl-tool{padding:2px 4px}
 .tl-badge{font:500 9px Inter;text-transform:uppercase;letter-spacing:.03em;padding:1px 5px;border-radius:99px;vertical-align:middle}
 .tl-badge.auto{background:var(--wash);color:var(--muted)}
 .tl-badge.edited{background:var(--turn-soft);color:var(--turn)}
 .tl-badge.added{background:var(--seal-soft);color:var(--seal)}
-.tl-acts{display:flex;gap:5px;align-items:center}
+.tl-acts{display:flex;gap:5px;align-items:center;margin-top:5px;flex-wrap:wrap}
 .tl-row.manual .tl-title{font-weight:600}
 .te-field{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
 .te-field label{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
@@ -720,7 +725,7 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 .da-templates{width:calc(100% - 20px);min-height:150px;font:12.5px/1.5 "IBM Plex Mono",monospace;padding:10px;border:1px solid var(--line);border-radius:8px;margin:10px;background:var(--surface);color:var(--ink);resize:vertical}
 .da-sources{display:flex;flex-direction:column;gap:5px;padding:10px 12px}
 .da-sources a{color:var(--seal);font-size:12.5px}
-.tl-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
+.tl-row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:9px;align-items:start;padding:7px 8px;border-radius:8px}
 .tl-row:hover{background:var(--wash)}
 .tl-when{font:500 10.5px "IBM Plex Mono",monospace;color:var(--seal);padding-top:1px}
 .tl-main{min-width:0}
@@ -732,7 +737,8 @@ nav .setup .setup-admin{display:flex;gap:5px;align-items:center}
 mark{background:#FCE9A8;color:var(--ink);border-radius:3px;padding:0 2px}
 .appquery{flex:1;min-width:180px;font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .docbody .passage{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:8px}
-.docbody .passage-meta{font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
+.docbody .passage-meta{display:flex;justify-content:space-between;gap:8px;font:600 10px Inter;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:4px}
+.passage-open{color:var(--seal);text-transform:none;letter-spacing:0;white-space:nowrap}
 .docbody .passage-text{font-size:13px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 .ib-progress{height:5px;border-radius:99px;background:var(--wash);overflow:hidden;margin-top:6px}
 .ib-progress i{display:block;height:100%;background:var(--seal);border-radius:99px}
@@ -2457,8 +2463,41 @@ function extractDatesFromText(text) {
       if (p && p.iso) out.push({ iso: p.iso, match: m[0], index: m.index });
     }
   }
+  // Compact numeric dates forms print without separators: 08112023 (MMDDYYYY).
+  let cm; const cre = /\b(0[1-9]|1[0-2])([0-2][0-9]|3[01])((?:19|20)\d{2})\b/g;
+  while ((cm = cre.exec(s))) {
+    const iso = `${cm[3]}-${cm[1]}-${cm[2]}`;
+    const p = Steer.parseDateFlexible(iso);
+    if (p && p.iso) out.push({ iso: p.iso, match: cm[0], index: cm.index });
+  }
   const seen = new Set();
   return out.filter((x) => { const k = x.iso + "@" + x.index; if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => a.index - b.index);
+}
+// Read a form: the label a page prints and the value beside it, line by line —
+// "ISSUE DATE: 08/11/2023", "NAME: …", "DOCUMENT NO.: …". Good enough for the
+// labelled fields of a prescription, a police report, a DCS notice.
+function extractFormFields(text) {
+  const out = [];
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (line.length < 4) continue;
+    let label, value;
+    const sep = line.indexOf(":");
+    if (sep > 1 && sep <= 32) { label = line.slice(0, sep); value = line.slice(sep + 1); }
+    else {
+      const m = /^([A-Z][A-Za-z ./()&#]{1,28}?)\s+[-–—]\s+(.+)$/.exec(line);
+      if (!m) continue;
+      label = m[1]; value = m[2];
+    }
+    label = label.replace(/[\s.:\-–—]+$/, "").trim();
+    value = value.trim();
+    const words = label.split(/\s+/).filter(Boolean);
+    if (label.length < 2 || words.length > 5 || /\d/.test(label) || !/^[A-Z]/.test(label) || !/[A-Za-z]/.test(label)) continue;
+    if (!value || /^[\W_]*$/.test(value)) continue;
+    out.push({ label, value: value.slice(0, 220) });
+    if (out.length >= 40) break;
+  }
+  return out;
 }
 function snippetAround(text, index, match) {
   const start = Math.max(0, index - 50);
@@ -2520,7 +2559,7 @@ function filenameDate(name) {
 // "Query this application": the passages in ONE submission that match — its
 // own answers, what was said, and the text read from its own documents. Never
 // another family's content.
-function showPassagesModal(pl, query, results) {
+function showPassagesModal(pl, query, results, onHop) {
   const scrim = ensureModal();
   const head = scrim.querySelector(".dochead");
   const body = scrim.querySelector(".docbody");
@@ -2531,10 +2570,13 @@ function showPassagesModal(pl, query, results) {
     scrim.classList.add("on");
     return;
   }
-  body.appendChild($e("p", "docstatus", results.length + " passage" + (results.length === 1 ? "" : "s") + " — from this application only."));
+  body.appendChild($e("p", "docstatus", results.length + " passage" + (results.length === 1 ? "" : "s") + " — from this application only. Click one to open it."));
   for (const r of results) {
     const card = $e("div", "passage");
-    card.appendChild($e("div", "passage-meta", r.label));
+    const meta = $e("div", "passage-meta");
+    meta.appendChild(document.createTextNode(r.label));
+    if (onHop && r.src) { const open = $e("span", "passage-open", "open →"); meta.appendChild(open); card.style.cursor = "pointer"; card.onclick = () => onHop(r.src); }
+    card.appendChild(meta);
     const t = $e("div", "passage-text");
     t.innerHTML = highlightPassage(r.text, query);
     card.appendChild(t);
@@ -6087,12 +6129,13 @@ function collectPipelineData({ storeKind, client }) {
       .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
 
     const lastActivity = defs.length ? defs.reduce((max, e) => (e.at || "") > (max || "") ? e.at : max, "") : null;
+    const firstActivity = defs.length ? defs.reduce((min, e) => (min == null || (e.at || "") < min) ? e.at : min, null) : null;
 
     const caseStatus = folded.anchors?.case?.status?.value || "new";
 
     const valueOf = (path) => (answers.find((a) => a.path === path) || {}).value || "";
     pipelines.push({
-      roomId, applicantName, answers, letters, voiceClips, docs, lastActivity, caseStatus, submittedAt,
+      roomId, applicantName, answers, letters, notes, timeline, voiceClips, docs, lastActivity, firstActivity, caseStatus, submittedAt,
       phone: valueOf("complainant_phone"),
       email: valueOf("complainant_email"),
       unreadable,
@@ -6217,7 +6260,8 @@ function initAdminView({ onClose }) {
   // default; the "Test" chip brings them back.
   let showTest = false;
   function isTestSubmission(pl) {
-    const t = pl.submittedAt || pl.lastActivity;
+    // Anything submitted (or started) before today is test data.
+    const t = pl.submittedAt || pl.firstActivity || pl.lastActivity;
     if (!t) return false;
     const d = new Date(t);
     if (isNaN(d)) return false;
@@ -6401,7 +6445,7 @@ function initAdminView({ onClose }) {
         query.onkeydown = (e) => {
           if (e.key !== "Enter") return;
           const v = query.value.trim();
-          if (v) showPassagesModal(viewing, v, submissionPassages(viewing, v));
+          if (v) showPassagesModal(viewing, v, submissionPassages(viewing, v), (src) => { closeDoc(); openEvidence(viewing, src); });
         };
         bar.appendChild(query);
         bar.appendChild(noteButton(viewing, { kind: "submission" }, viewing.applicantName));
@@ -7261,21 +7305,37 @@ function initAdminView({ onClose }) {
         if (v.voiceClip && v.voiceClip.transcript) parts.push("spoken: " + v.voiceClip.transcript);
         if (v.source && !parts.includes(v.source)) parts.push(v.source);
       }
-      units.push({ label: "Answer — " + labels(a.path), text: parts.join("\n") });
+      units.push({ label: "Answer — " + labels(a.path), text: parts.join("\n"), src: { kind: "answer", path: a.path } });
     }
     for (const d of pl.docs || []) {
       const t = [d.title || d.filename, d.ocrText, d.imageKind ? "looks like " + d.imageKind : ""].filter(Boolean).join("\n");
-      if (t) units.push({ label: "Document — " + (d.title || d.filename), text: t, doc: d });
+      if (t) units.push({ label: "Document — " + (d.title || d.filename), text: t, src: { kind: "doc", doc: d } });
     }
     const scored = [];
     for (const u of units) {
-      const low = u.text.toLowerCase();
-      let score = 0;
-      for (const t of terms) score += (low.match(new RegExp(escapeRe(t), "g")) || []).length;
+      const score = fuzzyScore(u.text, terms);
       if (score > 0) scored.push(Object.assign({}, u, { score }));
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, 12).map((u) => Object.assign({}, u, { text: clipPassage(u.text, terms) }));
+  }
+
+  // Fuzzy matching across the passage's words: exact, prefix, then near (fold
+  // distance) — so "custoday" still finds "custody" and "dcks" finds "DCS".
+  function fuzzyScore(text, terms) {
+    const toks = String(text || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    let score = 0;
+    for (const t of terms) {
+      for (const w of toks) {
+        if (w === t) score += 3;
+        else if (t.length >= 3 && w.startsWith(t)) score += 2;
+        else if (t.length >= 4 && w.length >= 4) {
+          const d = Steer.levenshtein ? Steer.levenshtein(w, t) : 99;
+          if (d <= (t.length >= 8 ? 2 : 1)) score += 1;
+        }
+      }
+    }
+    return score;
   }
 
   // Jump to the evidence behind a fact: an answer card (scrolled to and
@@ -7301,18 +7361,22 @@ function initAdminView({ onClose }) {
   function inferTimeline(pl) {
     const labels = answerLabels();
     const occ = [];
-    const add = (iso, context, source) => occ.push({ iso, context, source });
+    const addOcc = (iso, blob, index, match, source) => {
+      const line = lineAround(blob, index);
+      occ.push({ iso, context: snippetAround(blob, index, match), source, line, label: labelBefore(line, match) });
+    };
     for (const a of pl.answers) {
       const src = { kind: "answer", path: a.path, name: labels(a.path) };
       const blobs = [String(a.value == null ? "" : a.value), a.source];
       for (const v of (a.versions || [])) { blobs.push(v.source); if (v.voiceClip && v.voiceClip.transcript) blobs.push(v.voiceClip.transcript); }
-      for (const blob of blobs) if (blob) for (const d of extractDatesFromText(blob)) add(d.iso, snippetAround(blob, d.index, d.match), src);
+      for (const blob of blobs) if (blob) for (const d of extractDatesFromText(blob)) addOcc(d.iso, blob, d.index, d.match, src);
     }
     for (const doc of pl.docs || []) {
       const src = { kind: "doc", doc, name: doc.title || doc.filename };
-      for (const d of extractDatesFromText(doc.ocrText || "")) add(d.iso, snippetAround(doc.ocrText, d.index, d.match), src);
-      for (const d of extractDatesFromText(doc.filename || "")) add(d.iso, "file name: " + doc.filename, src);
-      if (doc.capturedAt) add(doc.capturedAt, "the file's own date (" + (doc.capturedFrom || "metadata") + "): " + (doc.title || doc.filename), src);
+      const text = doc.ocrText || "";
+      for (const d of extractDatesFromText(text)) addOcc(d.iso, text, d.index, d.match, src);
+      for (const d of extractDatesFromText(doc.filename || "")) occ.push({ iso: d.iso, context: "file name", source: src, line: doc.filename, label: "" });
+      if (doc.capturedAt) occ.push({ iso: doc.capturedAt, context: "the file's own date", source: src, line: doc.title || doc.filename, label: "" });
     }
     const byIso = new Map();
     for (const o of occ) { if (!byIso.has(o.iso)) byIso.set(o.iso, []); byIso.get(o.iso).push(o); }
@@ -7320,43 +7384,47 @@ function initAdminView({ onClose }) {
     for (const [iso, list] of byIso) {
       const meaning = inferDateMeaning(iso, list);
       const names = [...new Set(list.map((x) => x.source.name))];
-      out.push({ at: iso, title: meaning.title, detail: meaning.why, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places: ${names.slice(0, 3).join(", ")}` : names[0], key: "date:" + iso });
+      out.push({ at: iso, title: meaning.title, detail: meaning.detail, src: list[0].source, sub: names.length > 1 ? `in ${names.length} places: ${names.slice(0, 3).join(", ")}` : names[0], key: "date:" + iso });
     }
     return out;
   }
-  // The application's own vocabulary: the questions the office authored, in
-  // their own words. A date's meaning is read from this — the question it
-  // answers, or the words around it — never from a hardcoded category.
-  function questionConcepts() {
-    const base = configStore?.roomId ? foldConfig(configStore.timeline()).schema.fields : SCHEMA.fields;
-    const out = [];
-    for (const f of base) {
-      const label = String(f.label || f.prompt || "").trim();
-      if (!label) continue;
-      const concept = label.replace(/^\s*(child|placement)\s*\d+\s*[—:-]\s*/i, "").trim() || label;
-      out.push({ path: f.path, label, concept, words: concept.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4) });
-    }
-    return out;
+  function lineAround(text, index) {
+    const s = String(text || "");
+    const start = s.lastIndexOf("\n", index) + 1;
+    let end = s.indexOf("\n", index); if (end < 0) end = s.length;
+    return s.slice(start, end).replace(/\s+/g, " ").trim();
+  }
+  // The label a form prints beside the field — "Date of Birth: 6/17/2024". Read
+  // it off the same line, just before the date.
+  function labelBefore(line, match) {
+    const s = String(line || "");
+    const i = s.toLowerCase().indexOf(String(match || "").toLowerCase());
+    if (i <= 0) return "";
+    let before = s.slice(0, i).replace(/[._\-–—:=\s]+$/, "").trim();
+    if (before.length > 42) before = before.slice(-42).trim();
+    return /[a-z]{2,}/i.test(before) ? before : "";
   }
   function inferDateMeaning(iso, list) {
     const fields = questionConcepts();
-    // 1) The date is an answer to a question — then it means that question.
-    for (const o of list) {
-      if (o.source.kind === "answer") {
-        const f = fields.find((x) => x.path === o.source.path);
-        if (f && f.concept && f.concept.toLowerCase() !== "when") return { title: f.concept, why: `recorded as “${f.label}”` };
-      }
+    // 1) The date IS the answer to a dated question — then it means that question.
+    const ans = list.find((o) => o.source.kind === "answer");
+    if (ans) {
+      const f = fields.find((x) => x.path === ans.source.path);
+      if (f) return { title: f.concept, detail: ans.line || ans.source.name };
     }
-    // 2) Otherwise read the company the date keeps — match the words around it
-    //    (and the file it came from) against the application's own vocabulary.
+    // 2) The form labels it — read the label the document printed beside it.
+    const labelled = list.find((o) => o.label);
+    if (labelled) return { title: labelled.label, detail: labelled.line };
+    // 3) The words around it match the office's own date vocabulary.
     const hay = list.map((o) => o.source.name + " " + o.context).join(" ").toLowerCase();
     let best = null, bestN = 0;
     for (const f of fields) {
       const n = f.words.filter((w) => hay.includes(w)).length;
-      if (n > bestN) { bestN = n; best = f; }
+      const need = f.words.length >= 2 ? 2 : 1;
+      if (n >= need && n > bestN) { bestN = n; best = f; }
     }
-    if (best && bestN >= 1) return { title: best.concept, why: `the words around it match “${best.label}”` };
-    return { title: "a date", why: list[0] ? list[0].context : "" };
+    if (best) return { title: best.concept, detail: list[0].line || list[0].context };
+    return { title: "a date", detail: list[0] ? (list[0].line || list[0].context) : "" };
   }
   function submissionTimeline(pl) {
     // Automated events, keyed so an admin correction can attach to one.
@@ -7397,7 +7465,7 @@ function initAdminView({ onClose }) {
     for (const [k, l] of [["all", "All"], ["auto", "Automated"], ["manual", "Edited / added"]]) filt.appendChild(new Option(l, k));
     filt.onchange = () => { filterKind = filt.value; draw(); };
     tools.appendChild(filt);
-    const addBtn = $e("button", "tl-tool", "+ Add event");
+    const addBtn = $e("button", "tl-tool", "+ Add");
     addBtn.title = "Add a timeline event of your own";
     addBtn.onclick = () => openTimelineEditor(pl, null);
     tools.appendChild(addBtn);
@@ -7439,7 +7507,7 @@ function initAdminView({ onClose }) {
         ed.onclick = () => openTimelineEditor(pl, e);
         acts.appendChild(ed);
         acts.appendChild(noteButton(pl, { kind: "timeline", key: e.key }, e.title));
-        row.appendChild(acts);
+        mn.appendChild(acts);
         list.appendChild(row);
       }
     }
@@ -7639,6 +7707,22 @@ function initAdminView({ onClose }) {
     ta.placeholder = "Paste templates, each headed by a line like:\n=== Dickson Police Department Incident Report ===\n<text of the template>\n=== TN DCS Letter ===\n<text>";
     tbox.appendChild(ta);
     const tbtn = $e("button", "aview", "Learn from templates"); tbox.appendChild(tbtn);
+    const cbtn = $e("button", "aview", "Learn from starter corpus");
+    cbtn.title = "Load the bundled TN document corpus (police, DCS, court, investigative)";
+    cbtn.onclick = async () => {
+      try {
+        const man = await (await fetch("corpus/manifest.json", { cache: "no-cache" })).json();
+        const blocks = [];
+        for (const doc of (man.documents || [])) {
+          const text = await (await fetch("corpus/" + doc.file, { cache: "no-cache" })).text();
+          blocks.push({ name: doc.kind || doc.title || doc.id, text });
+        }
+        if (!blocks.length) { toast("The corpus is empty.", "warn"); return; }
+        learn(blocks);
+        toast("Learned from " + blocks.length + " corpus docs", "success");
+      } catch (e) { toast("Couldn't load the corpus: " + (e.message || e), "warn"); }
+    };
+    tbox.appendChild(cbtn);
     wrap.appendChild(tbox);
     const sbox = $e("div", "spanel");
     const shead = $e("div", "spanel-head"); shead.appendChild($e("span", "spanel-title", "Reference sources"));
@@ -7688,7 +7772,10 @@ function initAdminView({ onClose }) {
     // ── Top: a dashboard on the submission (2/3) beside its documents (1/3) ──
     const top = $e("div", "sreview");
     top.appendChild(submissionProgress(pl, withAudio, changed));
-    top.appendChild(submissionDocsBox(pl));
+    const topSide = $e("div", "sreview-side");
+    topSide.appendChild(notesWidget(pl));
+    topSide.appendChild(submissionDocsBox(pl));
+    top.appendChild(topSide);
     wrap.appendChild(top);
 
     // ── The answers are the hero content on the left — all of them, expanded
@@ -7726,7 +7813,6 @@ function initAdminView({ onClose }) {
     }
 
     side.appendChild(submissionTimeline(pl));
-    side.appendChild(notesWidget(pl));
     sbody.appendChild(main);
     sbody.appendChild(side);
     wrap.appendChild(sbody);
@@ -8012,6 +8098,9 @@ function initAdminView({ onClose }) {
     const editBtn = $e("button", "aedit", "✎ Correct");
     editBtn.title = "Saved as a new step — nothing earlier is overwritten";
     finalRow.appendChild(editBtn);
+    const histBtn = $e("button", "aedit", "history (" + stepsOf(a).length + ")");
+    histBtn.title = "Who changed this, how, and when — opens over this field";
+    finalRow.appendChild(histBtn);
 
     const editor = $e("div", "aedit-area");
     editor.hidden = true;
@@ -8111,7 +8200,17 @@ function initAdminView({ onClose }) {
       }
       timeline.appendChild(item);
     });
-    card.appendChild(timeline);
+    // The history is not the hero — it opens over the field on demand.
+    histBtn.onclick = () => {
+      const scrim = ensureModal();
+      scrim.querySelector(".dochead").textContent = labelFor(a.path) + " — history";
+      const body2 = scrim.querySelector(".docbody");
+      body2.innerHTML = "";
+      const wrap2 = $e("div", "hist-modal");
+      wrap2.appendChild(timeline);
+      body2.appendChild(wrap2);
+      scrim.classList.add("on");
+    };
     return card;
   }
 
@@ -10136,6 +10235,7 @@ async function readDocumentText(doc, media) {
       // sits. This is what lets the text be laid back ON the page, selectable
       // and editable, in the same geography it was read from.
       pages: [{ page: 1, width: W, height: H, text: content.text || "", elements: (content.elements || []).map((e) => ({ text: e.text, region: e.region })) }],
+      fields: extractFormFields(content.text || screen.raw || ""),
       guess,
       eyes: rec.eyes,
       chosen: page.chosen || null,
