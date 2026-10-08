@@ -4185,7 +4185,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDoc()
 // still shows one view: the page alone, or the plain text. `onSaveText(text,
 // pages)` persists an edit.
 function docSurface(doc, nativeEl, onSaveText) {
-  const pages = Array.isArray(doc.ocrPages) && doc.ocrPages.length ? doc.ocrPages : [{ page: 1, width: doc.width || 1000, height: doc.height || 1000, text: doc.ocrText || "", elements: [] }];
+  const pages = Array.isArray(doc.ocrPages) && doc.ocrPages.length ? doc.ocrPages : [{ page: 1, width: doc.width || 0, height: doc.height || 0, text: doc.ocrText || "", elements: [] }];
   const wrap = $e("div", "docsurface");
   const tabs = $e("div", "ds-tabs");
   let mode = "page", editing = false;
@@ -4200,6 +4200,13 @@ function docSurface(doc, nativeEl, onSaveText) {
   const stage = $e("div", "ds-stage");
   wrap.appendChild(stage);
 
+  // The file's own dimensions, once the browser has decoded it.
+  const nativeSize = () => {
+    const w = nativeEl.naturalWidth || nativeEl.videoWidth || 0;
+    const h = nativeEl.naturalHeight || nativeEl.videoHeight || 0;
+    return w && h ? { w, h } : null;
+  };
+
   const save = () => {
     if (!onSaveText) return;
     const p = pages[0];
@@ -4209,14 +4216,22 @@ function docSurface(doc, nativeEl, onSaveText) {
   function draw() {
     stage.innerHTML = "";
     const p = pages[0];
-    const W = p.width || 1000, H = p.height || 1000;
+    // The page's shape. Prefer the measured page (the coordinates the text was
+    // read in). When there are none — a doc whose reading predates positions,
+    // or a video — take the true shape from the file itself, so it is never
+    // stretched to a guessed (square) box.
+    const nat = nativeSize();
+    let W = p.width || (nat && nat.w) || 0, H = p.height || (nat && nat.h) || 0;
+    if (!W || !H) { W = 1000; H = 1000; }
     const hasPos = (p.elements || []).some((e) => e.region);
     const boxW = stage.clientWidth || 760;
     const scale = boxW / W;
     if (mode === "page" || hasPos) stage.style.height = (H * scale) + "px";
     else stage.style.height = "auto";
     if (mode === "page") {
-      nativeEl.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill";
+      // contain, never fill: the image keeps its aspect ratio even if the
+      // measured page and the file disagree (a rotated phone photo, say).
+      nativeEl.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain";
       stage.appendChild(nativeEl);
     }
     if (hasPos) {
@@ -4249,6 +4264,9 @@ function docSurface(doc, nativeEl, onSaveText) {
   pageTab.onclick = () => { mode = "page"; draw(); };
   textTab.onclick = () => { mode = "text"; draw(); };
   editT.onclick = () => { if (!onSaveText) return; editing = !editing; editT.classList.toggle("on", editing); hint.textContent = editing ? "editing — click away to save" : "select to copy · edit to correct"; draw(); };
+  // The file's true shape can arrive after the first paint — redraw when it does.
+  if (nativeEl.tagName === "IMG") nativeEl.addEventListener("load", draw, { once: true });
+  else if (nativeEl.tagName === "VIDEO") nativeEl.addEventListener("loadedmetadata", draw, { once: true });
   requestAnimationFrame(draw);
   return wrap;
 }
@@ -6483,7 +6501,8 @@ function initAdminView({ onClose }) {
     } else if (active === "access") {
       body.appendChild(renderAccessLog());
     } else if (active === "docai") {
-      body.appendChild(renderDocAI());
+      try { body.appendChild(renderDocAI()); }
+      catch (e) { console.error("[docai]", e); body.appendChild($e("div", "aempty", "DocAI couldn't render: " + (e.message || e))); }
     } else if (active === "pipeline") {
       const pipelineData = collectPipelineData(ctx);
       body.appendChild(renderPipeline(pipelineData));
@@ -10539,6 +10558,10 @@ function ocrAttrs(res, by) {
     ocrStatus: text ? "done" : "empty",
     ocrAt: nowIso(),
     ocrBy: by || null,
+    // The file's true shape, kept top-level so the viewer can hold the aspect
+    // ratio before the media has decoded.
+    width: res.width || null,
+    height: res.height || null,
     ocrMeta: { engine: OCR_ENGINE_LABEL, width: res.width || null, height: res.height || null, regions: (res.elements || []).length },
     ocrSourceKind: res.sourceKind || null,
     ocrIgnored: res.ignored || null,
@@ -14073,4 +14096,6 @@ document.addEventListener("DOMContentLoaded", () => {
   } catch (e) {}
 });
 
-</script></body></html>
+</script>
+<footer id="buildFoot" style="text-align:center;font:500 10px 'IBM Plex Mono',monospace;color:var(--muted);padding:20px 0 28px"></footer>
+</body></html>
