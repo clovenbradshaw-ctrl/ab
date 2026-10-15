@@ -6119,11 +6119,34 @@ function _dbApplyMerges(raw) {
     if (!r || r === src) continue;
     const t = out.get(r), s = out.get(src);
     if (!t || !s) continue;
+    // Fold the absorbed submission's events in, by time. Answers are the part
+    // that can collide: for a field both records answered, the later write
+    // wins (events are ordered by time, and the fold takes the last), and an
+    // answer that merely repeats what is already current is not recorded
+    // again — only answers that are different carry over. Everything that
+    // isn't an answer (files, notes, letters) is unioned by id.
     const have = new Set(t.events.map((e) => e.id));
+    const incoming = [];
     for (const e of s.events) {
       if (have.has(e.id) || (e.payload && e.payload.entity === "merge")) continue;
-      t.events.push(e);
+      incoming.push({ e, fromSource: true });
     }
+    const combined = t.events.map((e) => ({ e, fromSource: false })).concat(incoming);
+    combined.sort((a, b) => String(a.e.at || "").localeCompare(String(b.e.at || "")));
+    const current = new Map();
+    const kept = [];
+    for (const { e, fromSource } of combined) {
+      const p = e.payload;
+      const isAnswer = e.op === "DEF" && p && typeof p === "object" && typeof p.path === "string";
+      if (isAnswer) {
+        const key = String(p.anchor || "") + "\u0000" + p.path;
+        const val = JSON.stringify(p.value === undefined ? null : p.value);
+        if (fromSource && current.get(key) === val) continue; // same answer — nothing to record
+        current.set(key, val);
+      }
+      kept.push(e);
+    }
+    t.events = kept;
     t.merged_from.push({ submission_id: src, user_id: s.user_id, name: _dbDisplayName(s) });
     if ((s.updated_at || "") > (t.updated_at || "")) t.updated_at = s.updated_at;
     out.delete(src);
@@ -6155,6 +6178,92 @@ async function _dbLoadAndMerge() {
   }
   _dbReadWarned = false;
   _dbRebuild();
+}
+
+// ── Admin password reset ──
+// One-time temporary password for a person, set through the Synapse admin
+// API with the office's own session token. The office account must be a
+// homeserver admin; if it isn't, the server says so and nothing changes.
+function genTempPassword() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no look-alikes
+  const bytes = new Uint8Array(14);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+async function adminResetPassword(ctx, userId) {
+  // The dashboard's ctx no longer carries a Matrix client (stores are
+  // database-backed); the signed-in session holds the office token.
+  const client = (ctx && ctx.client) || (loginState && loginState.client);
+  const token = client && client.getAccessToken && client.getAccessToken();
+  if (!token) throw new Error("sign in with the office account first");
+  const base = String((client && client.baseUrl) || HYPHAE_HS).replace(/\/+$/, "");
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  const password = genTempPassword();
+  const res = await fetch(base + "/_synapse/admin/v1/reset_password/" + encodeURIComponent(userId), {
+    method: "POST", headers, body: JSON.stringify({ new_password: password, logout_devices: false }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error || ""; } catch {}
+    if (res.status === 403) throw new Error("this office account isn't a homeserver admin" + (detail ? " (" + detail + ")" : ""));
+    if (res.status === 404) throw new Error("that account doesn't exist on this server");
+    throw new Error(detail || ("server said " + res.status));
+  }
+  // The address on their account, so the note can be sent in one click.
+  let email = null;
+  try {
+    const u = await fetch(base + "/_synapse/admin/v2/users/" + encodeURIComponent(userId), { headers });
+    if (u.ok) {
+      const body = await u.json();
+      const t = (body.threepids || []).find((x) => x.medium === "email");
+      email = t ? t.address : null;
+    }
+  } catch {}
+  return { password, email };
+}
+function showTempPasswordModal({ name, userId, password, email }) {
+  const back = document.createElement("div");
+  back.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+  const card = document.createElement("div");
+  card.style.cssText = "background:var(--surface,#fff);color:var(--ink,#111);border-radius:12px;max-width:480px;width:100%;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.25)";
+  const h = document.createElement("div");
+  h.style.cssText = "font:600 15px Inter,sans-serif;margin-bottom:6px";
+  h.textContent = "Temporary password for " + name;
+  const note = document.createElement("div");
+  note.style.cssText = "font-size:12.5px;color:var(--muted,#666);margin-bottom:10px;line-height:1.5";
+  note.textContent = "Shown once. Send it to them now — it isn't stored here. They sign in with their username (" + userId + ") and this password.";
+  const box = document.createElement("div");
+  box.style.cssText = "font:600 18px 'IBM Plex Mono',monospace;letter-spacing:.04em;padding:12px;border:1px dashed var(--line,#ccc);border-radius:10px;text-align:center;user-select:all;margin-bottom:12px";
+  box.textContent = password;
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
+  const copy = document.createElement("button");
+  copy.className = "aview"; copy.textContent = "Copy";
+  copy.onclick = async () => { try { await navigator.clipboard.writeText(password); toast("Password copied", "success"); } catch { toast("Select the password and copy it"); } };
+  row.appendChild(copy);
+  if (email) {
+    const mail = document.createElement("a");
+    mail.className = "aview";
+    mail.style.textDecoration = "none";
+    const subject = "Your password has been reset";
+    const body = "Your password for the Feedback Platform was reset.\n\nUsername: " + String(userId).replace(/^@/, "").replace(/:.*$/, "") + "\nTemporary password: " + password + "\n\nPlease sign in with it.";
+    mail.href = "mailto:" + encodeURIComponent(email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+    mail.textContent = "✉ Email it to " + email;
+    row.appendChild(mail);
+  } else {
+    const none = document.createElement("span");
+    none.style.cssText = "font-size:12px;color:var(--muted,#666);align-self:center";
+    none.textContent = "No email on this account — pass it on another way.";
+    row.appendChild(none);
+  }
+  const done = document.createElement("button");
+  done.className = "aview"; done.textContent = "Done"; done.style.marginLeft = "auto";
+  done.onclick = () => back.remove();
+  row.appendChild(done);
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  card.append(h, note, box, row);
+  back.appendChild(card);
+  document.body.appendChild(back);
 }
 
 function showMergePicker(targetName, others, onPick) {
@@ -6916,6 +7025,26 @@ function initAdminView({ onClose }) {
             });
           };
           bar.appendChild(merge);
+
+          // Reset this person's password: sets a one-time temporary password
+          // through the homeserver's admin API (as the signed-in office
+          // account) and hands it to you to send — shown once, with a
+          // prefilled email to the address on their account when there is one.
+          const reset = document.createElement("button");
+          reset.className = "aview";
+          reset.textContent = "🔑 Reset password…";
+          reset.title = "Set a temporary password for this person and send it to them";
+          reset.onclick = async () => {
+            const who = viewing.applicantName || sub.user_id;
+            if (!window.confirm("Reset the password for " + who + "?\n\nTheir current password stops working and a temporary one is created. They stay signed in on devices they're already using.")) return;
+            try {
+              const r = await adminResetPassword(ctx, sub.user_id);
+              showTempPasswordModal({ name: who, userId: sub.user_id, password: r.password, email: r.email });
+            } catch (e) {
+              toast("Couldn't reset the password: " + (e.message || e), "warn");
+            }
+          };
+          bar.appendChild(reset);
         }
         const query = document.createElement("input");
         query.type = "search";
