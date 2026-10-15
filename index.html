@@ -973,6 +973,17 @@ button.primary{background:var(--ink);color:#fff;border:1px solid var(--ink)}
 .lang-gate h1{font-family:Fraunces,Georgia,serif;font-weight:560;font-size:20px;margin:0 0 22px}
 .lang-btn{display:block;width:100%;padding:14px;margin-bottom:10px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:600 16px Inter;cursor:pointer;transition:background .15s ease,border-color .15s ease}
 .lang-btn:hover{background:var(--seal-soft);border-color:var(--seal)}
+.acct-card{text-align:left!important}
+.acct-card h1{text-align:center}
+.acct-card label{display:block;font:600 12.5px Inter,sans-serif;margin:12px 0 5px;color:var(--ink)}
+.acct-card input{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font:inherit;font-size:15px;background:var(--surface);color:var(--ink)}
+.acct-card .acct-btn{width:100%;margin-top:16px;padding:12px 14px;border:0;border-radius:11px;background:var(--seal);color:#fff;font:600 15px Inter,sans-serif;cursor:pointer}
+.acct-card .acct-btn:disabled{opacity:.55;cursor:default}
+.acct-card .acct-link{display:block;margin:12px auto 0;background:none;border:0;color:var(--muted);text-decoration:underline;font-size:13px;cursor:pointer}
+.acct-card .acct-note{font-size:12.5px;line-height:1.5;color:var(--muted);margin:8px 0 0}
+.acct-card .acct-err{margin-top:12px;padding:9px 11px;border-radius:9px;background:var(--turn-soft,#fdf1e3);border:1px solid var(--turn,#d9a15b);font-size:13px;display:none}
+.acct-card .acct-err.on{display:block}
+.acct-card .hidden{display:none}
 .lang-gate .staff{margin-top:18px;font-size:12px;color:var(--muted);background:none;border:none;text-decoration:underline;cursor:pointer}
 .entry-loader{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;background:var(--paper)}
 .entry-loader.hidden{display:none}
@@ -1016,6 +1027,62 @@ nav .setup .rail-toggle{display:inline-flex}
   </div>
 </div>
 
+<!-- Account gate: a username, a password and an email (so a forgotten
+     password can be reset — the message comes from archon@intelechia.com). -->
+<div class="lang-gate hidden" id="acctGate">
+  <div class="card acct-card">
+    <div class="logo">◈</div>
+    <h1 id="acctTitle">Create your account</h1>
+    <div class="acct-err" id="acctErr"></div>
+
+    <div id="acctPanelCreate">
+      <label id="acctLUser" for="acctUser">Username</label>
+      <input id="acctUser" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <label id="acctLEmail" for="acctEmail">Email (for password reset)</label>
+      <input id="acctEmail" type="email" autocomplete="email">
+      <label id="acctLPass" for="acctPass">Password</label>
+      <input id="acctPass" type="password" autocomplete="new-password">
+      <label id="acctLPass2" for="acctPass2">Repeat password</label>
+      <input id="acctPass2" type="password" autocomplete="new-password">
+      <button class="acct-btn" id="acctCreateBtn" type="button">Create account</button>
+      <button class="acct-link" id="acctToSignin" type="button">I already have an account</button>
+    </div>
+
+    <div id="acctPanelVerify" class="hidden">
+      <p class="acct-note" id="acctVerifyNote"></p>
+      <button class="acct-btn" id="acctVerifyBtn" type="button">I've confirmed — continue</button>
+      <button class="acct-link" id="acctResend" type="button">Send it again</button>
+      <button class="acct-link" id="acctVerifyBack" type="button">Back</button>
+    </div>
+
+    <div id="acctPanelSignin" class="hidden">
+      <label id="acctLUser2" for="acctSiUser">Username</label>
+      <input id="acctSiUser" autocomplete="username" autocapitalize="none" spellcheck="false">
+      <label id="acctLPass3" for="acctSiPass">Password</label>
+      <input id="acctSiPass" type="password" autocomplete="current-password">
+      <button class="acct-btn" id="acctSigninBtn" type="button">Sign in</button>
+      <button class="acct-link" id="acctForgot" type="button">Forgot password?</button>
+      <button class="acct-link" id="acctToCreate" type="button">Create an account</button>
+    </div>
+
+    <div id="acctPanelForgot" class="hidden">
+      <p class="acct-note" id="acctForgotNote"></p>
+      <label id="acctLEmail2" for="acctFgEmail">Email</label>
+      <input id="acctFgEmail" type="email" autocomplete="email">
+      <button class="acct-btn" id="acctFgSend" type="button">Send reset link</button>
+      <button class="acct-link" id="acctFgBack" type="button">Back to sign in</button>
+    </div>
+
+    <div id="acctPanelReset" class="hidden">
+      <p class="acct-note" id="acctResetNote"></p>
+      <label id="acctLNew" for="acctNewPass">New password</label>
+      <input id="acctNewPass" type="password" autocomplete="new-password">
+      <button class="acct-btn" id="acctResetBtn" type="button">Set new password</button>
+      <button class="acct-link" id="acctResetBack" type="button">Back to sign in</button>
+    </div>
+  </div>
+</div>
+
 <!-- Brief loader while a private session is quietly set up. Times out fast —
      typing is never blocked waiting on the network. -->
 <div class="entry-loader hidden" id="entryLoader">
@@ -1044,7 +1111,7 @@ nav .setup .rail-toggle{display:inline-flex}
              reviewer's account and read what is sent afterward. This wording
              claims exactly what the code guarantees today — the server stores
              ciphertext it has no key for — and no more. -->
-        <li>Encrypted on your device before it's sent — the server stores it without being able to read it</li>
+        <li>Saved to your account on our server — only you and the reviewing office can open it</li>
         <li>Come back from any device and pick up where you left off</li>
       </ul>
       <button class="login-btn seal" id="loginSignup">Create an account →</button>
@@ -12643,6 +12710,228 @@ async function chooseLang(lang) {
 // the homeserver is slow or unreachable, falls back to local-only (in-browser)
 // storage immediately rather than make anyone wait on it — their answers are
 // never lost, they just aren't synced to an account yet this session.
+// ── Account gate ──
+// Families make a real account: username, password and an email. The email is
+// verified by the homeserver at sign-up (m.login.email.identity) and is what a
+// forgotten password is reset through — those messages are sent from
+// archon@intelechia.com (Synapse's notif_from).
+const ACCT_STR = {
+  en: {
+    createTitle: "Create your account", signinTitle: "Sign in", forgotTitle: "Reset your password", verifyTitle: "Check your email", resetTitle: "Choose a new password",
+    user: "Username", email: "Email (for password reset)", pass: "Password", pass2: "Repeat password", newPass: "New password",
+    create: "Create account", haveOne: "I already have an account", signin: "Sign in", forgot: "Forgot password?", makeOne: "Create an account",
+    cont: "I've confirmed — continue", again: "Send it again", back: "Back", sendLink: "Send reset link", backToSignin: "Back to sign in", setNew: "Set new password",
+    verifyNote: (e) => "We sent a message to " + e + " from archon@intelechia.com. Open it, tap the link, then come back here and continue.",
+    forgotNote: "Enter the email you signed up with. We'll send a reset link from archon@intelechia.com.",
+    resetNote: (e) => "We sent a link to " + e + " from archon@intelechia.com. Open it, tap the link, then choose a new password here.",
+    errUser: "Pick a username with 3 or more letters or numbers (no spaces).", errEmail: "Enter a valid email address.", errPass: "Use a password of at least 8 characters.", errMatch: "The two passwords don't match.",
+    errTaken: "That username is taken — try another.", errUnverified: "We haven't seen you confirm the email yet. Open the link in the message, then try again.",
+    errSignin: "That username and password didn't match.", errNet: "Couldn't reach the server. Check your connection and try again.", errNoEmail: "We couldn't find an account with that email.",
+    resetDone: "Your password is changed. Sign in with it now.", sent: "Sent.",
+  },
+  es: {
+    createTitle: "Crea tu cuenta", signinTitle: "Iniciar sesión", forgotTitle: "Restablecer tu contraseña", verifyTitle: "Revisa tu correo", resetTitle: "Elige una nueva contraseña",
+    user: "Usuario", email: "Correo (para restablecer la contraseña)", pass: "Contraseña", pass2: "Repite la contraseña", newPass: "Nueva contraseña",
+    create: "Crear cuenta", haveOne: "Ya tengo una cuenta", signin: "Iniciar sesión", forgot: "¿Olvidaste tu contraseña?", makeOne: "Crear una cuenta",
+    cont: "Ya confirmé — continuar", again: "Enviar de nuevo", back: "Atrás", sendLink: "Enviar enlace", backToSignin: "Volver a iniciar sesión", setNew: "Guardar nueva contraseña",
+    verifyNote: (e) => "Enviamos un mensaje a " + e + " desde archon@intelechia.com. Ábrelo, toca el enlace y vuelve aquí para continuar.",
+    forgotNote: "Escribe el correo con el que te registraste. Te enviaremos un enlace desde archon@intelechia.com.",
+    resetNote: (e) => "Enviamos un enlace a " + e + " desde archon@intelechia.com. Ábrelo, toca el enlace y elige aquí una nueva contraseña.",
+    errUser: "Elige un usuario de 3 o más letras o números (sin espacios).", errEmail: "Escribe un correo válido.", errPass: "Usa una contraseña de al menos 8 caracteres.", errMatch: "Las contraseñas no coinciden.",
+    errTaken: "Ese usuario ya existe — prueba otro.", errUnverified: "Aún no vemos confirmado el correo. Abre el enlace del mensaje e inténtalo de nuevo.",
+    errSignin: "Ese usuario y contraseña no coinciden.", errNet: "No se pudo conectar. Revisa tu conexión e inténtalo de nuevo.", errNoEmail: "No encontramos una cuenta con ese correo.",
+    resetDone: "Tu contraseña cambió. Inicia sesión con ella.", sent: "Enviado.",
+  },
+};
+const ACCT = { lang: "en", secret: null, sid: null, attempt: 0, username: "", password: "", email: "", flow: "register" };
+const acctT = () => ACCT_STR[ACCT.lang] || ACCT_STR.en;
+const acctEl = (id) => document.getElementById(id);
+function acctSecret() {
+  const b = new Uint8Array(16); crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+function acctErr(msg) {
+  const el = acctEl("acctErr");
+  el.textContent = msg || "";
+  el.classList.toggle("on", !!msg);
+}
+function acctPanel(name) {
+  for (const n of ["Create", "Verify", "Signin", "Forgot", "Reset"]) acctEl("acctPanel" + n).classList.toggle("hidden", n !== name);
+  const t = acctT();
+  acctEl("acctTitle").textContent = { Create: t.createTitle, Verify: t.verifyTitle, Signin: t.signinTitle, Forgot: t.forgotTitle, Reset: t.resetTitle }[name];
+  acctErr("");
+}
+function acctApplyText() {
+  const t = acctT();
+  const set = (id, v) => { acctEl(id).textContent = v; };
+  set("acctLUser", t.user); set("acctLUser2", t.user); set("acctLEmail", t.email); set("acctLEmail2", t.email.replace(/ \(.*\)$/, ""));
+  set("acctLPass", t.pass); set("acctLPass2", t.pass2); set("acctLPass3", t.pass); set("acctLNew", t.newPass);
+  set("acctCreateBtn", t.create); set("acctToSignin", t.haveOne); set("acctSigninBtn", t.signin); set("acctForgot", t.forgot); set("acctToCreate", t.makeOne);
+  set("acctVerifyBtn", t.cont); set("acctResend", t.again); set("acctVerifyBack", t.back); set("acctFgSend", t.sendLink); set("acctFgBack", t.backToSignin);
+  set("acctResetBtn", t.setNew); set("acctResetBack", t.backToSignin); set("acctForgotNote", t.forgotNote);
+}
+function showAcctGate(lang) {
+  ACCT.lang = lang === "es" ? "es" : "en";
+  acctApplyText();
+  acctPanel("Create");
+  acctEl("acctGate").classList.remove("hidden");
+}
+function hideAcctGate() { acctEl("acctGate").classList.add("hidden"); }
+
+async function acctPost(path, body) {
+  const res = await fetch(HYPHAE_HS.replace(/\/+$/, "") + path, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+async function acctRequestToken(flow, email) {
+  ACCT.attempt += 1;
+  const path = flow === "register" ? "/_matrix/client/v3/register/email/requestToken" : "/_matrix/client/v3/account/password/email/requestToken";
+  const r = await acctPost(path, { client_secret: ACCT.secret, email, send_attempt: ACCT.attempt });
+  if (!r.ok) {
+    if (r.data.errcode === "M_THREEPID_IN_USE") throw Object.assign(new Error("email in use"), { code: "email-in-use" });
+    if (r.data.errcode === "M_THREEPID_NOT_FOUND") throw Object.assign(new Error("not found"), { code: "no-email" });
+    throw new Error(r.data.error || ("HTTP " + r.status));
+  }
+  ACCT.sid = r.data.sid;
+}
+function acctValidUsername(v) { return /^[a-z0-9._=\/-]{3,40}$/.test(v); }
+function acctValidEmail(v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v); }
+
+async function acctEnter(data) {
+  showEntryLoader(ACCT.lang === "es" ? "Abriendo tu cuenta…" : "Opening your account…");
+  try {
+    const client = await withTimeout(setupSilentClient(HYPHAE_HS, data), 10000);
+    saveSilentAccount(HYPHAE_HS, data);
+    loginState = { kind: "matrix", client, userId: data.user_id };
+  } catch (e) {
+    hideEntryLoader();
+    acctErr(acctT().errNet);
+    return;
+  }
+  hideEntryLoader();
+  hideAcctGate();
+  hideLogin();
+  await boot();
+}
+
+async function acctStartCreate() {
+  const t = acctT();
+  const username = acctEl("acctUser").value.trim().toLowerCase();
+  const email = acctEl("acctEmail").value.trim();
+  const pw = acctEl("acctPass").value, pw2 = acctEl("acctPass2").value;
+  if (!acctValidUsername(username)) return acctErr(t.errUser);
+  if (!acctValidEmail(email)) return acctErr(t.errEmail);
+  if (pw.length < 8) return acctErr(t.errPass);
+  if (pw !== pw2) return acctErr(t.errMatch);
+  const btn = acctEl("acctCreateBtn"); btn.disabled = true;
+  try {
+    const avail = await fetch(HYPHAE_HS.replace(/\/+$/, "") + "/_matrix/client/v3/register/available?username=" + encodeURIComponent(username));
+    if (avail.status === 400) { acctErr(t.errTaken); return; }
+    ACCT.username = username; ACCT.password = pw; ACCT.email = email;
+    ACCT.secret = acctSecret(); ACCT.attempt = 0; ACCT.flow = "register";
+    await acctRequestToken("register", email);
+    acctEl("acctVerifyNote").textContent = t.verifyNote(email);
+    acctPanel("Verify");
+  } catch (e) {
+    acctErr(e.code === "email-in-use" ? t.errTaken.replace(/username/i, "email") : t.errNet);
+  } finally { btn.disabled = false; }
+}
+
+async function acctFinishCreate() {
+  const t = acctT();
+  const btn = acctEl("acctVerifyBtn"); btn.disabled = true;
+  try {
+    const body = { username: ACCT.username, password: ACCT.password, initial_device_display_name: "Feedback Platform" };
+    let r = await acctPost("/_matrix/client/v3/register", body);
+    if (r.status === 401 && r.data.session) {
+      r = await acctPost("/_matrix/client/v3/register", {
+        ...body,
+        auth: { type: "m.login.email.identity", threepid_creds: { sid: ACCT.sid, client_secret: ACCT.secret }, session: r.data.session },
+      });
+    }
+    if (r.ok && r.data.access_token) { await acctEnter(r.data); return; }
+    if (r.data.errcode === "M_USER_IN_USE") { acctPanel("Create"); acctErr(t.errTaken); return; }
+    if (r.status === 401 || r.data.errcode === "M_UNAUTHORIZED") { acctErr(t.errUnverified); return; }
+    acctErr(r.data.error || t.errNet);
+  } catch { acctErr(t.errNet); }
+  finally { btn.disabled = false; }
+}
+
+async function acctSignin() {
+  const t = acctT();
+  const user = acctEl("acctSiUser").value.trim().toLowerCase().replace(/^@/, "").replace(/:.*$/, "");
+  const pw = acctEl("acctSiPass").value;
+  if (!user || !pw) return acctErr(t.errSignin);
+  const btn = acctEl("acctSigninBtn"); btn.disabled = true;
+  try {
+    const r = await acctPost("/_matrix/client/v3/login", {
+      type: "m.login.password", identifier: { type: "m.id.user", user }, password: pw, initial_device_display_name: "Feedback Platform",
+    });
+    if (r.ok && r.data.access_token) { await acctEnter(r.data); return; }
+    if (r.status === 429) { acctErr(t.errNet); return; }
+    acctErr(t.errSignin);
+  } catch { acctErr(t.errNet); }
+  finally { btn.disabled = false; }
+}
+
+async function acctSendReset() {
+  const t = acctT();
+  const email = acctEl("acctFgEmail").value.trim();
+  if (!acctValidEmail(email)) return acctErr(t.errEmail);
+  const btn = acctEl("acctFgSend"); btn.disabled = true;
+  try {
+    ACCT.secret = acctSecret(); ACCT.attempt = 0; ACCT.flow = "reset"; ACCT.email = email;
+    await acctRequestToken("reset", email);
+    acctEl("acctResetNote").textContent = t.resetNote(email);
+    acctPanel("Reset");
+  } catch (e) { acctErr(e.code === "no-email" ? t.errNoEmail : t.errNet); }
+  finally { btn.disabled = false; }
+}
+
+async function acctFinishReset() {
+  const t = acctT();
+  const pw = acctEl("acctNewPass").value;
+  if (pw.length < 8) return acctErr(t.errPass);
+  const btn = acctEl("acctResetBtn"); btn.disabled = true;
+  try {
+    const body = { new_password: pw, logout_devices: false };
+    let r = await acctPost("/_matrix/client/v3/account/password", body);
+    if (r.status === 401 && r.data.session) {
+      r = await acctPost("/_matrix/client/v3/account/password", {
+        ...body,
+        auth: { type: "m.login.email.identity", threepid_creds: { sid: ACCT.sid, client_secret: ACCT.secret }, session: r.data.session },
+      });
+    }
+    if (r.ok) { acctPanel("Signin"); acctEl("acctSiPass").value = ""; acctErr(""); toast(t.resetDone, "success"); return; }
+    if (r.status === 401 || r.data.errcode === "M_UNAUTHORIZED") { acctErr(t.errUnverified); return; }
+    acctErr(r.data.error || t.errNet);
+  } catch { acctErr(t.errNet); }
+  finally { btn.disabled = false; }
+}
+
+function wireAcctGate() {
+  acctEl("acctCreateBtn").onclick = acctStartCreate;
+  acctEl("acctVerifyBtn").onclick = acctFinishCreate;
+  acctEl("acctResend").onclick = async () => {
+    try { await acctRequestToken("register", ACCT.email); acctErr(""); toast(acctT().sent); }
+    catch { acctErr(acctT().errNet); }
+  };
+  acctEl("acctVerifyBack").onclick = () => acctPanel("Create");
+  acctEl("acctToSignin").onclick = () => acctPanel("Signin");
+  acctEl("acctToCreate").onclick = () => acctPanel("Create");
+  acctEl("acctSigninBtn").onclick = acctSignin;
+  acctEl("acctForgot").onclick = () => acctPanel("Forgot");
+  acctEl("acctFgSend").onclick = acctSendReset;
+  acctEl("acctFgBack").onclick = () => acctPanel("Signin");
+  acctEl("acctResetBtn").onclick = acctFinishReset;
+  acctEl("acctResetBack").onclick = () => acctPanel("Signin");
+  for (const id of ["acctSiPass"]) acctEl(id).addEventListener("keydown", (e) => { if (e.key === "Enter") acctSignin(); });
+  acctEl("acctPass2").addEventListener("keydown", (e) => { if (e.key === "Enter") acctStartCreate(); });
+}
+
 async function startConstituentSession(lang) {
   if (!HYPHAE_HS) {
     // Matrix disabled — go straight to local storage
@@ -12652,21 +12941,10 @@ async function startConstituentSession(lang) {
     await boot();
     return;
   }
-  showEntryLoader(lang === "es" ? "Preparando tu sesión privada…" : "Setting up your private session…");
-  let ready = false;
-  try {
-    const registered = await withTimeout(registerSilentAccount(HYPHAE_HS), 4000);
-    const client = await withTimeout(setupSilentClient(HYPHAE_HS, registered), 6000);
-    saveSilentAccount(HYPHAE_HS, registered);
-    loginState = { kind: "matrix", client, userId: registered.user_id };
-    ready = true;
-  } catch (e) {
-    console.warn("Silent account provisioning skipped for now — continuing on local storage:", e);
-  }
-  if (!ready) loginState = { kind: "demo", userId: "@demo:local" };
+  // A real account (username, password, email) — no more silent accounts.
   hideEntryLoader();
   hideLogin();
-  await boot();
+  showAcctGate(lang);
 }
 
 // ── Submission view ──
@@ -14617,6 +14895,7 @@ function closeQuestionWizard() {
 document.addEventListener("DOMContentLoaded", () => {
   wireLogin();
   wireLangGate();
+  wireAcctGate();
   wirePasswordModal();
   wireSectionReview();
   wireCompose();
