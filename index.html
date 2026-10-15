@@ -4273,7 +4273,7 @@ class MatrixMedia {
 //
 // A file that fits in one piece is stored exactly as before (url/iv/hash,
 // no additional data), so older records and older readers keep working.
-const MEDIA_CHUNK_BYTES = 8 * 1024 * 1024;
+const MEDIA_CHUNK_BYTES = 4 * 1024 * 1024;
 
 function pieceLabel(index, count) { return new TextEncoder().encode(`ab-media/v1 ${index + 1}/${count}`); }
 
@@ -6020,13 +6020,63 @@ function _dbConfigure() {
   });
 }
 
-async function _dbLoadAndMerge() {
-  dbSubmissions = [];
+// Raw log as the server returned it, and the view the office sees: the raw
+// log with merges applied. A merge is an appended record on the absorbed
+// submission ("these events belong to <into>"); an unmerge is a later record
+// that clears it. Nothing is ever moved or deleted, so both are reversible.
+let dbRaw = [];
+function _dbDisplayName(s) {
+  try { return fold(s.events).anchors?.applicant?.complainant_name?.value || ""; } catch { return ""; }
+}
+function _dbApplyMerges(raw) {
+  const byId = new Map(raw.map((s) => [s.submission_id, s]));
+  const into = new Map();
+  for (const s of raw) {
+    let t = null;
+    for (const e of s.events) {
+      const p = e && e.payload;
+      if (!p || p.entity !== "merge") continue;
+      t = p.attrs && p.attrs.into ? String(p.attrs.into) : null;
+    }
+    if (t && t !== s.submission_id && byId.has(t)) into.set(s.submission_id, t);
+  }
+  const rootOf = (sid) => {
+    const seen = new Set();
+    while (into.has(sid) && !seen.has(sid)) { seen.add(sid); sid = into.get(sid); }
+    return seen.has(sid) ? null : sid; // null = a cycle; leave those alone
+  };
+  const out = new Map();
+  for (const s of raw) out.set(s.submission_id, { ...s, events: s.events.slice(), merged_from: [] });
+  for (const src of into.keys()) {
+    const r = rootOf(src);
+    if (!r || r === src) continue;
+    const t = out.get(r), s = out.get(src);
+    if (!t || !s) continue;
+    const have = new Set(t.events.map((e) => e.id));
+    for (const e of s.events) {
+      if (have.has(e.id) || (e.payload && e.payload.entity === "merge")) continue;
+      t.events.push(e);
+    }
+    t.merged_from.push({ submission_id: src, user_id: s.user_id, name: _dbDisplayName(s) });
+    if ((s.updated_at || "") > (t.updated_at || "")) t.updated_at = s.updated_at;
+    out.delete(src);
+  }
+  for (const t of out.values()) {
+    if (t.merged_from.length) t.events.sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+  }
+  return [...out.values()];
+}
+function _dbRebuild() {
+  dbSubmissions = _dbApplyMerges(dbRaw);
   dbByRoom = new Map();
+  for (const s of dbSubmissions) if (s && s.room_id) dbByRoom.set(s.room_id, s);
+}
+
+async function _dbLoadAndMerge() {
   if (!window.ABDB?.available()) return;
   try {
     const res = await window.ABDB.list();
-    dbSubmissions = (res && res.submissions) || [];
+    dbRaw = (res && res.submissions) || [];
   } catch (e) {
     console.warn("[db] couldn't read the submissions database:", e);
     // Say so once: an empty dashboard otherwise reads as "nobody has submitted".
@@ -6034,10 +6084,71 @@ async function _dbLoadAndMerge() {
       _dbReadWarned = true;
       toast("Couldn't read submissions from the server just now — retrying. (" + (e && e.message ? e.message : e) + ")", "warn");
     }
-    return;
+    return; // keep showing the last good read
   }
   _dbReadWarned = false;
-  for (const s of dbSubmissions) if (s && s.room_id) dbByRoom.set(s.room_id, s);
+  _dbRebuild();
+}
+
+function showMergePicker(targetName, others, onPick) {
+  const back = document.createElement("div");
+  back.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+  const card = document.createElement("div");
+  card.style.cssText = "background:var(--surface,#fff);color:var(--ink,#111);border-radius:12px;max-width:520px;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,.25)";
+  const h = document.createElement("div");
+  h.style.cssText = "font:600 15px Inter,sans-serif;margin-bottom:4px";
+  h.textContent = "Merge into " + (targetName || "this record");
+  const note = document.createElement("div");
+  note.style.cssText = "font-size:12.5px;color:var(--muted,#666);margin-bottom:10px";
+  note.textContent = "Pick the submission to fold in. Its answers and files appear here. You can unmerge it again.";
+  const q = document.createElement("input");
+  q.type = "search"; q.placeholder = "Search by name…";
+  q.style.cssText = "border:1px solid var(--line,#ddd);border-radius:9px;padding:9px 12px;font:inherit;margin-bottom:10px";
+  const list = document.createElement("div");
+  list.style.cssText = "overflow:auto;display:flex;flex-direction:column;gap:6px";
+  const close = () => back.remove();
+  const draw = () => {
+    list.innerHTML = "";
+    const term = q.value.trim().toLowerCase();
+    const shown = others.filter((o) => !term || o.name.toLowerCase().includes(term) || o.sid.toLowerCase().includes(term));
+    if (!shown.length) { const e = document.createElement("div"); e.textContent = "Nothing matches."; e.style.color = "var(--muted,#666)"; list.appendChild(e); }
+    for (const o of shown) {
+      const b = document.createElement("button");
+      b.className = "aview";
+      b.style.cssText = "text-align:left;display:flex;justify-content:space-between;gap:12px";
+      const l = document.createElement("span"); l.textContent = o.name;
+      const r = document.createElement("span"); r.style.cssText = "color:var(--muted,#666);font-size:12px"; r.textContent = o.n + " items";
+      b.appendChild(l); b.appendChild(r);
+      b.onclick = () => { close(); onPick(o); };
+      list.appendChild(b);
+    }
+  };
+  q.oninput = draw;
+  const cancel = document.createElement("button");
+  cancel.className = "aview"; cancel.textContent = "Cancel"; cancel.style.marginTop = "10px";
+  cancel.onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  card.append(h, note, q, list, cancel);
+  back.appendChild(card);
+  document.body.appendChild(back);
+  draw();
+  q.focus();
+}
+
+// Merge one submission into another, or undo it (into = null). Appended to
+// the absorbed submission, so the log keeps the whole history.
+async function dbSetMerge(ctx, sourceSid, intoSid) {
+  const src = dbRaw.find((s) => s.submission_id === sourceSid);
+  const ev = {
+    id: newId("e"), op: OP.INS, at: nowIso(), by: ctx.currentUserId,
+    payload: { entity: "merge", id: newId("merge"), attrs: { into: intoSid || null, by: ctx.currentUserId, at: nowIso() } },
+  };
+  await window.ABDB.append({
+    submission_id: sourceSid, events: [ev],
+    ...(src && src.user_id ? { owner_user: src.user_id } : {}),
+  });
+  if (src) src.events.push(ev);
+  _dbRebuild();
 }
 
 // One stable id per applicant, so the office's database copy, Matrix copy, and
@@ -6409,7 +6520,9 @@ async function sendGuarded(ctx, roomId, op, payload) {
     ...(sub && sub.user_id ? { owner_user: sub.user_id } : {}),
   });
   // Show it straight away; the next refresh re-reads it from the server.
-  if (sub) sub.events.push(ev);
+  const raw = dbRaw.find((x) => x.submission_id === sid);
+  if (raw) raw.events.push(ev);
+  if (sub && sub !== raw) sub.events.push(ev);
 }
 
 function sendGuardedOrWarn(ctx, roomId, op, payload) {
@@ -6715,6 +6828,27 @@ function initAdminView({ onClose }) {
             catch (e) { toast("Couldn't revoke: " + (e.message || e), "warn"); }
           };
           bar.appendChild(revoke);
+
+          // Merge: fold another submission (the same person under a second
+          // account, a duplicate) into this one. Reversible from here.
+          const merge = document.createElement("button");
+          merge.className = "aview";
+          merge.textContent = "⇄ Merge…";
+          merge.title = "Combine another submission into this one — you can unmerge it again";
+          merge.onclick = () => {
+            const others = dbSubmissions
+              .filter((x) => x.submission_id !== sub.submission_id)
+              .map((x) => ({ sid: x.submission_id, name: _dbDisplayName(x) || x.submission_id, n: x.events.length, at: x.updated_at }))
+              .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+            showMergePicker(viewing.applicantName, others, async (pick) => {
+              try {
+                await dbSetMerge(ctx, pick.sid, sub.submission_id);
+                toast("Merged " + pick.name + " into this record — you can unmerge it any time", "success");
+                renderActive();
+              } catch (e) { toast("Couldn't merge: " + (e.message || e), "warn"); }
+            });
+          };
+          bar.appendChild(merge);
         }
         const query = document.createElement("input");
         query.type = "search";
@@ -6729,6 +6863,27 @@ function initAdminView({ onClose }) {
         bar.appendChild(query);
         bar.appendChild(noteButton(viewing, { kind: "submission" }, viewing.applicantName));
         detail.appendChild(bar);
+        const mergedSub = dbSubmissions.find((x) => "db:" + x.submission_id === viewing.roomId);
+        if (mergedSub && mergedSub.merged_from && mergedSub.merged_from.length) {
+          const row = $e("div");
+          row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 12px;font-size:12.5px;color:var(--muted)";
+          row.appendChild(document.createTextNode("Includes:"));
+          for (const m of mergedSub.merged_from) {
+            const chip = document.createElement("button");
+            chip.className = "aview";
+            chip.textContent = (m.name || m.submission_id.slice(0, 8)) + "  ✕ Unmerge";
+            chip.title = "Separate this submission from the record again";
+            chip.onclick = async () => {
+              try {
+                await dbSetMerge(ctx, m.submission_id, null);
+                toast("Unmerged " + (m.name || "submission"), "success");
+                renderActive();
+              } catch (e) { toast("Couldn't unmerge: " + (e.message || e), "warn"); }
+            };
+            row.appendChild(chip);
+          }
+          detail.appendChild(row);
+        }
         renderSingleSubmission(detail, viewing);
       } else {
         detail.appendChild($e("div", "inbox-empty", all.length ? "No submissions match your search." : "No submissions yet."));

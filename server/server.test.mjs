@@ -240,7 +240,18 @@ test("question set: public read, office-only write, not listed as a submission",
   assert.equal(ok.status, 200);
   const read = await get(base, "/config");
   assert.equal(read.status, 200);
-  assert.equal(read.body.events.length, 1);
+  assert.equal(read.body.events.length, 0); // "c1" is not a question-set event
+  // question-set events are public; office-internal ones are office-only
+  const mk = (id, op, payload) => ({ id, op, payload, at: "2026-10-07T00:00:00.000Z", by: "@office:hs" });
+  await post(base, "/append", { submission_id: "config", events: [
+    mk("q1", "INS", { entity: "field", id: "name", attrs: { label: "Name" } }),
+    mk("q2", "DEF", { anchor: "qconfig", path: "seeded", value: true }),
+    mk("t1", "INS", { entity: "eye_trail", id: "x", attrs: { seen: "sub-1" } }),
+  ] }, "office-secret");
+  const pub = await get(base, "/config");
+  assert.deepEqual(pub.body.events.map((e) => e.id).sort(), ["q1", "q2"]);
+  const full = await get(base, "/config", "office-secret");
+  assert.deepEqual(full.body.events.map((e) => e.id).sort(), ["c1", "q1", "q2", "t1"]);
   assert.equal((await get(base, "/submissions", "office-secret")).body.submissions.length, 0);
   app.server.close();
 });

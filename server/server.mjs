@@ -347,15 +347,30 @@ export function createApp(config = {}) {
     })().catch((e) => json(res, 500, { error: e.message }));
   }
 
-  // GET /config — the shared question set. Public: it is not personal data.
+  // GET /config — the shared question set. Public, so it returns ONLY what a
+  // family's form needs (questions, knowledge, templates, the question-set
+  // settings). Everything else in the office's config log — what it looked
+  // at, what it learned — is returned to the office alone.
+  const PUBLIC_ENTITIES = new Set(["field", "knowledge", "template"]);
+  function isQuestionSetEvent(ev) {
+    const p = ev && ev.payload;
+    if (!p || typeof p !== "object") return false;
+    if (ev.op === "DEF" && p.anchor === "qconfig") return true;
+    return ev.op === "INS" && PUBLIC_ENTITIES.has(p.entity);
+  }
   function handleConfig(req, res) {
-    try {
+    (async () => {
+      const token = bearer(req);
+      let office = false;
+      if (token) {
+        const userId = await whoami(token).catch(() => null);
+        office = isAdmin({ token, userId });
+      }
       const rows = db.prepare("SELECT * FROM events WHERE submission_id = ? ORDER BY seq ASC").all(CONFIG_SUBMISSION);
       const sub = foldRows(rows)[0];
-      return json(res, 200, { ok: true, events: sub ? sub.events : [] });
-    } catch (e) {
-      return json(res, 500, { error: e.message });
-    }
+      const events = sub ? sub.events : [];
+      return json(res, 200, { ok: true, events: office ? events : events.filter(isQuestionSetEvent) });
+    })().catch((e) => json(res, 500, { error: e.message }));
   }
 
   // GET /submissions — admin read: every submission.
