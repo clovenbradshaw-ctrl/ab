@@ -6513,12 +6513,10 @@ function initAdminView({ onClose }) {
   // default; the "Test" chip brings them back.
   let showTest = false;
   function isTestSubmission(pl) {
-    const t = pl.submittedAt || pl.lastActivity;
-    if (!t) return false;
-    const d = new Date(t);
-    if (isNaN(d)) return false;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return d < today;
+    // Only what says it is a test. This used to mean "older than today",
+    // which hid every real submission the moment the day rolled over.
+    return /\b(test|smoke|demo)\b/i.test(pl.applicantName || "")
+      || String(pl.caseStatus || "").toLowerCase() === "test";
   }
   // Which applicant the Pipeline tab's single-submission (inbox detail) view
   // is showing, if any. Lives here — not on the div renderPipeline builds —
