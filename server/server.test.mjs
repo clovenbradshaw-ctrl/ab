@@ -148,3 +148,99 @@ test("invalid events are skipped, never crash", async () => {
   app.server.close();
   app.db.close();
 });
+
+test("submitters read only their own; blobs; magic links act as the user, scoped and appended", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ab-db-"));
+  const app = createApp({
+    dbFile: join(dir, "t2.sqlite"),
+    verifyMatrix: false,
+    adminUserId: "@office:hs",
+    adminToken: "office-secret",
+  });
+  const port = await listen(app);
+  const base = `http://127.0.0.1:${port}`;
+  const send = async (method, path, token, body, raw) => {
+    const res = await fetch(base + path, {
+      method,
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(raw ? {} : { "content-type": "application/json" }) },
+      body: raw ? raw : (body === undefined ? undefined : JSON.stringify(body)),
+    });
+    const ct = res.headers.get("content-type") || "";
+    return { status: res.status, body: ct.includes("json") ? await res.json() : Buffer.from(await res.arrayBuffer()) };
+  };
+
+  await send("POST", "/append", "alice-token", { submission_id: "sa", events: [ev("a1", "DEF", "name", "Alice")] });
+  await send("POST", "/append", "bob-token", { submission_id: "sb", events: [ev("b1", "DEF", "name", "Bob")] });
+
+  // /mine: each sees only their own
+  const mineA = await send("GET", "/mine", "alice-token");
+  assert.equal(mineA.status, 200);
+  assert.deepEqual(mineA.body.submissions.map((s) => s.submission_id), ["sa"]);
+  assert.equal((await send("GET", "/mine")).status, 401);
+
+  // /submissions stays admin only
+  assert.equal((await send("GET", "/submissions", "alice-token")).status, 403);
+  assert.equal((await send("GET", "/submissions", "office-secret")).body.submissions.length, 2);
+
+  // blobs: owner + admin read, others don't
+  const bytes = Buffer.from([1, 2, 3, 4, 5]);
+  assert.equal((await send("PUT", "/blob/blob-aaaa-1111", "alice-token", undefined, bytes)).status, 200);
+  assert.deepEqual((await send("GET", "/blob/blob-aaaa-1111", "alice-token")).body, bytes);
+  assert.deepEqual((await send("GET", "/blob/blob-aaaa-1111", "office-secret")).body, bytes);
+  assert.equal((await send("GET", "/blob/blob-aaaa-1111", "bob-token")).status, 403);
+
+  // magic links: only the admin mints; not for the admin; act as the user only
+  assert.equal((await send("POST", "/magic", "alice-token", { user_id: "x" })).status, 403);
+  assert.equal((await send("POST", "/magic", "office-secret", { user_id: "@office:hs" })).status, 400);
+  const aliceId = mineA.body.submissions[0].user_id;
+  const m = await send("POST", "/magic", "office-secret", { user_id: aliceId, ttl_days: 1 });
+  assert.equal(m.status, 200);
+  const mt = m.body.token;
+  assert.match(mt, /^mgk_/);
+
+  const viaMagic = await send("GET", "/mine", mt);
+  assert.deepEqual(viaMagic.body.submissions.map((s) => s.submission_id), ["sa"]);
+  assert.deepEqual((await send("GET", "/blob/blob-aaaa-1111", mt)).body, bytes);
+  assert.equal((await send("GET", "/submissions", mt)).status, 403);
+  // ...but it can write the user's own content, marked as via-link, appended
+  const w = await send("POST", "/append", mt, { submission_id: "sa", events: [ev("a2", "DEF", "name", "Alice B")] });
+  assert.equal(w.status, 200);
+  assert.equal(w.body.appended, 1);
+  assert.equal((await send("PUT", "/blob/blob-zzzz-2222", mt, undefined, bytes)).status, 200);
+  // ...and cannot write into someone else's submission
+  assert.equal((await send("POST", "/append", mt, { submission_id: "sb", events: [ev("b2", "DEF", "name", "X")] })).status, 403);
+  // the earlier value is still in the log (append-only)
+  const after = await send("GET", "/mine", "alice-token");
+  const ids = after.body.submissions[0].events.map((e) => e.id);
+  assert.deepEqual(ids, ["a1", "a2"]);
+  assert.match(after.body.submissions[0].events[1].via, /^magic:/);
+  // a link narrowed to one submission can't touch another of the same user
+  await send("POST", "/append", "alice-token", { submission_id: "sa2", events: [ev("a3", "DEF", "name", "Alice 2")] });
+  const narrow = await send("POST", "/magic", "office-secret", { user_id: aliceId, submission_id: "sa2" });
+  assert.equal((await send("POST", "/append", narrow.body.token, { submission_id: "sa", events: [ev("a4", "DEF", "x", "y")] })).status, 403);
+  assert.deepEqual((await send("GET", "/mine", narrow.body.token)).body.submissions.map((s) => s.submission_id), ["sa2"]);
+  assert.equal((await send("POST", "/magic", mt, { user_id: aliceId })).status, 403);
+
+  // revoke kills it
+  assert.equal((await send("POST", "/magic/revoke", "office-secret", { user_id: aliceId })).body.revoked, 2);
+  assert.equal((await send("GET", "/mine", mt)).status, 401);
+  assert.equal((await send("GET", "/mine", "alice-token")).status, 200);
+
+  app.server.close();
+});
+
+test("question set: public read, office-only write, not listed as a submission", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ab-db-"));
+  const app = createApp({ dbFile: join(dir, "t3.sqlite"), verifyMatrix: false, adminUserId: "@office:hs", adminToken: "office-secret" });
+  const port = await listen(app);
+  const base = `http://127.0.0.1:${port}`;
+  const w = await post(base, "/append", { submission_id: "config", events: [ev("c1", "INS", "q1", "Name?")] }, "someone");
+  assert.equal(w.status, 403);
+  const ok = await post(base, "/append", { submission_id: "config", events: [ev("c1", "INS", "q1", "Name?")] }, "office-secret");
+  assert.equal(ok.status, 200);
+  const read = await get(base, "/config");
+  assert.equal(read.status, 200);
+  assert.equal(read.body.events.length, 1);
+  assert.equal((await get(base, "/submissions", "office-secret")).body.submissions.length, 0);
+  app.server.close();
+});

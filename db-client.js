@@ -1,14 +1,10 @@
 // db-client.js — thin browser bridge to the append-only database tier.
 //
-// The Feedback Platform's primary store is a Matrix room stream; this module
-// talks to the small server (server/server.mjs) that keeps a *standard*,
-// append-only SQL log of the same events. Submitters are write-only against
-// it (they POST, never read). Admins read everything and merge it, deduped,
-// with whatever they can still decrypt on Matrix.
-//
-// Everything here is deliberately forgiving: if the endpoint is unreachable
-// or the module fails to load, the app keeps working exactly as before. The
-// database is a safety net layered *beside* Matrix, never a hard dependency.
+// The database is the only store. This module talks to the small server
+// (server/server.mjs) that keeps a standard, append-only SQL log. A user
+// POSTs their events and reads back their own (GET /mine); the admin reads
+// everything. Matrix is used only to prove who someone is (the access token
+// is the bearer token); no content lives on Matrix.
 (function (root) {
   "use strict";
 
@@ -82,6 +78,52 @@
     });
   }
 
+  // A signed-in user's own submissions (or, via a magic link, that user's).
+  async function mine() {
+    return req("mine", {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(cfg.timeoutMs) : undefined,
+    });
+  }
+
+  // The shared question set (public).
+  async function config() {
+    return req("config", {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(cfg.timeoutMs) : undefined,
+    });
+  }
+
+  // Who the current token is (used by magic-link pages).
+  async function me() { return req("me"); }
+
+  // Files: stored as blobs on the server.
+  async function blobPut(id, bytes) {
+    var res = await fetch(join(cfg.endpoint, "blob/" + encodeURIComponent(id)), {
+      method: "PUT",
+      headers: cfg.token ? { Authorization: "Bearer " + cfg.token } : {},
+      body: bytes,
+    });
+    if (!res.ok) throw new Error("ab-db " + res.status + " blob put");
+    return id;
+  }
+  async function blobGet(id) {
+    var res = await fetch(join(cfg.endpoint, "blob/" + encodeURIComponent(id)), {
+      headers: cfg.token ? { Authorization: "Bearer " + cfg.token } : {},
+    });
+    if (!res.ok) throw new Error("ab-db " + res.status + " blob get");
+    return res.arrayBuffer();
+  }
+
+  // Admin: mint / revoke magic links for a user.
+  async function mintMagic(userId, opts) {
+    return req("magic", {
+      method: "POST",
+      body: JSON.stringify(Object.assign({ user_id: userId }, opts || {})),
+    });
+  }
+  async function revokeMagic(userId) {
+    return req("magic/revoke", { method: "POST", body: JSON.stringify({ user_id: userId }) });
+  }
+
   // Admin read: every submission the log holds, folded server-side.
   async function list() {
     return req("submissions", {
@@ -122,6 +164,13 @@
     newSubmissionId: newSubmissionId,
     append: append,
     list: list,
+    mine: mine,
+    config: config,
+    me: me,
+    blobPut: blobPut,
+    blobGet: blobGet,
+    mintMagic: mintMagic,
+    revokeMagic: revokeMagic,
     mergeRoomEvents: mergeRoomEvents,
     syntheticRoomIds: syntheticRoomIds,
     _cfg: cfg,

@@ -1399,7 +1399,7 @@ nav .setup .rail-toggle{display:inline-flex}
 <!-- Admin dashboard -->
 <main class="adminview hidden" id="adminView" aria-label="Admin dashboard">
   <header class="atop"><h1>Data</h1><span class="sub" id="adminWho"></span>
-    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="access">Devices &amp; backup</button><button class="atab" data-view="docai">DocAI</button><span id="abBuild" style="margin-left:auto;font:500 10px 'IBM Plex Mono',monospace;color:var(--muted);align-self:center"></span></div>
+    <div class="atabs"><button class="atab on" data-view="answers">Submissions</button><button class="atab" data-view="table">Documents</button><button class="atab" data-view="kanban">Kanban</button><button class="atab" data-view="letters">Letters</button><button class="atab" data-view="docai">DocAI</button><span id="abBuild" style="margin-left:auto;font:500 10px 'IBM Plex Mono',monospace;color:var(--muted);align-self:center"></span></div>
     <button class="aclose" id="adminToQuestions">Edit questions →</button>
     <button class="aclose" id="adminPreviewForm" title="Opens the questions in a demo — nothing is saved or sent">Try the questions (demo) ↗</button>
     <button class="aclose" id="adminClose">← Back</button>
@@ -3207,6 +3207,113 @@ class DemoStore extends BaseStore {
   }
 }
 
+// The only real store: events live in the database server, one submission per
+// person (the shared question set is the submission "config"). Same surface
+// as the other stores — emit() returns the optimistic event at once, and
+// ev.sent resolves true when the server has it, false when it gave up.
+// The server dedups by event id and every write is an append, so a retry is
+// always safe and nothing is ever overwritten.
+class DbStore extends BaseStore {
+  constructor(userId) {
+    super();
+    this.user = userId;
+    this.client = null;
+    this.requireEncryption = false;
+    this.historyComplete = true;
+    this._unsent = [];
+    this._timer = null;
+    this._sending = null;
+  }
+  async open(roomId, { events = [], ownerUser = null } = {}) {
+    this.roomId = roomId;
+    this.ownerUser = ownerUser;
+    this._events = events.slice().sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+    return this;
+  }
+  async loadFullHistory() { return this; }
+
+  emit(op, payload) {
+    const ev = { id: newId("e"), op, payload, at: nowIso(), by: this.user, _pending: true };
+    this._events.push(ev);
+    this._notify(ev);
+    ev.sent = new Promise((resolve) => { this._unsent.push({ ev, resolve }); });
+    this._schedule(40);
+    return ev;
+  }
+
+  _schedule(ms) {
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => { this._flush(); }, ms);
+  }
+
+  async _flush() {
+    if (this._sending) { await this._sending; }
+    if (!this._unsent.length) return;
+    const batch = this._unsent.splice(0);
+    this._sending = (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await window.ABDB.append({
+            submission_id: this.roomId,
+            events: batch.map(({ ev }) => ({ id: ev.id, op: ev.op, payload: ev.payload, at: ev.at, by: ev.by })),
+            ...(this.ownerUser ? { owner_user: this.ownerUser } : {}),
+          });
+          for (const { ev, resolve } of batch) { ev._pending = false; ev._failed = false; resolve(true); this._notify(ev); }
+          return;
+        } catch (e) {
+          const wait = SEND_RETRY_MS[attempt];
+          if (wait == null) {
+            console.error("[store] save failed — kept on this device only:", e);
+            toast("Couldn't save that just now — it's still here on this device.", "warn");
+            for (const { ev, resolve } of batch) { ev._pending = false; ev._failed = true; resolve(false); this._notify(ev); }
+            return;
+          }
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+    })();
+    try { await this._sending; } finally { this._sending = null; }
+  }
+}
+
+// Files go to the database server as blobs. The bytes the pipeline hands us
+// are already client-side-encrypted ciphertext (the media layer does that
+// itself), so this is a plain upload/download; the url is ab-blob://<id>.
+class DbMedia {
+  async put(_id, bytes) {
+    const id = "m_" + (crypto.randomUUID ? crypto.randomUUID() : newId("m"));
+    await window.ABDB.blobPut(id, bytes);
+    return "ab-blob://" + id;
+  }
+  async get(url) {
+    const m = /^ab-blob:\/\/(.+)$/.exec(String(url || ""));
+    if (!m) throw new Error("this file was stored on the previous system and is no longer available");
+    return window.ABDB.blobGet(m[1]);
+  }
+}
+
+// The shared question set: public, read straight from the database.
+async function openConfigStore(userId) {
+  let events = [];
+  try { events = (await window.ABDB.config()).events || []; }
+  catch (e) { console.warn("[config] couldn't read the question set; using the built-in defaults:", e); }
+  return new DbStore(userId).open("config", { events });
+}
+
+// A person's own submission: the most recently touched one they own, or a
+// fresh id remembered on this device until the first answer lands.
+async function openAnswersStore(userId) {
+  const res = await window.ABDB.mine();
+  const subs = (res && res.submissions) || [];
+  const pick = subs.slice().sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
+  let sid = pick && pick.submission_id;
+  if (!sid) {
+    sid = window.ABDB.submissionId("me");
+    if (!sid) { sid = window.ABDB.newSubmissionId(); window.ABDB.setSubmissionId("me", sid); }
+  }
+  return new DbStore(userId).open(sid, { events: pick ? pick.events : [] });
+}
+
 class MatrixStore extends BaseStore {
   // requireEncryption defaults on here as well as in open(), so a store that
   // somehow emits before it is opened fails closed rather than sending in
@@ -3235,10 +3342,7 @@ class MatrixStore extends BaseStore {
       userId: res.user_id, deviceId: res.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
-    await client.startClient({ initialSyncLimit: 100 });
-    await new Promise((resolve) => {
-      client.once("sync", (state) => state === "PREPARED" && resolve());
-    });
+    await await startMatrixClient(client);
     return new MatrixStore(client);
   }
 
@@ -6009,28 +6113,17 @@ async function _dbMirrorRooms(client) {
 // an applicant's own session: a family resuming an interview they started
 // last week must still see everything they told us.
 function officeRoomIds(storeKind, client) {
-  const base = storeKind === "matrix" ? MatrixStore.joinedRoomIds(client) : DemoStore.listRoomIds();
-  if (storeKind !== "matrix" || !dbSubmissions.length || !window.ABDB) return base;
-  return base.concat(window.ABDB.syntheticRoomIds(base, dbSubmissions));
+  if (storeKind !== "matrix") return DemoStore.listRoomIds();
+  return window.ABDB ? window.ABDB.syntheticRoomIds([], dbSubmissions) : [];
 }
 
 function officeRoomEvents(storeKind, client, roomId) {
-  // The shared question set lives in a room of its own, and it is not a
-  // family. Left in, it renders as a submission with no name, no phone and
-  // no answers — an empty row the office has to learn to ignore. Skipping it
-  // here covers every surface at once, since they all read through this.
-  if (configStore && configStore.roomId && roomId === configStore.roomId) return [];
-  if (storeKind === "matrix" && typeof roomId === "string" && roomId.startsWith("db:")) {
+  if (storeKind === "matrix") {
+    if (typeof roomId !== "string" || !roomId.startsWith("db:")) return [];
     const sub = dbSubmissions.find((s) => s.submission_id === roomId.slice(3));
-    const events = sub ? sub.events : [];
-    return events.filter((e) => afterCutoff(e.at));
+    return (sub ? sub.events : []).filter((e) => afterCutoff(e.at));
   }
-  const base = storeKind === "matrix"
-    ? MatrixStore.foldRoomEvents(client, roomId)
-    : DemoStore.loadEvents(roomId);
-  const sub = storeKind === "matrix" ? dbByRoom.get(roomId) : null;
-  const events = (sub && window.ABDB) ? window.ABDB.mergeRoomEvents(base, sub.events) : base;
-  return events.filter((e) => afterCutoff(e.at));
+  return DemoStore.loadEvents(roomId).filter((e) => afterCutoff(e.at));
 }
 
 function collectSubmissions({ storeKind, client }) {
@@ -6193,11 +6286,10 @@ function collectPipelineData({ storeKind, client }) {
     // the top: a submission that shows two answers because the rest can't be
     // decrypted must not look like a family who only answered twice — and one
     // this device can't read at all must not vanish from the table.
-    const unreadable = storeKind === "matrix" ? MatrixStore.readRoom(client, roomId).undecryptable : 0;
-    if (!events.length && !unreadable) continue;
+    if (!events.length) continue;
     const folded = fold(events);
     const applicantName = folded.anchors?.applicant?.complainant_name?.value
-      || (events.length ? roomId : "Not readable on this device");
+      || roomId;
     const provenance = provenanceOf(folded, "applicant");
 
     const voiceClips = Object.entries(folded.records)
@@ -6282,7 +6374,6 @@ function collectPipelineData({ storeKind, client }) {
       roomId, applicantName, answers, letters, voiceClips, docs, lastActivity, caseStatus, submittedAt,
       phone: valueOf("complainant_phone"),
       email: valueOf("complainant_email"),
-      unreadable,
     });
   }
   return pipelines.sort((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
@@ -6295,20 +6386,27 @@ function collectPipelineData({ storeKind, client }) {
 // Also awaited-and-caught: these were fire-and-forget, so a refused or
 // failed send left the reviewer's UI showing a change that never landed.
 async function sendGuarded(ctx, roomId, op, payload) {
-  const crypto = ctx.client.getCrypto?.();
-  if (!crypto || !ctx.client._e2eeReady) throw new Error("encryption backend is not ready");
-  if (!(await crypto.isEncryptionEnabledInRoom(roomId))) {
-    throw new Error("room " + roomId + " is not encrypted");
-  }
-  await ctx.client.sendEvent(roomId, EVENT_TYPE, { op, payload });
+  if (!window.ABDB?.available()) throw new Error("the database is not reachable");
+  // The office addresses a family's submission as "db:<submission_id>".
+  const sid = String(roomId).startsWith("db:") ? String(roomId).slice(3) : String(roomId);
+  const sub = dbSubmissions.find((x) => x.submission_id === sid);
+  const ev = { id: newId("e"), op, payload, at: nowIso(), by: ctx.currentUserId };
+  await window.ABDB.append({
+    submission_id: sid,
+    events: [ev],
+    // The family stays the owner, so they keep the right to write to it.
+    ...(sub && sub.user_id ? { owner_user: sub.user_id } : {}),
+  });
+  // Show it straight away; the next refresh re-reads it from the server.
+  if (sub) sub.events.push(ev);
 }
 
 function sendGuardedOrWarn(ctx, roomId, op, payload) {
   // Returns the promise so callers that need the change to be durable before
   // they re-render (the kanban drop) can await it.
   return sendGuarded(ctx, roomId, op, payload).catch((e) => {
-    console.error("Refused to send unencrypted, or send failed:", e);
-    toast("Couldn't securely save that change — nothing was sent to the server.", "warn");
+    console.error("Couldn't save that change:", e);
+    toast("Couldn't save that change just now — please try again.", "warn");
   });
 }
 
@@ -6375,7 +6473,7 @@ function setCaseStatus(ctx, roomId, status) {
   return Promise.resolve();
 }
 
-function mediaFor(ctx) { return ctx.storeKind === "matrix" ? new MatrixMedia(ctx.client) : new DemoMedia(); }
+function mediaFor(ctx) { return ctx.storeKind === "matrix" ? new DbMedia() : new DemoMedia(); }
 
 function fmtBytes(n) {
   if (n == null) return "";
@@ -6580,6 +6678,35 @@ function initAdminView({ onClose }) {
           catch (e) { toast(url); }
         };
         bar.appendChild(copy);
+        // A link that lets this person open (and edit) just their own
+        // submission, no sign-in. Everything they write is appended, so any
+        // change made through it stays recoverable.
+        const sub = dbSubmissions.find((x) => "db:" + x.submission_id === viewing.roomId);
+        if (sub && sub.user_id) {
+          const magic = document.createElement("button");
+          magic.className = "aview";
+          magic.textContent = "✉ Magic link";
+          magic.title = "Create a link that opens this person's own submission — read and edit, nothing else";
+          magic.onclick = async () => {
+            try {
+              const r = await window.ABDB.mintMagic(sub.user_id, { submission_id: sub.submission_id, ttl_days: 14 });
+              const url = location.origin + location.pathname + "#m=" + r.token;
+              try { await navigator.clipboard.writeText(url); toast("Magic link copied — good for 14 days", "success"); }
+              catch (e) { window.prompt("Magic link (good for 14 days):", url); }
+            } catch (e) { toast("Couldn't create the link: " + (e.message || e), "warn"); }
+          };
+          bar.appendChild(magic);
+          const revoke = document.createElement("button");
+          revoke.className = "aview";
+          revoke.textContent = "Revoke links";
+          revoke.title = "Turn off every magic link made for this person";
+          revoke.onclick = async () => {
+            if (!window.confirm("Turn off every magic link for this person?")) return;
+            try { const r = await window.ABDB.revokeMagic(sub.user_id); toast(r.revoked ? "Links turned off" : "No active links"); }
+            catch (e) { toast("Couldn't revoke: " + (e.message || e), "warn"); }
+          };
+          bar.appendChild(revoke);
+        }
         const query = document.createElement("input");
         query.type = "search";
         query.className = "appquery";
@@ -6615,8 +6742,7 @@ function initAdminView({ onClose }) {
       const letters = collectAllLetters(ctx);
       const filtered = letters.filter((l) => matchesQuery(`${l.applicantName} ${l.status} ${l.text}`, q));
       body.appendChild(renderLetters(filtered));
-    } else if (active === "access") {
-      body.appendChild(renderAccessLog());
+    } else if (false) {
     } else if (active === "docai") {
       try { body.appendChild(renderDocAI()); }
       catch (e) { console.error("[docai]", e); body.appendChild($e("div", "aempty", "DocAI couldn't render: " + (e.message || e))); }
@@ -7014,7 +7140,6 @@ function initAdminView({ onClose }) {
       { key: "phone", label: "Phone", get: (c) => c.phone || "" },
       { key: "answers", label: "Answers", get: (c) => c.answers.length, numeric: true },
       { key: "files", label: "Files", get: (c) => c.docs.length, numeric: true },
-      { key: "readable", label: "Readable here", get: (c) => c.unreadable },
       { key: "letters", label: "Drafts", get: (c) => c.letters.length, numeric: true },
       { key: "updated", label: "Last activity", get: (c) => c.lastActivity || "" },
       { key: "submitted", label: "Submitted", get: (c) => c.submittedAt || "" },
@@ -7064,18 +7189,6 @@ function initAdminView({ onClose }) {
       tr.appendChild($e("td", "acell-val", c.phone || "—"));
       tr.appendChild($e("td", "acell-mime mono", String(c.answers.length)));
       tr.appendChild($e("td", "acell-mime mono", c.docs.length ? `📎 ${c.docs.length}` : "—"));
-
-      const readable = document.createElement("td");
-      readable.className = "acell-mime mono";
-      if (c.unreadable) {
-        readable.textContent = `${c.unreadable} unreadable`;
-        readable.style.color = "var(--turn)";
-        readable.title = "Encrypted for an office device that isn't this one — open on that device.";
-      } else {
-        readable.textContent = "yes";
-        readable.style.color = "var(--muted)";
-      }
-      tr.appendChild(readable);
 
       tr.appendChild($e("td", "acell-mime mono", String(c.letters.length)));
       tr.appendChild($e("td", "acell-date mono", c.lastActivity ? fmtDate(c.lastActivity) : "—"));
@@ -8582,14 +8695,14 @@ function initAdminView({ onClose }) {
       // separately. They stay linked by living in this family's own room and
       // being written from the one set of answers — see buildComplaintLetter's
       // note on why the split happens here and not in the data.
-      const events = ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId);
+      const events = officeRoomEvents(ctx.storeKind, ctx.client, pl.roomId);
       const rounds = childRoundNumbers(answersOf(fold(events), "applicant"));
       const perChild = rounds.length > 1;
       const genBtn = $e("button", "aletters-gen", perChild
         ? `Generate ${rounds.length} complaint letters — one per child`
         : "Generate complaint letter from current answers");
       genBtn.onclick = () => {
-        const folded = fold(ctx.storeKind === "matrix" ? MatrixStore.foldRoomEvents(ctx.client, pl.roomId) : DemoStore.loadEvents(pl.roomId));
+        const folded = fold(officeRoomEvents(ctx.storeKind, ctx.client, pl.roomId));
         const ans = answersOf(folded, "applicant");
         const prov = provenanceOf(folded, "applicant");
         const targets = perChild ? rounds : [null];
@@ -9054,24 +9167,14 @@ function initAdminView({ onClose }) {
       searchQuery = "";
       who.textContent = ctx.storeKind === "matrix" ? ctx.currentUserId : "Demo · this device (every room opened here)";
       renderActive();
-      if (ctx.storeKind === "matrix" && ctx.client) {
-        // Pull in the older half of every submission, then redraw with it.
-        MatrixStore.backfill(ctx.client).then(() => { _dbMirrorRooms(ctx.client); if (isAdminViewOpen()) renderActive(); });
-        watchMatrixForLiveUpdates(ctx.client, () => { if (isAdminViewOpen()) renderActive(); });
-        // Also refresh the append-only database on open and on the slow tick,
-        // so a submission that only exists there (Matrix data gone/unreadable)
-        // shows up without a page reload — "whichever shows up first".
+      if (ctx.storeKind === "matrix") {
+        // Read the database on open and on a slow tick, so a submission that
+        // lands from another device shows up without a reload.
         _dbLoadAndMerge().then(() => { if (isAdminViewOpen()) renderActive(); });
-        // Slow cross-device convergence tick — see adminRefreshTimer above.
         clearInterval(adminRefreshTimer);
         adminRefreshTimer = setInterval(() => {
-          if (!isAdminViewOpen() || !ctx?.client) return;
-          MatrixStore.backfill(ctx.client).then(() => { _dbMirrorRooms(ctx.client); if (isAdminViewOpen()) renderActive(); });
+          if (!isAdminViewOpen()) return;
           _dbLoadAndMerge().then(() => { if (isAdminViewOpen()) renderActive(); });
-          // Keep asking for any still-undecryptable keys while the dashboard is
-          // open, so a submitter who comes online can unstick history. See
-          // MatrixStore.requestMissingKeys.
-          MatrixStore.requestMissingKeys(ctx.client).catch(() => {});
         }, 12000);
       }
     },
@@ -9080,32 +9183,6 @@ function initAdminView({ onClose }) {
     // actually looking at it.
     refresh() { if (ctx && isAdminViewOpen()) renderActive(); },
   };
-}
-
-// "Nothing here" and "here, but this device can't read it" are opposite
-// facts and used to look identical: both rendered as an empty table. For an
-// office deciding whether a family has responded, that difference is the
-// whole thing, so it gets said out loud, with the reason and the way out.
-//
-// The reason is almost always a device that arrived after the fact. Answers
-// are encrypted to the devices in the room when they were sent; a browser
-// whose site data has been cleared, or a fresh sign-in on another machine,
-// is a new device with none of those keys, and past messages are never
-// re-shared to it.
-function unreadableNotice(ctx) {
-  if (!ctx || ctx.storeKind !== "matrix" || !ctx.client) return null;
-  const { undecryptable, rooms } = MatrixStore.readTally(ctx.client);
-  if (!undecryptable) return null;
-  const box = document.createElement("div");
-  box.style.cssText = "margin-bottom:14px;padding:11px 13px;border:1px solid var(--turn);border-left-width:3px;border-radius:9px;background:var(--turn-soft);font-size:12.5px;line-height:1.55;color:var(--ink)";
-  const head = document.createElement("b");
-  head.textContent = `${undecryptable} item${undecryptable === 1 ? "" : "s"} in ${rooms} submission${rooms === 1 ? "" : "s"} can't be read on this device.`;
-  box.appendChild(head);
-  box.appendChild(document.createTextNode(
-    " Your password opens all history on any device — enter it under Devices & backup to pull every backed-up submission into this browser."
-    + " The only items that can't come back are ones no device ever backed up before it was cleared."
-  ));
-  return box;
 }
 
 function isAdminViewOpen() {
@@ -10124,7 +10201,7 @@ async function editFromChecklist(f) {
 }
 
 // ── Documents ──
-function mediaBackend() { return currentStoreKind === "matrix" ? new MatrixMedia(store.client) : new DemoMedia(); }
+function mediaBackend() { return currentStoreKind === "matrix" ? new DbMedia() : new DemoMedia(); }
 function fmtBytes(n) {
   if (n == null) return "";
   const u = ["B", "KB", "MB", "GB"]; let i = 0;
@@ -11754,11 +11831,7 @@ async function setupSilentClient(homeserver, registered) {
     userId: registered.user_id, deviceId: registered.device_id, useAuthorizationHeader: true,
   });
   await initClientCrypto(client);
-  client.startClient({ initialSyncLimit: 50 });
-  await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
-    client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
-  });
+  await startMatrixClient(client);
   return client;
 }
 
@@ -11805,11 +11878,7 @@ async function tryResumeSilentAccount(saved) {
     // useAuthorizationHeader — see MatrixStore.login's comment.
     const client = sdk.createClient({ baseUrl: saved.homeserver, accessToken: saved.accessToken, userId: saved.userId, deviceId: saved.deviceId, useAuthorizationHeader: true, cryptoCallbacks: CRYPTO_CALLBACKS });
     await initClientCrypto(client);
-    client.startClient({ initialSyncLimit: 50 });
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("timeout")), 15000);
-      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
-    });
+    await startMatrixClient(client);
     return client;
   } catch (e) {
     console.warn("Couldn't resume the saved account — starting fresh:", e);
@@ -12319,6 +12388,13 @@ async function initEntry() {
     doDemoLogin();
     return;
   }
+  // A magic link (#m=mgk_…): opens one person's own content directly, with
+  // read and write, no sign-in.
+  const magicHash = /[#&]m=(mgk_[A-Za-z0-9_-]+)/.exec(location.hash || "");
+  if (magicHash) {
+    await startMagicSession(magicHash[1]);
+    return;
+  }
   // Admin demo: seeded data, skip login, go straight to admin dashboard
   if (localStorage.getItem("ab_admin_demo") === "1") {
     localStorage.removeItem("ab_admin_demo");
@@ -12357,6 +12433,32 @@ async function initEntry() {
     // fall through to a normal fresh start rather than get stuck.
   }
   showLangGate();
+}
+
+async function startMagicSession(secret) {
+  hideLangGate();
+  showEntryLoader("Opening your submission…");
+  try {
+    window.ABDB.configure({ endpoint: DEPLOY_CONFIG.dbEndpoint, token: secret });
+    const me = await window.ABDB.me();
+    // Just enough of a client for the parts of the app that only need an
+    // identity and a token. No Matrix account is involved at all.
+    const client = {
+      baseUrl: "", isMagic: true, _e2eeReady: true,
+      getAccessToken: () => secret, getUserId: () => me.user_id,
+      getDeviceId: () => "magic-link", getCrypto: () => null,
+      on() {}, off() {}, once() {},
+    };
+    loginState = { kind: "matrix", client, userId: me.user_id, magic: true };
+    hideLogin();
+    hideEntryLoader();
+    await boot();
+  } catch (e) {
+    console.warn("[magic] link didn't open:", e);
+    hideEntryLoader();
+    toast("This link has expired or was turned off. Ask the office for a new one.", "warn");
+    showLangGate();
+  }
 }
 
 function wireLangGate() {
@@ -12625,32 +12727,21 @@ async function wipeCryptoStore() {
   })));
 }
 
+// Matrix is only the identity provider now: it proves who someone is and
+// hands out the access token the database server checks. No rust-crypto, no
+// key backup, no rooms — nothing is stored on, or read from, Matrix.
 async function initClientCrypto(client) {
-  try {
-    await client.initRustCrypto({ useIndexedDB: true });
-  } catch (e) {
-    if (isCryptoStoreMismatch(e)) {
-      // Not a broken browser and not a network problem — a second session.
-      // Handed up as its own kind of failure so the sign-in screen can offer
-      // the one recovery that exists instead of reporting a server outage.
-      const err = new Error("This browser already holds the encryption keys for a different session of this account.");
-      err.code = CRYPTO_STORE_MISMATCH;
-      err.storeAccount = accountsNamedInMismatch(e)
-        .find((a) => a.userId !== client.getUserId() || a.deviceId !== client.getDeviceId()) || null;
-      console.error("[e2ee] crypto store belongs to another session:", e);
-      throw err;
-    }
-    console.error("E2EE setup failed — refusing to use server storage:", e);
-    toast("This browser can't set up encryption, so nothing will be sent to the server. Your answers stay on this device.", "warn");
-    throw e;
-  }
-  if (!client.getCrypto()) {
-    const e = new Error("crypto backend reported ready but getCrypto() is null");
-    console.error(e);
-    throw e;
-  }
-  await assertAdminIdentity(client);
   client._e2eeReady = true;
+  return client;
+}
+
+// Confirms the token is live (and so the identity is real) without syncing a
+// single room. Replaces startClient() + waiting for the first sync.
+async function startMatrixClient(client) {
+  const res = await fetch(`${String(client.baseUrl).replace(/\/+$/, "")}/_matrix/client/v3/account/whoami`, {
+    headers: { Authorization: "Bearer " + client.getAccessToken() },
+  });
+  if (!res.ok) throw new Error("Matrix refused this session (" + res.status + ")");
   return client;
 }
 
@@ -13007,11 +13098,7 @@ async function suSetupClientFromRegistration(data) {
       userId: data.user_id, deviceId: data.device_id, useAuthorizationHeader: true,
     });
     await initClientCrypto(client);
-    client.startClient({ initialSyncLimit: 50 });
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
-      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
-    });
+    await startMatrixClient(client);
     loginState = { kind: "matrix", client, userId: data.user_id };
   } catch (e) {
     console.warn("Post-signup client setup failed, will retry on continue:", e.message);
@@ -13511,11 +13598,7 @@ async function doMatrixLogin(homeserver, userId, password, submitBtn, { deviceId
       cryptoCallbacks: CRYPTO_CALLBACKS,
     });
     await initClientCrypto(client);
-    client.startClient({ initialSyncLimit: 50 });
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("Sync timeout")), 15000);
-      client.once("sync", (state) => { clearTimeout(t); if (state === "PREPARED" || state === "SYNCING") resolve(); });
-    });
+    await startMatrixClient(client);
     if (takingOver && !(await serverHasThisDevice(client))) {
       const gone = new Error("The device this browser's keys belong to was signed out elsewhere.");
       gone.code = TAKEN_OVER_DEVICE_GONE;
@@ -13771,33 +13854,26 @@ async function boot() {
   _dbConfigure();
   // Only a real account has a password to change; a demo session has no
   // account behind it at all.
-  document.getElementById("pwBtn").style.display = currentStoreKind === "matrix" ? "" : "none";
+  document.getElementById("pwBtn").style.display = currentStoreKind === "matrix" && !loginState.magic ? "" : "none";
 
   let demoBarDismissed = false;
   try { demoBarDismissed = sessionStorage.getItem("eo.demoBarDismissed") === "1"; } catch {}
   document.getElementById("demoBar").classList.toggle("hidden", currentStoreKind !== "demo" || demoBarDismissed);
 
   if (loginState.kind === "matrix") {
-    const { client, userId } = loginState;
+    const { userId } = loginState;
     // Covers the interview screen until the dashboard replaces it, so the
     // office never lands on a family's form first.
     if (isAdmin(userId)) showEntryLoader("Opening the office dashboard…");
     try {
-      if (userId === ADMIN_USER_ID) autoJoinInvitesForAdmin(client);
-      const configRoomId = await ensureConfigRoom(client);
-      const answersRoom = await ensureAnswerRoom(client);
-      configStore = await (await new MatrixStore(client).open(configRoomId, { encrypted: false })).loadFullHistory();
-      store = await new MatrixStore(client).open(answersRoom);
+      configStore = await openConfigStore(userId);
+      store = await openAnswersStore(userId);
     } catch (e) {
-      // Falling back to demo storage here is right — better a working
-      // interview held on the device than a dead end — but it used to happen
-      // in total silence, which is indistinguishable from working. A
-      // homeserver rate limit during boot could drop the office into a demo
-      // session and nothing said so; the office would sit in front of an
-      // empty dashboard concluding that nobody had submitted anything.
-      console.error("[boot] couldn't open this account's rooms — falling back to this device only:", e);
+      // Better a working interview held on the device than a dead end, but
+      // say so: silence here is indistinguishable from working.
+      console.error("[boot] couldn't reach the database — falling back to this device only:", e);
       hideEntryLoader();
-      toast("Couldn't reach your account just now — this session is saved on this device only.", "warn");
+      toast("Couldn't reach the server just now — this session is saved on this device only.", "warn");
       doDemoLogin();
       return;
     }
@@ -13814,11 +13890,6 @@ async function boot() {
   document.getElementById("navAdmin").classList.toggle("hidden", !showInternals);
   document.getElementById("eventLogCard").classList.toggle("hidden", !showInternals);
   document.getElementById("internalsFoot").classList.toggle("hidden", !showInternals);
-
-  // Every real session runs the recovery loop: the office restores from backup
-  // and re-asks for missing keys; a submitter keeps sharing/decrypting. See
-  // startHistoryRecovery.
-  if (loginState.kind === "matrix") startHistoryRecovery(loginState.client);
 
   // The admin account never fills out the intake — it only reviews what
   // constituents have submitted. Any admin login (the local demo account or
@@ -13844,31 +13915,12 @@ async function boot() {
     if (submissionsTab) submissionsTab.click();
     // Seeding and repair write to a rate-limited homeserver, one event at a
     // time; the dashboard used to sit behind every one of them.
-    if (configStore.roomId) {
+    if (configStore.roomId && isAdmin(loginState.userId)) {
       ensureSeeded(configStore, DEFAULT_CONFIG, { write: true })
         .then((cfg) => { knowledge = KnowledgeStore.fromJSON(cfg.knowledge); })
         .catch((e) => console.error("[config] seeding the shared question set failed:", e));
     }
-    if (loginState.kind === "matrix") {
-      refreshOfficeHistory(loginState.client)
-        .catch((e) => console.warn("[office] couldn't pull newer history from the backup:", e))
-        // Ask for any still-undecryptable keys (a sender may have come online).
-        .then(() => MatrixStore.requestMissingKeys(loginState.client).catch(() => {}))
-        // TEMPORARY: a device that has never opened history gets the password
-        // pop-up right away (see promptOfficePassword).
-        .then(async () => {
-          if (!(await deviceCanReadHistory(loginState.client))) promptOfficePassword(loginState.client);
-        });
-    }
     return;
-  }
-
-  // A family filling out the form is write-only against the database: their
-  // answers flush to the append-only log on refresh (and, debounced, after
-  // each answer), and they can never read anyone else's content back from it.
-  if (currentStoreKind === "matrix") {
-    store.subscribe(() => _dbScheduleFlush(store));
-    _dbFlush(store);
   }
 
   await _bootAfterStore();
