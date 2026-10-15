@@ -3303,6 +3303,10 @@ async function openConfigStore(userId) {
 // A person's own submission: the most recently touched one they own, or a
 // fresh id remembered on this device until the first answer lands.
 async function openAnswersStore(userId) {
+  // The office never fills the form in, so it has no submission of its own to
+  // load — and must never be blocked on (or dropped to a demo session by) a
+  // read it doesn't need.
+  if (isAdmin(userId)) return new DbStore(userId).open("office:" + userId, { events: [] });
   const res = await window.ABDB.mine();
   const subs = (res && res.submissions) || [];
   const pick = subs.slice().sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
@@ -6004,6 +6008,7 @@ function afterCutoff(at) {
 // (write-only, see _dbFlush below). `dbSubmissions` stays empty for them.
 let dbSubmissions = [];
 let dbByRoom = new Map();
+let _dbReadWarned = false;
 
 function _dbConfigure() {
   if (!window.ABDB) return;
@@ -6024,8 +6029,14 @@ async function _dbLoadAndMerge() {
     dbSubmissions = (res && res.submissions) || [];
   } catch (e) {
     console.warn("[db] couldn't read the submissions database:", e);
+    // Say so once: an empty dashboard otherwise reads as "nobody has submitted".
+    if (!_dbReadWarned && loginState && isAdmin(loginState.userId)) {
+      _dbReadWarned = true;
+      toast("Couldn't read submissions from the server just now — retrying. (" + (e && e.message ? e.message : e) + ")", "warn");
+    }
     return;
   }
+  _dbReadWarned = false;
   for (const s of dbSubmissions) if (s && s.room_id) dbByRoom.set(s.room_id, s);
 }
 
