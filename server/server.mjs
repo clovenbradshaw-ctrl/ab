@@ -24,6 +24,8 @@
 //
 // Run:  node server.mjs            (see AB_* env below)
 //   AB_PORT             listen port                      (default 8788)
+//   AB_HOST             listen address; set 127.0.0.1 when only the reverse
+//                       proxy on this VM should reach it  (default: all)
 //   AB_DB               sqlite file path                 (default ./data/ab.sqlite)
 //   AB_HOMESERVER       Matrix homeserver for whoami     (default https://hyphae.social)
 //   AB_ADMIN_USER_ID    the office's Matrix user id      (default @planetary_nebula996083:hyphae.social)
@@ -32,6 +34,14 @@
 //   AB_ALLOWED_ORIGINS  comma-separated CORS origins, or "*" (default "*")
 //   AB_MAX_BODY         max JSON body bytes              (default 16 MiB)
 //   AB_MAX_BLOB         max file upload bytes            (default 64 MiB)
+//   AB_MAX_USER_BYTES   files + events per user          (default 1 GiB)
+//   AB_MAX_TOTAL_BYTES  files + events, whole system     (default 100 GiB)
+//   AB_RATE_WRITES      writes per user per window       (default 120)
+//   AB_RATE_READS       reads per user per window        (default 600)
+//   AB_RATE_WINDOW_MS   rate-limit window                (default 60000)
+// The office (admin) is exempt from the per-user quota and the rate limits;
+// everyone else, including anyone who signs up for a free account, is capped.
+// The system-wide cap applies to every write, the office's included.
 //
 // HTTPS is expected to terminate in front of this (nginx/caddy) on the VM.
 
@@ -59,6 +69,11 @@ export function createApp(config = {}) {
       .split(",").map((s) => s.trim()).filter(Boolean),
     maxBody: Number(config.maxBody || process.env.AB_MAX_BODY || 16 * 1024 * 1024),
     maxBlob: Number(config.maxBlob || process.env.AB_MAX_BLOB || 64 * 1024 * 1024),
+    maxUserBytes: Number(config.maxUserBytes || process.env.AB_MAX_USER_BYTES || 1024 ** 3),
+    maxTotalBytes: Number(config.maxTotalBytes || process.env.AB_MAX_TOTAL_BYTES || 100 * 1024 ** 3),
+    rateWrites: Number(config.rateWrites || process.env.AB_RATE_WRITES || 120),
+    rateReads: Number(config.rateReads || process.env.AB_RATE_READS || 600),
+    rateWindowMs: Number(config.rateWindowMs || process.env.AB_RATE_WINDOW_MS || 60000),
   };
 
   mkdirSync(dirname(cfg.dbFile), { recursive: true });
@@ -112,6 +127,42 @@ export function createApp(config = {}) {
   const getBlob = db.prepare("SELECT user_id, data FROM blobs WHERE id = ?");
   const putBlob = db.prepare("INSERT OR IGNORE INTO blobs (id, user_id, data, server_ts) VALUES (?, ?, ?, ?)");
   const ownerOf = db.prepare("SELECT user_id FROM events WHERE submission_id = ? LIMIT 1");
+  // Bytes held: files plus event payloads. LENGTH(CAST(x AS BLOB)) is a byte
+  // count that doesn't have to scan the text.
+  const blobBytesOf = db.prepare("SELECT COALESCE(SUM(LENGTH(data)), 0) AS n FROM blobs WHERE user_id = ?");
+  const eventBytesOf = db.prepare("SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS n FROM events WHERE user_id = ?");
+  const blobBytesAll = db.prepare("SELECT COALESCE(SUM(LENGTH(data)), 0) AS n FROM blobs");
+  const eventBytesAll = db.prepare("SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) AS n FROM events");
+  const usedBy = (userId) => Number(blobBytesOf.get(userId).n) + Number(eventBytesOf.get(userId).n);
+  const usedTotal = () => Number(blobBytesAll.get().n) + Number(eventBytesAll.get().n);
+  // null when the write fits, else a { status, error } to send back.
+  function overQuota(userId, admin, incoming) {
+    if (usedTotal() + incoming > cfg.maxTotalBytes) return { status: 507, error: "the server is out of storage; contact the office" };
+    if (!admin && usedBy(userId) + incoming > cfg.maxUserBytes) return { status: 413, error: "storage limit reached for this account" };
+    return null;
+  }
+
+  // Sliding-window rate limit per user and kind. In memory: a restart resets
+  // it, which is fine for abuse control. Returns seconds to wait, or 0.
+  const hits = new Map(); // "kind:user" -> [timestamps]
+  function rateWait(kind, userId) {
+    const limit = kind === "write" ? cfg.rateWrites : cfg.rateReads;
+    const now = Date.now(), from = now - cfg.rateWindowMs;
+    const key = kind + ":" + userId;
+    const list = (hits.get(key) || []).filter((t) => t > from);
+    if (list.length >= limit) { hits.set(key, list); return Math.max(1, Math.ceil((list[0] + cfg.rateWindowMs - now) / 1000)); }
+    list.push(now); hits.set(key, list);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || v[v.length - 1] <= from) hits.delete(k);
+    return 0;
+  }
+  function tooFast(res, kind, userId, token) {
+    if (isAdmin({ token, userId })) return false;
+    const wait = rateWait(kind, userId);
+    if (!wait) return false;
+    res.setHeader("retry-after", String(wait));
+    json(res, 429, { error: "too many requests; slow down", retry_after: wait });
+    return true;
+  }
 
   // whoami(token) -> userId, cached 5 minutes so a flush storm doesn't hammer
   // the homeserver. When verification is off (tests) the token is hashed into
@@ -230,6 +281,7 @@ export function createApp(config = {}) {
       return json(res, e.status || 401, { error: e.message });
     }
 
+    if (tooFast(res, "write", userId, token)) return;
     let body;
     try {
       body = await readBody(req);
@@ -272,6 +324,10 @@ export function createApp(config = {}) {
     if (owner && owner.user_id && owner.user_id !== claimedOwner && !isAdminUser) {
       return json(res, 403, { error: "submission belongs to another user" });
     }
+
+    const incoming = events.reduce((n, e) => n + (e && typeof e === "object" ? Buffer.byteLength(JSON.stringify(e.payload ?? null)) : 0), 0);
+    const over = overQuota(claimedOwner, isAdminUser, incoming);
+    if (over) return json(res, over.status, { error: over.error });
 
     const serverTs = new Date().toISOString();
     let appended = 0, skipped = 0;
@@ -381,6 +437,7 @@ export function createApp(config = {}) {
     (async () => {
       const userId = await whoami(token).catch(() => null);
       if (!userId && !isAdmin({ token, userId })) return json(res, 401, { error: "unknown user" });
+      if (tooFast(res, "read", userId, token)) return;
       if (mine) {
         const scope = magicInfo(token)?.submission_id || null;
         const rows = eventsByUser.all(userId).filter((r) => r.submission_id !== CONFIG_SUBMISSION && (!scope || r.submission_id === scope));
@@ -415,7 +472,10 @@ export function createApp(config = {}) {
       if (prior && prior.user_id !== userId && !isAdmin({ token, userId })) {
         return json(res, 403, { error: "blob belongs to another user" });
       }
+      if (tooFast(res, "write", userId, token)) return;
       const data = await readRaw(req, cfg.maxBlob);
+      const over = prior ? null : overQuota(userId, isAdmin({ token, userId }), data.length);
+      if (over) return json(res, over.status, { error: over.error });
       putBlob.run(id, userId, data, new Date().toISOString());
       return json(res, 200, { ok: true, id, bytes: data.length });
     })().catch((e) => json(res, e.status || 500, { error: e.message }));
@@ -427,6 +487,7 @@ export function createApp(config = {}) {
     if (!token) return json(res, 401, { error: "missing bearer token" });
     (async () => {
       const userId = await whoami(token).catch(() => null);
+      if (userId && tooFast(res, "read", userId, token)) return;
       const row = getBlob.get(id);
       if (!row) return json(res, 404, { error: "not found" });
       if (row.user_id !== userId && !isAdmin({ token, userId })) {
@@ -509,8 +570,9 @@ export function createApp(config = {}) {
 
 function main() {
   const app = createApp();
-  app.server.listen(app.config.port, () => {
-    console.log(`[ab-db] append-only store listening on :${app.config.port}`);
+  const host = process.env.AB_HOST || undefined;
+  app.server.listen(app.config.port, host, () => {
+    console.log(`[ab-db] append-only store listening on ${host || "all interfaces"}:${app.config.port}`);
     console.log(`[ab-db] sqlite: ${app.config.dbFile}`);
     console.log(`[ab-db] homeserver (whoami): ${app.config.homeserver}`);
   });

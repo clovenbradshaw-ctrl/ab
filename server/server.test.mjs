@@ -255,3 +255,85 @@ test("question set: public read, office-only write, not listed as a submission",
   assert.equal((await get(base, "/submissions", "office-secret")).body.submissions.length, 0);
   app.server.close();
 });
+
+
+async function put(base, path, bytes, token) {
+  const res = await fetch(base + path, {
+    method: "PUT",
+    headers: { "content-type": "application/octet-stream", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: bytes,
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+test("per-user storage cap: files and events stop at the limit; the office is exempt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ab-db-"));
+  const app = createApp({
+    dbFile: join(dir, "t.sqlite"), verifyMatrix: false,
+    adminUserId: "@office:hs", adminToken: "office-secret",
+    maxUserBytes: 1000, maxTotalBytes: 1e9, rateWrites: 1000,
+  });
+  const base = `http://127.0.0.1:${await listen(app)}`;
+
+  assert.equal((await put(base, "/blob/mx_user0001", Buffer.alloc(600), "fam-a")).status, 200);
+  // 600 + 600 > 1000: refused, and nothing stored for it
+  const over = await put(base, "/blob/mx_user0002", Buffer.alloc(600), "fam-a");
+  assert.equal(over.status, 413);
+  assert.equal(app.db.prepare("select count(*) c from blobs where id='mx_user0002'").get().c, 0);
+  // a different account has its own allowance
+  assert.equal((await put(base, "/blob/mx_user0003", Buffer.alloc(600), "fam-b")).status, 200);
+  // the office is not capped
+  assert.equal((await put(base, "/blob/mx_office01", Buffer.alloc(5000), "office-secret")).status, 200);
+
+  // events count toward the same per-user allowance as files
+  const big = (id) => ({ id, op: "INS", payload: { text: "x".repeat(250) }, at: "2026-10-07T00:00:00.000Z" });
+  // fam-b already holds 600 bytes of files; two 250-byte events (~560) push it over 1000
+  assert.equal((await post(base, "/append", { submission_id: "q1", events: [big("a1"), big("a2")] }, "fam-b")).status, 413);
+  assert.equal(app.db.prepare("select count(*) c from events where submission_id='q1'").get().c, 0);
+  // a small event still fits in what is left
+  assert.equal((await post(base, "/append", { submission_id: "q1", events: [{ id: "s1", op: "INS", payload: { t: "ok" } }] }, "fam-b")).status, 200);
+  assert.equal((await post(base, "/append", { submission_id: "q2", events: [big("a1")] }, "office-secret")).status, 200);
+  app.server.close();
+});
+
+test("per-user rate limit: writes and reads are throttled per account; the office is exempt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ab-db-"));
+  const app = createApp({
+    dbFile: join(dir, "t.sqlite"), verifyMatrix: false,
+    adminUserId: "@office:hs", adminToken: "office-secret",
+    rateWrites: 3, rateReads: 2, rateWindowMs: 60000,
+  });
+  const base = `http://127.0.0.1:${await listen(app)}`;
+  const w = (tok, i) => post(base, "/append", { submission_id: "r-" + tok, events: [ev("e" + i, "DEF", "k", i)] }, tok);
+
+  for (let i = 0; i < 3; i++) assert.equal((await w("fam-a", i)).status, 200);
+  const limited = await w("fam-a", 9);
+  assert.equal(limited.status, 429);
+  assert.ok(limited.body.retry_after >= 1);
+  // another account is unaffected; the office is never throttled
+  assert.equal((await w("fam-b", 0)).status, 200);
+  for (let i = 0; i < 10; i++) assert.equal((await w("office-secret", i)).status, 200);
+
+  assert.equal((await get(base, "/mine", "fam-b")).status, 200);
+  assert.equal((await get(base, "/mine", "fam-b")).status, 200);
+  assert.equal((await get(base, "/mine", "fam-b")).status, 429);
+  app.server.close();
+});
+
+test("system-wide cap: when the whole store is full, every write is refused, the office's included", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ab-db-"));
+  const app = createApp({
+    dbFile: join(dir, "t.sqlite"), verifyMatrix: false,
+    adminUserId: "@office:hs", adminToken: "office-secret",
+    maxUserBytes: 10000, maxTotalBytes: 1500, rateWrites: 1000,
+  });
+  const base = `http://127.0.0.1:${await listen(app)}`;
+  assert.equal((await put(base, "/blob/mx_a0000001", Buffer.alloc(800), "fam-a")).status, 200);
+  assert.equal((await put(base, "/blob/mx_b0000001", Buffer.alloc(600), "fam-b")).status, 200);
+  // 1400 held; another 300 would pass fam-c's own allowance but not the system's
+  assert.equal((await put(base, "/blob/mx_c0000001", Buffer.alloc(300), "fam-c")).status, 507);
+  assert.equal((await put(base, "/blob/mx_o0000001", Buffer.alloc(300), "office-secret")).status, 507);
+  // a write that fits still goes through
+  assert.equal((await put(base, "/blob/mx_c0000002", Buffer.alloc(50), "fam-c")).status, 200);
+  app.server.close();
+});
