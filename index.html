@@ -3354,8 +3354,12 @@ class DbMedia {
   }
   async get(url) {
     const m = /^ab-blob:\/\/(.+)$/.exec(String(url || ""));
-    if (!m) throw new Error("this file was stored on the previous system and is no longer available");
-    return window.ABDB.blobGet(m[1]);
+    if (m) return window.ABDB.blobGet(m[1]);
+    // Files uploaded before the move off Matrix were copied into the database
+    // under "mx_" + the old media id (same ciphertext, same key in the record).
+    const old = /^mxc:\/\/[^/]+\/(.+)$/.exec(String(url || ""));
+    if (old) return window.ABDB.blobGet("mx_" + old[1]);
+    throw new Error("this file was stored on the previous system and is no longer available");
   }
 }
 
